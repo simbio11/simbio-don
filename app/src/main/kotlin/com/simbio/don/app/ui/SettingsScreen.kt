@@ -56,7 +56,9 @@ fun SettingsScreen(
     onSaveBudget: (List<FixedExpense>, Long, DayOfWeek, Boolean) -> Unit,
     onEditRule: (String) -> Unit,
     onSaveRule: (AppRule) -> Unit,
-    onBack: () -> Unit,
+    learnedCount: Int,
+    onResetLearned: () -> Unit,
+    onExport: () -> Unit,
 ) {
     val rows = remember(fixed) { mutableStateListOf<FixedRow>().apply { addAll(fixed.map { FixedRow(it.name, it.amount.toString()) }); if (isEmpty()) add(FixedRow()) } }
     var savings by remember(settings) { mutableStateOf(settings.savings.toString()) }
@@ -69,8 +71,7 @@ fun SettingsScreen(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TextButton(onClick = onBack) { Text("← 돌아가기") }
-        Text("설정", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("설정", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
 
         RealCard("결제 알림 자동 기록") {
             Text(if (listenerEnabled) "켜져 있어요" else "꺼져 있어요", color = if (listenerEnabled) DonColors.Good else DonColors.Warn)
@@ -145,6 +146,18 @@ fun SettingsScreen(
                 onSaveBudget(rows.mapNotNull { it.toFixed() }, savings.toLongOrNull() ?: 0, settlementDay, applyNow)
             }) { Text("예산 설정 저장") }
         }
+
+        RealCard("카테고리 자동 분류") {
+            Text("가게 이름으로 카테고리를 정해요. 기록에서 카테고리를 고치면 그 가게는 다음부터 고친 대로 분류해요.", fontSize = 12.sp)
+            Text("기억한 가게 ${learnedCount}곳", fontSize = 13.sp)
+            if (learnedCount > 0) OutlinedButton(onClick = onResetLearned) { Text("기억한 가게 지우기") }
+        }
+
+        RealCard("백업") {
+            Text("모든 기록을 CSV 파일로 내보내요. 엑셀이나 구글 시트에서 열 수 있어요.", fontSize = 12.sp)
+            OutlinedButton(onClick = onExport) { Text("내역 내보내기 (CSV)") }
+        }
+        Spacer(Modifier.height(80.dp))
     }
 
     messagingWarning?.let { rule ->

@@ -1,5 +1,6 @@
 package com.simbio.don.app.data
 
+import com.simbio.don.budget.Category
 import com.simbio.don.budget.Entry
 import com.simbio.don.budget.EntrySource
 import com.simbio.don.budget.EntryType
@@ -26,6 +27,7 @@ fun EntryEntity.toEntry() = Entry(
     label = label,
     type = EntryType.valueOf(type),
     source = EntrySource.valueOf(source),
+    category = Category.of(category),
 )
 
 fun FixedExpenseEntity.toFixed() = FixedExpense(name, amount)

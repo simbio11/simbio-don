@@ -1,5 +1,6 @@
 package com.simbio.don.app.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -52,6 +53,17 @@ data class EntryEntity(
     /** 알림에서 온 경우: 중복 판정용 */
     val packageName: String? = null,
     val postedAtEpochSecond: Long? = null,
+    /** com.simbio.don.budget.Category 이름 */
+    @ColumnInfo(defaultValue = "ETC") val category: String = "ETC",
+    @ColumnInfo(defaultValue = "") val memo: String = "",
+)
+
+/** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */
+@Entity(tableName = "category_rule")
+data class CategoryRuleEntity(
+    /** CategoryGuesser.key(가게 이름) */
+    @PrimaryKey val labelKey: String,
+    val category: String,
 )
 
 /** 확인 필요함 */

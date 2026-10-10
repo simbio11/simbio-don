@@ -53,5 +53,5 @@ object NotificationParser {
         ?.takeIf { it > 0 }
 
     private fun label(n: RawNotification, rule: AppRule): String =
-        n.title.ifBlank { rule.displayName }.take(40)
+        MerchantExtractor.extract(n.title, n.text, rule.displayName).ifBlank { rule.displayName }.take(40)
 }

@@ -1,19 +1,22 @@
 package com.simbio.don.app.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.simbio.don.app.data.DonRepository
 import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.HomeState
+import com.simbio.don.app.data.MonthView
 import com.simbio.don.app.data.ReviewItemEntity
 import com.simbio.don.app.data.ReviewResolution
-import com.simbio.don.budget.EntryType
 import com.simbio.don.budget.FixedExpense
 import com.simbio.don.budget.WeekResult
 import com.simbio.don.notify.AppRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -67,7 +70,58 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val appRules = repo.appRules.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val seenApps = repo.seenApps.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun entries(home: HomeState): Flow<List<EntryEntity>> = repo.entries(home.cycle)
+    // 내역·통계: 고른 달 (null = 이번 달)
+    val cycles = repo.cycles.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val selectedNominal = MutableStateFlow<String?>(null)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val month: StateFlow<MonthView?> = combine(selectedNominal, repo.cycles, clock) { sel, cs, t -> Triple(sel, cs, t) }
+        .flatMapLatest { (sel, cs, t) ->
+            val nominal = sel?.takeIf { n -> cs.any { it.nominal == n } } ?: cs.firstOrNull()?.nominal
+            if (nominal == null) flowOf(null) else repo.month(nominal, t.toLocalDate())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** [delta] = -1 지난달, +1 다음 달 */
+    fun moveMonth(delta: Int) {
+        val cs = cycles.value
+        val current = month.value?.nominal ?: return
+        val i = cs.indexOfFirst { it.nominal == current }
+        // cycles는 최신순
+        cs.getOrNull(i - delta)?.let { selectedNominal.value = it.nominal }
+    }
+
+    fun resetMonth() {
+        selectedNominal.value = null
+    }
+
+    val learned = repo.learnedCount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    suspend fun learnedMap() = repo.learned()
+    fun resetLearned() = viewModelScope.launch { repo.resetLearned() }
+
+    fun save(draft: EntryDraft, existing: EntryEntity?) = viewModelScope.launch {
+        if (existing == null) {
+            repo.addManual(draft.date, draft.amount, draft.label, draft.type, draft.category, draft.memo)
+        } else {
+            repo.updateEntry(
+                existing.copy(
+                    epochDay = draft.date.toEpochDay(),
+                    amount = draft.amount,
+                    label = draft.label.ifBlank { existing.label },
+                    type = draft.type.name,
+                    category = draft.category.name,
+                    memo = draft.memo,
+                ),
+                existing,
+                draft.applyToSameLabel,
+            )
+        }
+    }
+
+    fun exportCsv(uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+        val csv = repo.exportCsv()
+        getApplication<Application>().contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
+    }
 
     fun completeOnboarding(
         salary: Long,
@@ -82,9 +136,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateSettings(fixed: List<FixedExpense>, savings: Long, settlementDay: DayOfWeek, applyNow: Boolean) =
         viewModelScope.launch { repo.updateSettings(fixed, savings, settlementDay, applyNow) }
-
-    fun addManual(date: LocalDate, amount: Long, label: String, type: EntryType) =
-        viewModelScope.launch { repo.addManual(date, amount, label, type) }
 
     fun deleteEntry(e: EntryEntity) = viewModelScope.launch { repo.deleteEntry(e) }
 

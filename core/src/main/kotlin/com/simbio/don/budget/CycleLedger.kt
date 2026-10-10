@@ -21,6 +21,7 @@ data class Entry(
     val label: String,
     val type: EntryType = EntryType.SPEND,
     val source: EntrySource = EntrySource.MANUAL,
+    val category: Category = Category.ETC,
 ) {
     init {
         require(amount > 0) { "금액은 0원보다 커야 합니다: $label=$amount" }

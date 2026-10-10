@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -49,6 +50,9 @@ interface DonDao {
     @Upsert
     suspend fun saveCycle(c: CycleEntity)
 
+    @Query("SELECT * FROM cycle ORDER BY startEpochDay DESC")
+    fun cycles(): Flow<List<CycleEntity>>
+
     // 지출
     @Query("SELECT * FROM entry WHERE epochDay BETWEEN :from AND :to ORDER BY epochDay DESC, id DESC")
     fun entriesBetween(from: Long, to: Long): Flow<List<EntryEntity>>
@@ -64,6 +68,28 @@ interface DonDao {
 
     @Delete
     suspend fun deleteEntry(e: EntryEntity)
+
+    @Update
+    suspend fun updateEntry(e: EntryEntity)
+
+    @Update
+    suspend fun updateEntries(e: List<EntryEntity>)
+
+    @Query("SELECT * FROM entry ORDER BY epochDay, id")
+    suspend fun allEntriesNow(): List<EntryEntity>
+
+    // 카테고리 규칙
+    @Query("SELECT * FROM category_rule")
+    fun categoryRules(): Flow<List<CategoryRuleEntity>>
+
+    @Query("SELECT * FROM category_rule")
+    suspend fun categoryRulesNow(): List<CategoryRuleEntity>
+
+    @Upsert
+    suspend fun saveCategoryRule(r: CategoryRuleEntity)
+
+    @Query("DELETE FROM category_rule")
+    suspend fun clearCategoryRules()
 
     // 확인함
     @Query("SELECT * FROM review_item ORDER BY postedAtEpochSecond DESC")

@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.simbio.don.app.data.DonDatabase
 import com.simbio.don.app.data.DonRepository
+import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntryType
 import com.simbio.don.budget.FixedExpense
 import com.simbio.don.notify.AppRule
@@ -75,6 +76,48 @@ class DonRepositoryTest {
         db.clearAllTables()
         repo.completeOnboarding(3_300_000, 25, emptyList(), 0, DayOfWeek.MONDAY, LocalDate.of(2026, 11, 10), firstCycleBudget = 500_000)
         assertEquals(500_000, home(at(11, 10)).plan.disposable)
+    }
+
+    @Test
+    fun `알림 기록은 가게 이름을 뽑아 카테고리를 정하고, 고치면 기억한다`() = runTest {
+        repo.handleNotification(RawNotification("card.app", "OO카드 승인", "OO카드 승인 4,500원 10/27 08:10 스타벅스강남", at(10, 27, 8, 10)))
+        val e = db.dao().allEntriesNow().single()
+        assertEquals("스타벅스강남", e.label)
+        assertEquals(Category.CAFE.name, e.category)
+
+        repo.addManual(LocalDate.of(2026, 10, 28), 6_000, "동네빵집", EntryType.SPEND)
+        val bread = db.dao().allEntriesNow().first { it.label == "동네빵집" }
+        assertEquals(Category.ETC.name, bread.category)
+        repo.addManual(LocalDate.of(2026, 10, 29), 7_000, "동네빵집", EntryType.SPEND)
+
+        // 하나를 고치면 같은 가게 기록도 같이 바뀌고, 다음부터 그렇게 분류한다
+        repo.updateEntry(bread.copy(category = Category.CAFE.name), bread, applyToSameLabel = true)
+        assertTrue(db.dao().allEntriesNow().filter { it.label == "동네빵집" }.all { it.category == Category.CAFE.name })
+        repo.addManual(LocalDate.of(2026, 10, 30), 5_000, "동네 빵집", EntryType.SPEND)
+        assertEquals(Category.CAFE.name, db.dao().allEntriesNow().last().category)
+    }
+
+    @Test
+    fun `달별 보기는 다음 주기 시작 전날까지이고 지난달 기록을 함께 준다`() = runTest {
+        repo.addManual(LocalDate.of(2026, 10, 24), 10_000, "스타벅스", EntryType.SPEND)
+        repo.confirmSalary(3_300_000, LocalDate.of(2026, 11, 24), at(11, 24, 10)) // 하루 일찍 입금
+        repo.addManual(LocalDate.of(2026, 11, 25), 20_000, "치킨", EntryType.SPEND)
+
+        val oct = repo.month("2026-10", LocalDate.of(2026, 11, 25)).first()!!
+        assertEquals(LocalDate.of(2026, 11, 23), oct.cycle.end)
+        assertEquals(1, oct.entries.size)
+        val nov = repo.month("2026-11", LocalDate.of(2026, 11, 25)).first()!!
+        assertTrue(nov.isCurrent)
+        assertEquals(listOf(20_000L), nov.entries.map { it.amount })
+        assertEquals(listOf(10_000L), nov.previousEntries.map { it.amount })
+    }
+
+    @Test
+    fun `CSV로 내보낸다`() = runTest {
+        repo.addManual(LocalDate.of(2026, 10, 24), 10_000, "카페 \"별\"", EntryType.SPEND, memo = "친구, 둘")
+        val csv = repo.exportCsv()
+        assertTrue(csv.startsWith("\uFEFF날짜,구분,카테고리,내용,금액,메모,기록 방식"))
+        assertTrue(csv.contains("2026-10-24,지출,카페·간식,\"카페 \"\"별\"\"\",10000,\"친구, 둘\",직접 입력"))
     }
 
     @Test

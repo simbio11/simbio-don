@@ -13,8 +13,8 @@ android {
         applicationId = "com.simbio.don"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-m0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     // CI에서 빌드할 때마다 서명이 바뀌면 폰에 덮어 설치가 안 되고 데이터가 지워진다.
@@ -40,6 +40,10 @@ android {
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+    sourceSets {
+        // Room 마이그레이션 테스트(Robolectric)가 내보낸 스키마를 읽는다. Robolectric은 변형(debug)의 assets만 본다
+        getByName("debug").assets.srcDir("$projectDir/schemas")
     }
 }
 
