@@ -23,9 +23,11 @@ data class CyclePlan(
     val fixedTotal: Long,
     val savings: Long,
     val weeks: List<Week>,
+    /** 한 달 중간에 시작한 첫 달처럼, 주 예산으로 나눌 금액을 직접 정한 경우 */
+    val disposableOverride: Long? = null,
 ) {
-    /** 월급 − 고정비 − 먼저 떼는 저축. 주 예산 합계와 같다. 모자라면 0. */
-    val disposable: Long get() = (salary - fixedTotal - savings).coerceAtLeast(0)
+    /** 월급 − 고정비 − 먼저 떼는 저축 (또는 직접 정한 금액). 주 예산 합계와 같다. 모자라면 0. */
+    val disposable: Long get() = disposableOverride ?: (salary - fixedTotal - savings).coerceAtLeast(0)
 
     /** 고정비 + 저축이 월급을 넘는 금액. 0이면 정상. */
     val shortfall: Long get() = (fixedTotal + savings - salary).coerceAtLeast(0)
@@ -47,16 +49,28 @@ object BudgetEngine {
         fixedExpenses: List<FixedExpense> = emptyList(),
         savings: Long = 0,
         settlementDay: DayOfWeek = DayOfWeek.MONDAY,
+        disposableOverride: Long? = null,
     ): CyclePlan {
         require(salary >= 0) { "월급은 0원 이상이어야 합니다: $salary" }
         require(savings >= 0) { "저축은 0원 이상이어야 합니다: $savings" }
+        require(disposableOverride == null || disposableOverride >= 0) { "예산은 0원 이상이어야 합니다: $disposableOverride" }
         val fixedTotal = fixedExpenses.sumOf { it.amount }
-        val disposable = (salary - fixedTotal - savings).coerceAtLeast(0)
+        val disposable = disposableOverride ?: (salary - fixedTotal - savings).coerceAtLeast(0)
 
         val ranges = splitIntoWeeks(cycle.start, cycle.end, settlementDay)
         val budgets = distribute(disposable, ranges.map { (s, e) -> e.toEpochDay() - s.toEpochDay() + 1 })
         val weeks = ranges.mapIndexed { i, (s, e) -> Week(i, s, e, budgets[i]) }
-        return CyclePlan(cycle, salary, fixedTotal, savings, weeks)
+        return CyclePlan(cycle, salary, fixedTotal, savings, weeks, disposableOverride)
+    }
+
+    /**
+     * 한 달 중간에 처음 시작할 때 남은 날에 해당하는 몫 (1,000원 단위 내림).
+     * 지난 날의 지출은 모르므로 그만큼은 이미 쓴 것으로 본다.
+     */
+    fun proratedDisposable(full: Long, cycle: PayCycle, from: LocalDate): Long {
+        if (!from.isAfter(cycle.start)) return full
+        val remaining = cycle.end.toEpochDay() - from.toEpochDay() + 1
+        return (full * remaining / cycle.days) / 1_000 * 1_000
     }
 
     /**

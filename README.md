@@ -15,17 +15,23 @@
 
 ## 구조
 
-- `core/` — 순수 Kotlin 예산 엔진 (Android 의존 없음)
-  - `BudgetEngine.plan()` — 월급 − 고정비 → 주 단위 예산 (일수 비례, 합계 1원 단위까지 정확)
-  - `WeekLedger` — 주간 장부: 모의/실제 지출, 재화 불리기 보너스(주 예산의 5~10% 상한)
-  - `WeeklyReport` — "이번 주 12,000원 아꼈어요"
-- Android 앱 모듈(`:app`)은 다음 단계에서 추가
+- `core/` — 순수 Kotlin 로직 (Android 의존 없음, 단위 테스트)
+  - `budget/` — 월급날 기준 한 달(`PayCycle`), 주 예산 배분(`BudgetEngine`), 이월·예외 지출·결산 판정(`CycleLedger`, `Settlement`)
+  - `notify/` — 결제 알림 규칙(앱 선택 → 키워드), 금액 추출, 중복·고정비 의심 판정(`ReviewPolicy`)
+- `app/` — Android 앱 (Kotlin · Jetpack Compose · Room)
+  - `notify/PaymentListenerService` — 고른 앱의 결제 알림만 읽어 기기 안에서 기록
+  - `data/` — Room 저장소, `ui/` — 화면
 
 ```sh
-./gradlew :core:test
+./gradlew :core:test :app:testDebugUnitTest   # 테스트
+./gradlew :app:assembleDebug                   # APK
+./gradlew :app:testDebugUnitTest -Pscreenshots # 화면 스크린샷 → app/build/screenshots/
 ```
+
+푸시할 때마다 GitHub Actions가 APK를 빌드해 `debug-latest` 릴리스에 올린다. 설치 방법은 [docs/m0-install.md](docs/m0-install.md).
 
 ## 문서
 
 - [docs/idea.md](docs/idea.md) — 원안·실존 확인·채택안 (2026-10-07)
-- [docs/decisions.md](docs/decisions.md) — 확정 결정과 미결 사항
+- [docs/decisions.md](docs/decisions.md) — 확정 결정·마일스톤·미결 사항
+- [docs/m0-install.md](docs/m0-install.md) — M0 설치와 1~2주 실사용 체크리스트

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 동전 모양 (임시 아이콘) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#F4C95D"
+        android:pathData="M54,30a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
+    <path android:fillColor="#2B3A67"
+        android:pathData="M42,44h4l4,14 4,-14h4l4,14 4,-14h4l-6,20h-4l-4,-13 -4,13h-4z" />
+</vector>

@@ -1,0 +1,119 @@
+package com.simbio.don.app.data
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Upsert
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface DonDao {
+    // 설정
+    @Query("SELECT * FROM settings WHERE id = 0")
+    fun settings(): Flow<SettingsEntity?>
+
+    @Query("SELECT * FROM settings WHERE id = 0")
+    suspend fun settingsNow(): SettingsEntity?
+
+    @Upsert
+    suspend fun saveSettings(s: SettingsEntity)
+
+    @Query("SELECT * FROM fixed_expense ORDER BY id")
+    fun fixedExpenses(): Flow<List<FixedExpenseEntity>>
+
+    @Query("SELECT * FROM fixed_expense ORDER BY id")
+    suspend fun fixedExpensesNow(): List<FixedExpenseEntity>
+
+    @Query("DELETE FROM fixed_expense")
+    suspend fun clearFixedExpenses()
+
+    @Insert
+    suspend fun insertFixedExpenses(items: List<FixedExpenseEntity>)
+
+    @Transaction
+    suspend fun replaceFixedExpenses(items: List<FixedExpenseEntity>) {
+        clearFixedExpenses()
+        insertFixedExpenses(items.map { it.copy(id = 0) })
+    }
+
+    // 주기
+    @Query("SELECT * FROM cycle ORDER BY startEpochDay DESC LIMIT 1")
+    fun latestCycle(): Flow<CycleEntity?>
+
+    @Query("SELECT * FROM cycle ORDER BY startEpochDay DESC LIMIT 1")
+    suspend fun latestCycleNow(): CycleEntity?
+
+    @Upsert
+    suspend fun saveCycle(c: CycleEntity)
+
+    // 지출
+    @Query("SELECT * FROM entry WHERE epochDay BETWEEN :from AND :to ORDER BY epochDay DESC, id DESC")
+    fun entriesBetween(from: Long, to: Long): Flow<List<EntryEntity>>
+
+    @Query("SELECT * FROM entry WHERE epochDay BETWEEN :from AND :to")
+    suspend fun entriesBetweenNow(from: Long, to: Long): List<EntryEntity>
+
+    @Query("SELECT * FROM entry WHERE postedAtEpochSecond >= :since")
+    suspend fun notificationEntriesSince(since: Long): List<EntryEntity>
+
+    @Insert
+    suspend fun insertEntry(e: EntryEntity): Long
+
+    @Delete
+    suspend fun deleteEntry(e: EntryEntity)
+
+    // 확인함
+    @Query("SELECT * FROM review_item ORDER BY postedAtEpochSecond DESC")
+    fun reviewItems(): Flow<List<ReviewItemEntity>>
+
+    @Query("SELECT * FROM review_item")
+    suspend fun reviewItemsNow(): List<ReviewItemEntity>
+
+    @Insert
+    suspend fun insertReview(r: ReviewItemEntity): Long
+
+    @Delete
+    suspend fun deleteReview(r: ReviewItemEntity)
+
+    // 입금
+    @Insert
+    suspend fun insertIncome(i: IncomeEntity)
+
+    @Query("SELECT * FROM income WHERE postedAtEpochSecond >= :since ORDER BY amount DESC LIMIT 1")
+    suspend fun largestIncomeSince(since: Long): IncomeEntity?
+
+    // 알림 앱 규칙
+    @Query("SELECT * FROM app_rule ORDER BY displayName")
+    fun appRules(): Flow<List<AppRuleEntity>>
+
+    @Query("SELECT * FROM app_rule")
+    suspend fun appRulesNow(): List<AppRuleEntity>
+
+    @Upsert
+    suspend fun saveAppRule(r: AppRuleEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAppRulesIfAbsent(r: List<AppRuleEntity>)
+
+    @Query("DELETE FROM app_rule WHERE packageName = :pkg")
+    suspend fun deleteAppRule(pkg: String)
+
+    @Upsert
+    suspend fun markSeen(a: SeenAppEntity)
+
+    @Query("SELECT * FROM seen_app ORDER BY lastSeenEpochSecond DESC")
+    fun seenApps(): Flow<List<SeenAppEntity>>
+
+    // 결산
+    @Query("SELECT * FROM settled_week WHERE nominal = :nominal")
+    fun settledWeeks(nominal: String): Flow<List<SettledWeekEntity>>
+
+    @Query("SELECT * FROM settled_week WHERE nominal = :nominal")
+    suspend fun settledWeeksNow(nominal: String): List<SettledWeekEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun markSettled(s: SettledWeekEntity)
+}

@@ -1,0 +1,48 @@
+name: Android APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: 테스트 + 디버그 APK 빌드
+        run: ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug --console=plain
+
+      - name: APK 이름 붙이기
+        run: cp app/build/outputs/apk/debug/app-debug.apk simbio-don-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simbio-don-debug
+          path: simbio-don-debug.apk
+
+      # 폰 브라우저에서 압축 풀기 없이 바로 받을 수 있게, 가장 최근 빌드를 debug-latest 릴리스에 올린다
+      - name: debug-latest 릴리스 갱신
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete debug-latest --yes --cleanup-tag || true
+          gh release create debug-latest simbio-don-debug.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "최신 디버그 빌드 (${GITHUB_REF_NAME})" \
+            --notes "커밋 ${GITHUB_SHA::7} · 브랜치 ${GITHUB_REF_NAME}. 폰에서 simbio-don-debug.apk를 눌러 설치하세요."

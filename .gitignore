@@ -11,3 +11,6 @@ build/
 *.aab
 *.keystore
 *.jks
+# 개인용 디버그 빌드 서명 키는 CI에서 같은 서명을 쓰려고 리포에 둔다 (app/build.gradle.kts 참고)
+!/app/debug.keystore
+.kotlin/

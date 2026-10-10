@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        google()
         gradlePluginPortal()
         mavenCentral()
     }
@@ -7,11 +8,14 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
+        google()
         mavenCentral()
     }
 }
 
 rootProject.name = "simbio-don"
 
-// 순수 Kotlin 핵심 로직 (예산 엔진). Android 앱 모듈(:app)은 이후 추가.
+// 순수 Kotlin 핵심 로직 (예산 엔진·알림 파서)
 include(":core")
+// Android 앱
+include(":app")

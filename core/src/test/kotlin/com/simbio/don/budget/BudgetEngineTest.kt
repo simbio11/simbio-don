@@ -73,6 +73,20 @@ class BudgetEngineTest {
     }
 
     @Test
+    fun `한 달 중간에 시작하면 남은 날만큼만 예산을 잡고 직접 고칠 수도 있다`() {
+        // 10/23 ~ 11/24 (33일) 중 11/10부터 시작 → 15일
+        val from = LocalDate.of(2026, 11, 10)
+        assertEquals(900_000, BudgetEngine.proratedDisposable(1_980_000, october, from))
+        assertEquals(1_980_000, BudgetEngine.proratedDisposable(1_980_000, october, october.start))
+
+        val partial = PayCycle.cycleFor(YearMonth.of(2026, 10), 25, actualStart = from)
+        val plan = BudgetEngine.plan(partial, 3_300_000, savings = 320_000, disposableOverride = 700_000)
+        assertEquals(700_000, plan.disposable)
+        assertEquals(700_000, plan.weeks.sumOf { it.budget })
+        assertEquals(from, plan.weeks.first().start)
+    }
+
+    @Test
     fun `음수 금액은 거부한다`() {
         assertFailsWith<IllegalArgumentException> { BudgetEngine.plan(october, -1) }
         assertFailsWith<IllegalArgumentException> { BudgetEngine.plan(october, 0, savings = -1) }
