@@ -14,6 +14,15 @@ import com.simbio.don.budget.FixedExpense
 import com.simbio.don.budget.PayCycle
 import com.simbio.don.budget.Settlement
 import com.simbio.don.budget.WeekResult
+import com.simbio.don.game.HouseLayout
+import com.simbio.don.game.HouseLevel
+import com.simbio.don.game.ItemKind
+import com.simbio.don.game.MockItem
+import com.simbio.don.game.MockWallet
+import com.simbio.don.game.Mood
+import com.simbio.don.game.Moods
+import com.simbio.don.game.PurchaseStatus
+import com.simbio.don.game.WeeklySettlement
 import com.simbio.don.notify.AppRule
 import com.simbio.don.notify.Decision
 import com.simbio.don.notify.DefaultApps
@@ -59,7 +68,16 @@ data class HomeState(
     val monthSpent: Long,
     /** 이번 주 남은 돈 ÷ 남은 날 */
     val todayAllowance: Long,
-)
+    // ── 게임 ──
+    val mockEntities: List<MockPurchaseEntity>,
+    val mockItems: List<MockItem>,
+    /** 모의 지갑 = 이번 달 가용액 − 실제 쓴 돈 − 아직 돌려받지 않은 모의 구매 */
+    val wallet: Long,
+    val house: HouseLayout,
+    val mood: Mood,
+) {
+    val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
+}
 
 /** 내역·통계 화면용 한 달 묶음. */
 data class MonthView(
@@ -94,7 +112,8 @@ class DonRepository(private val dao: DonDao) {
                 dao.reviewItems(),
                 dao.settledWeeks(c.nominal),
                 now,
-            ) { entries, reviews, settled, t -> buildHome(s, c, cycle, entries, reviews, settled, t) }
+                combine(dao.mockPurchases(), dao.house()) { m, h -> m to h },
+            ) { entries, reviews, settled, t, game -> buildHome(s, c, cycle, entries, reviews, settled, t, game.first, game.second) }
         }
 
     private fun buildHome(
@@ -105,6 +124,8 @@ class DonRepository(private val dao: DonDao) {
         reviews: List<ReviewItemEntity>,
         settled: List<SettledWeekEntity>,
         now: LocalDateTime,
+        mocks: List<MockPurchaseEntity> = emptyList(),
+        house: HouseEntity? = null,
     ): HomeState {
         val plan = planFor(c, cycle)
         val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e.toEntry()) }.getOrDefault(l) }
@@ -136,6 +157,55 @@ class DonRepository(private val dao: DonDao) {
             entries = entries,
             monthSpent = Stats.total(entries.map { it.toEntry() }),
             todayAllowance = current?.let { Stats.todayAllowance(it, today) } ?: 0,
+            mockEntities = mocks,
+            mockItems = mocks.map { it.toItem() },
+            wallet = MockWallet.balance(plan.disposable, Stats.total(entries.map { it.toEntry() }), mocks.map { it.toItem() }),
+            house = HouseLayout.of(HouseLevel.valueOf(house?.level ?: HouseLevel.ONE_ROOM.name), mocks.map { it.toItem() }),
+            mood = Moods.of(current, today),
+        )
+    }
+
+    // ── 모의 쇼핑·집 ─────────────────────────────────────────
+
+    suspend fun buyMock(name: String, price: Long, kind: ItemKind, store: String?, date: LocalDate, now: LocalDateTime) {
+        dao.insertMock(
+            MockPurchaseEntity(
+                name = name.ifBlank { kind.label }.take(40),
+                price = price,
+                kind = kind.name,
+                store = store,
+                epochDay = date.toEpochDay(),
+                status = PurchaseStatus.SHIPPING.name,
+                createdAtEpochSecond = now.epochSecond(),
+            ),
+        )
+    }
+
+    /** 먹고 남은 쓰레기 치우기 */
+    suspend fun recycle() {
+        val trash = dao.mockPurchasesNow().filter {
+            it.status == PurchaseStatus.DELIVERED.name && ItemKind.of(it.kind).isFood
+        }
+        dao.updateMocks(trash.map { it.copy(status = PurchaseStatus.RECYCLED.name) })
+    }
+
+    /** 집에서 비우기 (도감에는 남는다) */
+    suspend fun discard(ids: Set<Long>) {
+        val items = dao.mockPurchasesNow().filter { it.id in ids && it.status == PurchaseStatus.DELIVERED.name }
+        dao.updateMocks(items.map { it.copy(status = PurchaseStatus.DISCARDED.name) })
+    }
+
+    /** 그 주 모의 구매를 배송 또는 반품으로 정리 */
+    private suspend fun settleMocks(start: LocalDate, end: LocalDate, overspent: Long, returnIds: Set<Long>?) {
+        val all = dao.mockPurchasesNow()
+        val week = WeeklySettlement.shippingIn(all.map { it.toItem() }, start, end)
+        val picked = returnIds?.takeIf { WeeklySettlement.isEnough(week, it, overspent) }
+            ?: WeeklySettlement.autoPick(week, overspent)
+        val ids = week.map { it.id }.toSet()
+        dao.updateMocks(
+            all.filter { it.id in ids }.map {
+                it.copy(status = if (it.id in picked) PurchaseStatus.RETURNED.name else PurchaseStatus.DELIVERED.name)
+            },
         )
     }
 
@@ -297,6 +367,8 @@ class DonRepository(private val dao: DonDao) {
         val plan = planFor(c, c.toPayCycle(s.payDay))
         plan.weeks.filter { it.index !in done }.forEach { w ->
             resolveLeftoverReviews(w.end)
+            val r = weekResultNow(c, s.payDay, w.index)
+            settleMocks(w.start, w.end, r?.overspent ?: 0, null)
             dao.markSettled(SettledWeekEntity(c.nominal, w.index, now.epochSecond(), auto = true))
         }
     }
@@ -422,11 +494,26 @@ class DonRepository(private val dao: DonDao) {
 
     // ── 결산 ─────────────────────────────────────────────────
 
-    suspend fun settle(week: WeekResult, now: LocalDateTime) {
+    /**
+     * 주간 결산. [returnIds]는 사용자가 고른 반품 물건 (null이면 자동으로 고른다).
+     * 자동 결산이면 확인함을 먼저 정리하고, 정리된 지출로 초과액을 다시 계산한다.
+     */
+    suspend fun settle(week: WeekResult, now: LocalDateTime, returnIds: Set<Long>? = null) {
         val c = dao.latestCycleNow() ?: return
+        val s = dao.settingsNow() ?: return
         val auto = Settlement.mustAutoSettle(week.week.end, now)
         if (auto) resolveLeftoverReviews(week.week.end)
+        val result = weekResultNow(c, s.payDay, week.week.index) ?: week
+        settleMocks(result.week.start, result.week.end, result.overspent, returnIds)
         dao.markSettled(SettledWeekEntity(c.nominal, week.week.index, now.epochSecond(), auto))
+    }
+
+    private suspend fun weekResultNow(c: CycleEntity, payDay: Int, index: Int): WeekResult? {
+        val cycle = c.toPayCycle(payDay)
+        val plan = planFor(c, cycle)
+        val entries = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).map { it.toEntry() }
+        val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e) }.getOrDefault(l) }
+        return ledger.results().getOrNull(index)
     }
 
     /** 정오 자동 결산 때 확인함에 남은 그 주 알림: 중복·고정비 의심은 버리고, 환불은 환불로, 나머지는 지출로 반영. */

@@ -18,7 +18,9 @@ import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntryType
 import com.simbio.don.budget.FixedExpense
 import kotlinx.coroutines.runBlocking
-import org.junit.After
+import com.simbio.don.app.data.DonDatabase
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,15 +38,19 @@ import java.time.LocalDate
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = "ko-rKR-w400dp-h880dp-xhdpi")
 class AppFlowTest {
-    @get:Rule
     val rule = createAndroidComposeRule<MainActivity>()
 
-    /** 다음 테스트가 빈 DB로 시작하도록 (Robolectric은 같은 JVM에서 파일·싱글턴을 이어 쓸 수 있다) */
-    @After
-    fun tearDown() {
-        DonRepository.resetForTests()
-        rule.activity.deleteDatabase("don.db")
-    }
+    /** 테스트마다 새 메모리 DB로 시작한다 (화면이 뜨기 전에 설정해야 해서 바깥 규칙에서) */
+    @get:Rule
+    val chain: RuleChain = RuleChain.outerRule(object : ExternalResource() {
+        override fun before() {
+            DonDatabase.inMemoryForTests = true
+            DonRepository.resetForTests()
+        }
+
+        override fun after() = DonRepository.resetForTests()
+    }).around(rule)
+
 
     private fun shot(name: String) {
         val dir = System.getProperty("screenshotDir") ?: return
@@ -136,5 +142,42 @@ class AppFlowTest {
         shot("14_stats_categories")
         rule.onNodeWithText("주별 예산").performScrollTo()
         shot("15_stats_weeks")
+    }
+
+    /** 모의 쇼핑 → 결제 → 결산 → 집. */
+    @Test
+    fun 모의_쇼핑과_집() {
+        val today = LocalDate.now()
+        val repo = DonRepository.get(rule.activity)
+        runBlocking {
+            repo.completeOnboarding(3_300_000, today.minusDays(9).dayOfMonth, listOf(FixedExpense("월세", 700_000)), 400_000, DayOfWeek.MONDAY, today.minusDays(9), null)
+            val bought = listOf(
+                "나이키 에어포스1" to 129_000L, "오버핏 맨투맨" to 39_000L, "뉴발란스 530" to 109_000L, "에어팟 프로" to 359_000L,
+                "레고 테크닉" to 89_000L, "황금올리브 치킨" to 23_000L, "아이스 아메리카노" to 4_500L, "엽떡" to 18_000L,
+                "가디건" to 49_000L, "아디다스 삼바" to 139_000L, "조던 1" to 179_000L, "샌들" to 29_000L, "향수" to 120_000L,
+            )
+            bought.forEachIndexed { i, (n, p) ->
+                repo.buyMock(n, p, com.simbio.don.game.ItemKind.guess(n), "쿠팡", today.minusDays((9 - i % 6).toLong()), java.time.LocalDateTime.now())
+            }
+            // 지난 주들이 결산돼 집에 도착한 상태로 만든다
+            val dao = DonDatabase.get(rule.activity).dao()
+            dao.updateMocks(dao.mockPurchasesNow().map { it.copy(status = com.simbio.don.game.PurchaseStatus.DELIVERED.name) })
+            repo.buyMock("스타벅스 텀블러", 35_000, com.simbio.don.game.ItemKind.LIVING, "스타벅스", today, java.time.LocalDateTime.now())
+        }
+        waitText("이번 주 쓸 수 있는 돈")
+        rule.onNodeWithText("내 집").performClick()
+        waitText("모의 지갑")
+        shot("20_house")
+        rule.onNodeWithText("모의 쇼핑하기").performScrollTo().performClick()
+        waitText("뭘 사고 싶어요?")
+        rule.onNodeWithText("물건 이름").performTextReplacement("나이키 덩크 로우")
+        rule.onNode(hasSetTextAction() and hasText("가격")).performTextReplacement("139000")
+        shot("21_shop_form")
+        rule.onNodeWithText("결제하러 가기").performScrollTo().performClick()
+        waitText("주문 / 결제")
+        shot("22_checkout")
+        rule.onNodeWithText("139,000원 결제하기").performClick()
+        waitText("결제 완료!")
+        shot("23_paid")
     }
 }

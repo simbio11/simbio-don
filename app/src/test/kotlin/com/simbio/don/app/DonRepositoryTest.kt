@@ -7,6 +7,8 @@ import com.simbio.don.app.data.DonRepository
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntryType
 import com.simbio.don.budget.FixedExpense
+import com.simbio.don.game.ItemKind
+import com.simbio.don.game.Slot
 import com.simbio.don.notify.AppRule
 import com.simbio.don.notify.RawNotification
 import com.simbio.don.notify.ReviewReason
@@ -118,6 +120,41 @@ class DonRepositoryTest {
         val csv = repo.exportCsv()
         assertTrue(csv.startsWith("\uFEFF날짜,구분,카테고리,내용,금액,메모,기록 방식"))
         assertTrue(csv.contains("2026-10-24,지출,카페·간식,\"카페 \"\"별\"\"\",10000,\"친구, 둘\",직접 입력"))
+    }
+
+    @Test
+    fun `모의 구매는 지갑에서 빠지고, 예산을 지키면 집에 도착한다`() = runTest {
+        repo.buyMock("나이키 에어포스1", 129_000, ItemKind.SHOES, "쿠팡", LocalDate.of(2026, 10, 27), at(10, 27))
+        repo.buyMock("황금올리브 치킨", 23_000, ItemKind.MEAL, null, LocalDate.of(2026, 10, 28), at(10, 28))
+        val before = home(at(10, 28, 20))
+        assertEquals(1_980_000 - 152_000L, before.wallet)
+        assertEquals(2, before.shipping.size)
+        assertEquals(600_000, before.currentWeek!!.available) // 실제 예산은 그대로
+
+        val noon = home(at(11, 2, 12))
+        repo.settle(noon.settleable.single(), at(11, 2, 12), emptySet())
+        val after = home(at(11, 2, 13))
+        assertEquals(1_980_000L, after.wallet) // 결산 때 돌려받음
+        assertEquals(1, after.house.slots[Slot.SHOE_RACK]!!.size)
+        assertEquals(1, after.house.trash.size)
+        assertEquals(152_000, after.house.wouldHaveCost)
+
+        repo.recycle()
+        assertTrue(home(at(11, 2, 14)).house.trash.isEmpty())
+    }
+
+    @Test
+    fun `예산을 넘기면 고른 물건이 반품되고, 안 고르면 나중에 산 것부터`() = runTest {
+        repo.buyMock("운동화", 129_000, ItemKind.SHOES, null, LocalDate.of(2026, 10, 24), at(10, 24))
+        repo.buyMock("에어팟 케이스", 34_000, ItemKind.ELECTRONICS, null, LocalDate.of(2026, 10, 30), at(10, 30))
+        repo.addManual(LocalDate.of(2026, 10, 29), 620_000, "장보기", EntryType.SPEND) // 20,000 초과
+
+        val week = home(at(11, 2, 12)).settleable.single()
+        assertEquals(20_000, week.overspent)
+        repo.settle(week, at(11, 2, 12), returnIds = null)
+        val items = db.dao().mockPurchasesNow().associate { it.name to it.status }
+        assertEquals("DELIVERED", items["운동화"])
+        assertEquals("RETURNED", items["에어팟 케이스"])
     }
 
     @Test

@@ -39,6 +39,8 @@ fun HomeScreen(
     onOpenEntry: (EntryEntity) -> Unit,
     onAllEntries: () -> Unit,
     onStats: () -> Unit,
+    onHouse: () -> Unit,
+    onShop: () -> Unit,
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -111,9 +113,7 @@ fun HomeScreen(
             if (home.entries.size > 5) TextButton(onClick = onAllEntries) { Text("전체 ${home.entries.size}건 보기 →") }
         }
 
-        GameCard("게임") {
-            Text("모의 쇼핑 · 창고 · 마일리지는 다음 버전에서 열려요.", fontSize = 13.sp)
-        }
+        HomeGameCard(home, onHouse, onShop)
         Spacer(Modifier.height(80.dp))
     }
 }

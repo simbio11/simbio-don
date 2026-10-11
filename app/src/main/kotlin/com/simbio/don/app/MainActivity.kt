@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,6 +50,8 @@ import com.simbio.don.app.ui.DonTheme
 import com.simbio.don.app.ui.EntryEditScreen
 import com.simbio.don.app.ui.HistoryScreen
 import com.simbio.don.app.ui.HomeScreen
+import com.simbio.don.app.ui.HouseScreen
+import com.simbio.don.app.ui.MockShopScreen
 import com.simbio.don.app.ui.ListIcon
 import com.simbio.don.app.ui.MainViewModel
 import com.simbio.don.app.ui.OnboardingScreen
@@ -60,10 +63,12 @@ import com.simbio.don.app.ui.SettlementScreen
 import com.simbio.don.app.ui.StatsScreen
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntryType
+import com.simbio.don.game.SharedProduct
+import com.simbio.don.game.SharedTextParser
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-private enum class Tab(val label: String) { Home("홈"), History("내역"), Stats("통계"), Settings("설정") }
+private enum class Tab(val label: String) { Home("홈"), History("내역"), House("내 집"), Stats("통계"), Settings("설정") }
 
 /** 탭 위에 덮어 여는 화면 */
 private sealed interface Overlay {
@@ -72,15 +77,32 @@ private sealed interface Overlay {
     data object Settle : Overlay
     data object Salary : Overlay
     data class EditRule(val packageName: String) : Overlay
+    data class Shop(val prefill: SharedProduct?) : Overlay
 }
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
     private var listenerEnabled by mutableStateOf(false)
 
+    /** 쇼핑 앱에서 "공유"로 받은 글 — 모의 쇼핑 화면을 연다 */
+    private var shared by mutableStateOf<SharedProduct?>(null)
+
+    private fun readShare(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+            val text = listOfNotNull(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getStringExtra(Intent.EXTRA_TEXT)).joinToString("\n")
+            if (text.isNotBlank()) shared = SharedTextParser.parse(text)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        readShare(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        readShare(intent)
         setContent {
             DonTheme {
                 Surface(Modifier.fillMaxSize()) {
@@ -125,6 +147,9 @@ class MainActivity : ComponentActivity() {
         var historyDate by remember { mutableStateOf<LocalDate?>(null) }
         var historyCategory by remember { mutableStateOf<Category?>(null) }
         val close = { overlay = null }
+        LaunchedEffect(shared) {
+            shared?.let { overlay = Overlay.Shop(it); shared = null }
+        }
 
         BackHandler(enabled = overlay != null || tab != Tab.Home) {
             when {
@@ -135,7 +160,7 @@ class MainActivity : ComponentActivity() {
         }
 
         overlay?.let { o ->
-            Overlay(o, home, close) { overlay = it }
+            Overlay(o, home, close, open = { overlay = it }, goHouse = { overlay = null; tab = Tab.House })
             return
         }
 
@@ -177,6 +202,14 @@ class MainActivity : ComponentActivity() {
                         onOpenEntry = { overlay = Overlay.Edit(it) },
                         onAllEntries = { vm.resetMonth(); historyDate = null; historyCategory = null; tab = Tab.History },
                         onStats = { vm.resetMonth(); tab = Tab.Stats },
+                        onHouse = { tab = Tab.House },
+                        onShop = { overlay = Overlay.Shop(null) },
+                    )
+                    Tab.House -> HouseScreen(
+                        home = home,
+                        onShop = { overlay = Overlay.Shop(null) },
+                        onRecycle = { vm.recycle() },
+                        onDiscard = { vm.discard(it) },
                     )
                     Tab.History, Tab.Stats -> {
                         val view by vm.month.collectAsStateWithLifecycle()
@@ -251,7 +284,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun Overlay(o: Overlay, home: HomeState, close: () -> Unit, open: (Overlay) -> Unit) {
+    private fun Overlay(o: Overlay, home: HomeState, close: () -> Unit, open: (Overlay) -> Unit, goHouse: () -> Unit) {
         when (o) {
             is Overlay.Edit -> {
                 val learned by produceState<Map<String, Category>?>(null) { value = vm.learnedMap() }
@@ -281,9 +314,20 @@ class MainActivity : ComponentActivity() {
             }
             Overlay.Settle -> {
                 val week = home.settleable.firstOrNull()
-                if (week == null) LaunchedEffect(Unit) { close() } else SettlementScreen(week, onDone = { vm.settle(week) }, onBack = close)
+                if (week == null) {
+                    LaunchedEffect(Unit) { close() }
+                } else {
+                    SettlementScreen(week, home.mockItems, onDone = { ids -> vm.settle(week, ids) }, onBack = close)
+                }
             }
             Overlay.Salary -> SalaryScreen(home, { vm.suggestedSalary(home) }, { a, d -> vm.confirmSalary(a, d) }, close)
+            is Overlay.Shop -> MockShopScreen(
+                wallet = home.wallet,
+                prefill = o.prefill,
+                onBuy = { n, p, k, st -> vm.buyMock(n, p, k, st) },
+                onHouse = goHouse,
+                onBack = close,
+            )
             is Overlay.EditRule -> {
                 val rules by vm.appRules.collectAsStateWithLifecycle()
                 rules.firstOrNull { it.packageName == o.packageName }?.let { r ->
@@ -296,6 +340,7 @@ class MainActivity : ComponentActivity() {
 
 private fun Tab.icon(): ImageVector = when (this) {
     Tab.Home -> Icons.Filled.Home
+    Tab.House -> Icons.Filled.Face
     Tab.History -> ListIcon
     Tab.Stats -> ChartIcon
     Tab.Settings -> Icons.Filled.Settings

@@ -91,6 +91,25 @@ interface DonDao {
     @Query("DELETE FROM category_rule")
     suspend fun clearCategoryRules()
 
+    // 모의 쇼핑·집
+    @Query("SELECT * FROM mock_purchase ORDER BY epochDay DESC, id DESC")
+    fun mockPurchases(): Flow<List<MockPurchaseEntity>>
+
+    @Query("SELECT * FROM mock_purchase")
+    suspend fun mockPurchasesNow(): List<MockPurchaseEntity>
+
+    @Insert
+    suspend fun insertMock(m: MockPurchaseEntity): Long
+
+    @Update
+    suspend fun updateMocks(m: List<MockPurchaseEntity>)
+
+    @Query("SELECT * FROM house WHERE id = 0")
+    fun house(): Flow<HouseEntity?>
+
+    @Upsert
+    suspend fun saveHouse(h: HouseEntity)
+
     // 확인함
     @Query("SELECT * FROM review_item ORDER BY postedAtEpochSecond DESC")
     fun reviewItems(): Flow<List<ReviewItemEntity>>

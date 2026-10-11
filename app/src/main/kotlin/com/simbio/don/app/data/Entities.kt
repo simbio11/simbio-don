@@ -119,3 +119,28 @@ data class SettledWeekEntity(
     val settledAtEpochSecond: Long,
     val auto: Boolean,
 )
+
+/** 모의로 산 물건. 실제 돈과 무관한 게임 기록이다. */
+@Entity(tableName = "mock_purchase")
+data class MockPurchaseEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val price: Long,
+    /** com.simbio.don.game.ItemKind 이름 */
+    val kind: String,
+    /** 공유해 온 쇼핑몰 (없으면 null) */
+    val store: String? = null,
+    val epochDay: Long,
+    /** com.simbio.don.game.PurchaseStatus 이름 */
+    val status: String,
+    val createdAtEpochSecond: Long,
+)
+
+/** 내 집과 캐릭터. 한 줄만 쓴다 (id = 0). */
+@Entity(tableName = "house")
+data class HouseEntity(
+    @PrimaryKey val id: Int = 0,
+    /** com.simbio.don.game.HouseLevel 이름 */
+    val level: String = "ONE_ROOM",
+    val characterName: String = "나",
+)

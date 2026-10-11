@@ -50,3 +50,12 @@ fun EntryEntity.toParsedOrNull(): ParsedPayment? {
 
 fun ReviewItemEntity.toParsed() =
     ParsedPayment(packageName, RuleAction.valueOf(action), amount, label, postedAtEpochSecond.toLocalDateTime(), rawText)
+
+fun MockPurchaseEntity.toItem() = com.simbio.don.game.MockItem(
+    id = id,
+    name = name,
+    price = price,
+    kind = com.simbio.don.game.ItemKind.of(kind),
+    date = LocalDate.ofEpochDay(epochDay),
+    status = com.simbio.don.game.PurchaseStatus.valueOf(status),
+)

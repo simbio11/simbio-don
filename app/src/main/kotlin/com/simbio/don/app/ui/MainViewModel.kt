@@ -12,6 +12,7 @@ import com.simbio.don.app.data.ReviewItemEntity
 import com.simbio.don.app.data.ReviewResolution
 import com.simbio.don.budget.FixedExpense
 import com.simbio.don.budget.WeekResult
+import com.simbio.don.game.ItemKind
 import com.simbio.don.notify.AppRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -141,7 +142,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resolve(item: ReviewItemEntity, r: ReviewResolution) = viewModelScope.launch { repo.resolveReview(item, r) }
 
-    fun settle(week: WeekResult) = viewModelScope.launch { repo.settle(week, LocalDateTime.now()) }
+    fun settle(week: WeekResult, returnIds: Set<Long>) =
+        viewModelScope.launch { repo.settle(week, LocalDateTime.now(), returnIds) }
+
+    fun buyMock(name: String, price: Long, kind: ItemKind, store: String?) =
+        viewModelScope.launch { repo.buyMock(name, price, kind, store, LocalDate.now(), LocalDateTime.now()) }
+
+    fun recycle() = viewModelScope.launch { repo.recycle() }
+    fun discard(ids: Set<Long>) = viewModelScope.launch { repo.discard(ids) }
 
     suspend fun suggestedSalary(home: HomeState): Long = repo.suggestedSalary(home.nextExpectedPayday)
 

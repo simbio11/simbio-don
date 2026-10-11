@@ -16,12 +16,12 @@ class MigrationTest {
     val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), DonDatabase::class.java)
 
     @Test
-    fun v1에서_v2로_기록이_유지되고_카테고리가_채워진다() {
+    fun v1에서_최신으로_기록이_유지되고_카테고리가_채워진다() {
         helper.createDatabase("m.db", 1).use { db ->
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (1, 20000, 4500, '스타벅스 강남점', 'SPEND', 'MANUAL')")
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
-        val db = helper.runMigrationsAndValidate("m.db", 2, true, DonDatabase.MIGRATION_1_2)
+        val db = helper.runMigrationsAndValidate("m.db", 3, true, DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3)
         db.query("SELECT id, amount, category, memo FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
             c.moveToNext(); assertEquals("ETC", c.getString(2))

@@ -30,6 +30,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- 쇼핑 앱에서 "공유 → 돈 아끼는 게임" → 모의 쇼핑 -->
+            <intent-filter android:label="모의로 사기">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <service
