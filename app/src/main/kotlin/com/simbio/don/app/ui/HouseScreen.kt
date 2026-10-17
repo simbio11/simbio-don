@@ -1,11 +1,7 @@
 package com.simbio.don.app.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -26,114 +23,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.simbio.don.app.R
 import com.simbio.don.app.data.HomeState
+import com.simbio.don.app.ui.kit.Badge
 import com.simbio.don.app.ui.kit.Button
-import com.simbio.don.app.ui.kit.CharacterSprite
 import com.simbio.don.app.ui.kit.Icon
-import com.simbio.don.app.ui.kit.ItemIcon
-import com.simbio.don.app.ui.kit.OutlinedButton
+import com.simbio.don.app.ui.kit.IconBubble
+import com.simbio.don.app.ui.kit.ItemThumb
+import com.simbio.don.app.ui.kit.MoreButton
+import com.simbio.don.app.ui.kit.SubButton
 import com.simbio.don.app.ui.kit.TextButton
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.kit.WarnLine
-import com.simbio.don.app.ui.kit.icon
-import com.simbio.don.app.ui.kit.pixelPanel
-import com.simbio.don.app.ui.kit.rememberIdleFrame
-import com.simbio.don.app.ui.kit.sprite
-import com.simbio.don.app.ui.pixel.RoomLayout
-import com.simbio.don.game.HouseLayout
-import com.simbio.don.game.ItemKind
+import com.simbio.don.app.ui.kit.card
 import com.simbio.don.game.MockItem
-import com.simbio.don.game.Mood
-import com.simbio.don.game.Slot
-
-/** 방에서 누를 수 있는 곳 (그림 원본 픽셀 좌표) */
-private sealed interface RoomHit {
-    data class OfSlot(val slot: Slot) : RoomHit
-    data object Floor : RoomHit
-    data object Trash : RoomHit
-}
-
-private fun hitAt(x: Int, y: Int): RoomHit? = when {
-    x in 1..47 && y in 14..80 -> RoomHit.OfSlot(Slot.WARDROBE)
-    x in 62..101 && y in 38..80 -> RoomHit.OfSlot(Slot.SHELF)
-    x in 112..155 && y in 44..80 -> RoomHit.OfSlot(Slot.DESK)
-    x in 6..33 && y in 100..132 -> RoomHit.OfSlot(Slot.SHOE_RACK)
-    x in 34..62 && y in 88..135 -> RoomHit.Trash
-    x in 50..115 && y in 106..135 -> RoomHit.Floor
-    else -> null
-}
-
-/**
- * 원룸 도트 장면. 배경·물건·캐릭터를 원본 픽셀 크기로 겹쳐 그리고,
- * 화면 너비에 맞는 가장 큰 정수 배율로 확대한다 (픽셀이 뭉개지지 않게).
- */
-@Composable
-fun PixelRoom(
-    house: HouseLayout,
-    mood: Mood,
-    onSlot: (Slot) -> Unit,
-    onFloor: () -> Unit,
-    onTrash: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val room = ImageBitmap.imageResource(R.drawable.px_room_one_room)
-    val shadow = ImageBitmap.imageResource(R.drawable.px_shadow)
-    val items = ItemKind.entries.associateWith { ImageBitmap.imageResource(it.icon()) }
-    val trashImages = ItemKind.entries.filter { it.isFood }.associateWith { ImageBitmap.imageResource(it.icon(trash = true)) }
-    val idle = rememberIdleFrame()
-    val character = ImageBitmap.imageResource(mood.sprite(idle.blink))
-
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val scale = maxOf(1, constraints.maxWidth / RoomLayout.WIDTH)
-        val height = with(LocalDensity.current) { (RoomLayout.HEIGHT * scale).toDp() }
-        Canvas(
-            Modifier.fillMaxWidth().height(height).pointerInput(house, scale) {
-                detectTapGestures { o ->
-                    val ox = (size.width - RoomLayout.WIDTH * scale) / 2
-                    when (val hit = hitAt(((o.x - ox) / scale).toInt(), (o.y / scale).toInt())) {
-                        is RoomHit.OfSlot -> onSlot(hit.slot)
-                        RoomHit.Floor -> if (house.floor.isNotEmpty()) onFloor()
-                        RoomHit.Trash -> if (house.trash.isNotEmpty()) onTrash()
-                        null -> Unit
-                    }
-                }
-            },
-        ) {
-            val ox = ((size.width - RoomLayout.WIDTH * scale) / 2).toInt()
-            fun put(img: ImageBitmap, x: Int, y: Int) = drawImage(
-                img,
-                srcOffset = IntOffset.Zero,
-                srcSize = IntSize(img.width, img.height),
-                dstOffset = IntOffset(ox + x * scale, y * scale),
-                dstSize = IntSize(img.width * scale, img.height * scale),
-                filterQuality = FilterQuality.None,
-            )
-
-            put(room, 0, 0)
-            RoomLayout.slots.forEach { (slot, spots) ->
-                house.slots[slot].orEmpty().zip(spots).forEach { (item, p) -> put(items.getValue(item.kind), p.x, p.y) }
-            }
-            house.trash.zip(RoomLayout.trash).forEach { (item, p) -> put(trashImages.getValue(item.kind), p.x, p.y) }
-            val c = RoomLayout.character
-            put(shadow, c.x + 1, c.y + 21)
-            put(character, c.x, c.y + idle.bob)
-            house.floor.zip(RoomLayout.floorPile).sortedBy { it.second.y }.forEach { (item, p) ->
-                put(items.getValue(item.kind), p.x, p.y)
-            }
-        }
-    }
-}
 
 @Composable
 fun HouseScreen(
@@ -146,81 +52,93 @@ fun HouseScreen(
     var picking by remember { mutableStateOf<Pair<String, List<MockItem>>?>(null) }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("내 ${house.level.label}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
                 Text("나는 지금 ${home.mood.label}", fontSize = 13.sp, color = DonColors.GameDeep)
             }
-            Row(
-                Modifier.pixelPanel(if (house.isCluttered) DonColors.WarnSurface else DonColors.PaperLight, depth = 2.dp)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Icon(UiIcon.BOX, 16.dp)
-                Text("${house.itemCount}/${house.capacity}", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
+            Badge(
+                "수납 ${house.itemCount}/${house.capacity}",
+                color = if (house.isCluttered) DonColors.Warn else DonColors.GameDeep,
+            )
         }
 
-        Box(Modifier.fillMaxWidth().pixelPanel(DonColors.Wood, depth = 4.dp).padding(6.dp)) {
+        Column(Modifier.fillMaxWidth().card(DonColors.GameSurface)) {
             PixelRoom(
                 house,
                 home.mood,
-                onSlot = { slot -> picking = slot.label to house.slots[slot].orEmpty() },
-                onFloor = { picking = "바닥" to house.floor },
-                onTrash = onRecycle,
+                modifier = Modifier.clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                onTap = { hit ->
+                    when (hit) {
+                        is RoomHit.OfSlot -> picking = hit.slot.label to house.slots[hit.slot].orEmpty()
+                        RoomHit.Floor -> picking = "바닥" to house.floor
+                        RoomHit.Trash -> onRecycle()
+                    }
+                },
             )
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("가구를 누르면 그 안의 물건을 볼 수 있어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                if (house.isCluttered) WarnLine("수납이 넘쳐서 바닥에 ${house.floor.size}개가 쌓였어요")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onShop, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) { Text("모의 쇼핑") }
+                    if (house.trash.isNotEmpty()) {
+                        SubButton(onClick = onRecycle, containerColor = DonColors.Surface) {
+                            Icon(UiIcon.RECYCLE, 18.dp, DonColors.Good)
+                            Text("분리수거 ${house.trash.size}")
+                        }
+                    }
+                    if (house.itemCount > 0) {
+                        SubButton(onClick = { picking = "집" to house.slots.values.flatten() + house.floor }, containerColor = DonColors.Surface) { Text("비우기") }
+                    }
+                }
+            }
         }
-        Text("가구를 누르면 그 안의 물건을 볼 수 있어요.", fontSize = 12.sp, color = DonColors.InkMuted)
 
         if (house.wouldHaveCost > 0) {
             Row(
-                Modifier.fillMaxWidth().pixelPanel(DonColors.PaperLight).padding(14.dp),
+                Modifier.fillMaxWidth().card().padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Icon(UiIcon.COIN, 28.dp)
+                IconBubble(UiIcon.SAVINGS, DonColors.Good, 44.dp)
                 Column {
-                    Text("이 물건들 실제로 샀으면", fontSize = 12.sp, color = DonColors.InkSoft)
-                    Text(won(house.wouldHaveCost), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
-                    Text("하지만 실제로는 한 푼도 안 썼어요", fontSize = 12.sp, color = DonColors.Good)
+                    Text("이 물건들 실제로 샀으면", fontSize = 13.sp, color = DonColors.InkMuted)
+                    Text(won(house.wouldHaveCost), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                    Text("하지만 실제로는 한 푼도 안 썼어요", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Good)
                 }
             }
         } else {
-            Text("아직 빈 방이에요. 사고 싶은 게 생기면 여기서 모의로 사보세요.", fontSize = 13.sp, color = DonColors.InkSoft)
+            Text("아직 빈 방이에요. 사고 싶은 게 생기면 여기서 모의로 사보세요.", fontSize = 13.sp, color = DonColors.InkSoft, modifier = Modifier.padding(horizontal = 4.dp))
         }
-        if (house.isCluttered) WarnLine("수납이 넘쳐서 바닥에 ${house.floor.size}개가 쌓였어요")
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = onShop, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) { Text("모의 쇼핑") }
-            if (house.trash.isNotEmpty()) OutlinedButton(onClick = onRecycle) { Text("분리수거 ${house.trash.size}") }
-            if (house.itemCount > 0) OutlinedButton(onClick = { picking = "집" to house.slots.values.flatten() + house.floor }) { Text("비우기") }
-        }
-        Text("수납장 사기·이사는 다음 버전(마일리지)에서 열려요.", fontSize = 11.sp, color = DonColors.InkMuted)
-
-        GameCard("모의 지갑", icon = { Icon(UiIcon.COIN, 16.dp) }) {
-            Text(won(home.wallet), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.GameDeep)
+        GameCard("모의 지갑", icon = { Icon(UiIcon.WALLET, 18.dp, DonColors.Game) }) {
+            Text(won(home.wallet), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
             Text("이번 달 쓸 수 있는 돈에서 실제 지출과 아직 돌려받지 않은 모의 구매를 뺀 금액이에요.", fontSize = 12.sp, color = DonColors.InkSoft)
-            Text("쇼핑 앱에서 '공유 → 돈 아끼는 게임'을 눌러도 바로 와요.", fontSize = 11.sp, color = DonColors.InkMuted)
+            Text("쇼핑 앱에서 '공유 → 돈 아끼는 게임'을 눌러도 바로 와요.", fontSize = 12.sp, color = DonColors.InkMuted)
         }
 
         if (home.shipping.isNotEmpty()) {
-            GameCard("배송 중 ${home.shipping.size}개 · 주말 결산 때 도착", icon = { Icon(UiIcon.BOX, 16.dp) }) {
+            SectionCard("배송 중 ${home.shipping.size}개", trailing = { Badge("주말 결산 때 도착", DonColors.Game) }) {
                 home.shipping.forEach { m ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ItemIcon(m.kind, 24.dp)
-                        Spacer(Modifier.size(10.dp))
-                        Text(m.name, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1)
-                        Text(won(m.price), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ItemThumb(m.kind, 48.dp)
+                        Spacer(Modifier.size(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(m.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, color = DonColors.Ink)
+                            Text(won(m.price), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                        }
+                        Icon(UiIcon.TRUCK, 20.dp, DonColors.Game)
                     }
                 }
-                Text("이번 주 실제 예산을 지키면 전부 도착하고, 넘기면 넘긴 만큼 반품돼요.", fontSize = 11.sp, color = DonColors.InkMuted)
+                Spacer(Modifier.height(4.dp))
+                Text("이번 주 실제 예산을 지키면 전부 도착하고, 넘기면 넘긴 만큼 반품돼요.", fontSize = 12.sp, color = DonColors.InkMuted)
             }
         }
-        Spacer(Modifier.height(80.dp))
+        Text("수납장 사기·이사는 다음 버전(마일리지)에서 열려요.", fontSize = 11.sp, color = DonColors.InkMuted, modifier = Modifier.padding(horizontal = 4.dp))
+        Spacer(Modifier.height(88.dp))
     }
 
     picking?.let { (title, items) ->
@@ -233,7 +151,7 @@ private fun DiscardDialog(title: String, items: List<MockItem>, onDismiss: () ->
     var selected by remember { mutableStateOf(emptySet<Long>()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = DonColors.PaperLight,
+        containerColor = DonColors.Surface,
         title = { Text(if (items.isEmpty()) "$title · 비어 있어요" else "$title · 비울 물건 고르기", fontWeight = FontWeight.Bold) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -243,7 +161,7 @@ private fun DiscardDialog(title: String, items: List<MockItem>, onDismiss: () ->
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(checked = m.id in selected, onCheckedChange = null)
-                        ItemIcon(m.kind, 24.dp)
+                        ItemThumb(m.kind, 36.dp)
                         Spacer(Modifier.size(8.dp))
                         Text("${m.name} · ${won(m.price)}", fontSize = 13.sp)
                     }
@@ -256,34 +174,35 @@ private fun DiscardDialog(title: String, items: List<MockItem>, onDismiss: () ->
     )
 }
 
-/** 첫 화면용 작은 집 카드 */
+/** 첫 화면용 집 카드: 지금 내 방 모습 그대로 */
 @Composable
 fun HomeGameCard(home: HomeState, onHouse: () -> Unit, onShop: () -> Unit) {
-    GameCard("게임 · 내 ${home.house.level.label}", icon = { Icon(UiIcon.HOUSE, 16.dp) }) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.pixelPanel(DonColors.WoodSurface, depth = 2.dp).padding(horizontal = 10.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) { CharacterSprite(home.mood, 60.dp) }
-            Spacer(Modifier.size(14.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("나는 지금 ${home.mood.label}", fontWeight = FontWeight.Bold, color = DonColors.GameDeep)
-                Text("모의 지갑 ${won(home.wallet)}", fontSize = 13.sp)
+    Column(Modifier.fillMaxWidth().card(DonColors.GameSurface)) {
+        Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("게임 · 내 ${home.house.level.label}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = DonColors.GameDeep)
+                Text("나는 지금 ${home.mood.label}", fontSize = 13.sp, color = DonColors.InkSoft)
+            }
+            MoreButton("내 집 보기", onHouse)
+        }
+        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)))
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("모의 지갑", fontSize = 12.sp, color = DonColors.InkMuted)
+                    Text(won(home.wallet), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                }
                 Text(
                     buildString {
-                        append("집에 물건 ${home.house.itemCount}개")
-                        if (home.shipping.isNotEmpty()) append(" · 배송 중 ${home.shipping.size}개")
-                        if (home.house.trash.isNotEmpty()) append(" · 쓰레기 ${home.house.trash.size}개")
+                        append("물건 ${home.house.itemCount}개")
+                        if (home.shipping.isNotEmpty()) append(" · 배송 중 ${home.shipping.size}")
+                        if (home.house.trash.isNotEmpty()) append(" · 쓰레기 ${home.house.trash.size}")
                     },
                     fontSize = 12.sp,
                     color = DonColors.InkSoft,
                 )
             }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = onShop, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) { Text("모의 쇼핑") }
-            OutlinedButton(onClick = onHouse, modifier = Modifier.weight(1f)) { Text("내 집 보기") }
+            Button(onClick = onShop, containerColor = DonColors.Game, modifier = Modifier.fillMaxWidth()) { Text("모의 쇼핑") }
         }
     }
 }

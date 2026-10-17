@@ -1,6 +1,8 @@
 package com.simbio.don.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import com.simbio.don.app.ui.kit.BackBar
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
@@ -39,20 +41,26 @@ fun SalaryScreen(
     var start by remember { mutableStateOf(home.nextExpectedPayday) }
     val diff = (amount.toLongOrNull() ?: 0) - home.lastSalary
 
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TextButton(onClick = onBack) { Text("← 나중에") }
-        Text("이번 달 월급 확인", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("확인하면 지난달 남은 주를 마무리하고 새 달 예산을 짜요.", fontSize = 13.sp)
-        MoneyField("이번 달 월급", amount, { amount = it })
-        if (diff != 0L) Text("지난달 ${won(home.lastSalary)}보다 ${if (diff > 0) "+" else "−"}${won(kotlin.math.abs(diff))}", fontSize = 13.sp)
-        Text("실제 입금일", fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            candidates.forEach { d -> FilterChip(selected = d == start, onClick = { start = d }, label = { Text(shortDate(d)) }) }
+    Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
+        BackBar("이번 달 월급 확인", onBack)
+        Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("확인하면 지난달 남은 주를 마무리하고 새 달 예산을 짜요.", fontSize = 14.sp, color = DonColors.InkSoft)
+            FormCard {
+                MoneyField("이번 달 월급", amount, { amount = it })
+                if (diff != 0L) Text("지난달 ${won(home.lastSalary)}보다 ${if (diff > 0) "+" else "−"}${won(kotlin.math.abs(diff))}", fontSize = 13.sp, color = DonColors.InkSoft)
+            }
+            FormCard("실제 입금일") {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    candidates.forEach { d -> FilterChip(selected = d == start, onClick = { start = d }, label = { Text(shortDate(d)) }) }
+                }
+            }
         }
-        Button(
-            onClick = { onConfirm(amount.toLong(), start); onBack() },
-            enabled = (amount.toLongOrNull() ?: 0) > 0,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("이대로 예산 짜기") }
+        BottomBar {
+            Button(
+                onClick = { onConfirm(amount.toLong(), start); onBack() },
+                enabled = (amount.toLongOrNull() ?: 0) > 0,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("이대로 예산 짜기") }
+        }
     }
 }

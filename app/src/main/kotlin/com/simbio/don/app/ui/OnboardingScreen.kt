@@ -1,5 +1,17 @@
 package com.simbio.don.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.simbio.don.app.ui.kit.Icon
+import com.simbio.don.app.ui.kit.UiIcon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,10 +63,17 @@ fun FixedExpenseEditor(rows: MutableList<FixedRow>) {
                 modifier = Modifier.weight(1f),
             )
             MoneyField("금액", row.amount, { row.amount = it }, Modifier.weight(1.3f))
+            if (rows.size > 1) {
+                Box(
+                    Modifier.padding(top = 14.dp).size(36.dp).clip(CircleShape)
+                        .clickable(role = Role.Button) { rows.removeAt(i) }
+                        .semantics { contentDescription = "이 줄 지우기" },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(UiIcon.CLOSE, 20.dp, DonColors.InkMuted) }
+            }
         }
-        if (rows.size > 1) TextButton(onClick = { rows.removeAt(i) }) { Text("이 줄 지우기") }
     }
-    TextButton(onClick = { rows.add(FixedRow()) }) { Text("+ 고정비 추가") }
+    TextButton(onClick = { rows.add(FixedRow()) }, color = DonColors.Real) { Text("+ 고정비 추가") }
 }
 
 @Composable
@@ -90,11 +109,12 @@ fun OnboardingScreen(
     val firstBudgetText = if (firstBudgetTouched) firstBudget else prorated.toString()
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        Modifier.fillMaxSize().background(DonColors.Bg).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("처음 설정", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text("입력한 내용은 이 폰에만 저장되고 어디로도 보내지 않아요.")
+        Text("돈 아끼는 게임", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Real)
+        Text("처음 설정", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+        Text("입력한 내용은 이 폰에만 저장되고 어디로도 보내지 않아요.", fontSize = 14.sp, color = DonColors.InkSoft)
 
         RealCard("1. 월급") {
             MoneyField("이번 달 월급 (실수령액)", salary, { salary = it })
@@ -111,17 +131,17 @@ fun OnboardingScreen(
         }
 
         RealCard("2. 고정비 (월세·통신비·보험·구독 등)") {
-            Text("월급에서 먼저 빠지는 돈이에요. 결제 알림이 와도 주 예산에서 또 빼지 않아요.", fontSize = 13.sp)
+            Text("월급에서 먼저 빠지는 돈이에요. 결제 알림이 와도 주 예산에서 또 빼지 않아요.", fontSize = 13.sp, color = DonColors.InkSoft)
             FixedExpenseEditor(fixed)
         }
 
         RealCard("3. 먼저 떼어둘 저축") {
-            Text("예산을 딱 맞게 써도 이 돈은 모여요. 실제 이체는 은행 앱 자동이체로 해두세요.", fontSize = 13.sp)
+            Text("예산을 딱 맞게 써도 이 돈은 모여요. 실제 이체는 은행 앱 자동이체로 해두세요.", fontSize = 13.sp, color = DonColors.InkSoft)
             MoneyField("매달 저축", savings, { savings = it })
         }
 
         RealCard("4. 결산 요일") {
-            Text("이 요일 아침에 지난 한 주를 결산해요. 그 전날이 한 주의 마지막 날이에요.", fontSize = 13.sp)
+            Text("이 요일 아침에 지난 한 주를 결산해요. 그 전날이 한 주의 마지막 날이에요.", fontSize = 13.sp, color = DonColors.InkSoft)
             Spacer(Modifier.height(8.dp))
             DayOfWeekPicker(settlementDay) { settlementDay = it }
         }
@@ -142,11 +162,11 @@ fun OnboardingScreen(
         RealCard("한 달에 쓸 수 있는 돈") {
             Text(
                 if (disposable >= 0) won(disposable) else "${won(-disposable)} 모자라요",
-                fontSize = 22.sp,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (disposable >= 0) DonColors.Real else DonColors.Warn,
+                color = if (disposable >= 0) DonColors.Ink else DonColors.Warn,
             )
-            Text("월급 − 고정비 ${won(fixedTotal)} − 저축 ${won(savingsValue)}", fontSize = 13.sp)
+            Text("월급 − 고정비 ${won(fixedTotal)} − 저축 ${won(savingsValue)}", fontSize = 13.sp, color = DonColors.InkMuted)
         }
 
         Button(

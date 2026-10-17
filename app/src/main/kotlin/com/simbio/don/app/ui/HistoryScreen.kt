@@ -17,8 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import com.simbio.don.app.ui.kit.FilterChip
-import com.simbio.don.app.ui.kit.OutlinedButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,26 +26,45 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.MonthView
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.simbio.don.app.ui.kit.CategoryIcon
-import com.simbio.don.app.ui.kit.pixelPanel
+import com.simbio.don.app.ui.kit.Icon
+import com.simbio.don.app.ui.kit.UiIcon
+import com.simbio.don.app.ui.kit.card
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntrySource
 import com.simbio.don.budget.EntryType
 import com.simbio.don.budget.Stats
 import java.time.LocalDate
 
-/** 달(주기) 넘기기: ‹ 10월 (10/23~11/24) › */
+/** 달(주기) 넘기기: ‹ 10/23 ~ 11/24 › */
 @Composable
 fun MonthSwitcher(view: MonthView, hasPrev: Boolean, hasNext: Boolean, onPrev: () -> Unit, onNext: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = onPrev, enabled = hasPrev) { Text("<", fontSize = 16.sp) }
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        RoundIconButton(UiIcon.CHEVRON_LEFT, "이전 달", hasPrev, onPrev)
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             // 월급날 기준 한 달은 두 달에 걸치므로 "9월"처럼 부르지 않고 기간으로 보여준다
-            Text("${shortDate(view.cycle.start)} ~ ${shortDate(view.cycle.end)}", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Text(if (view.isCurrent) "이번 달 · 월급날 기준" else "월급날 기준", fontSize = 12.sp, color = ChartColors.InkSecondary)
+            Text("${shortDate(view.cycle.start)} ~ ${shortDate(view.cycle.end)}", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+            Text(if (view.isCurrent) "이번 달 · 월급날 기준" else "월급날 기준", fontSize = 12.sp, color = DonColors.InkMuted)
         }
-        OutlinedButton(onClick = onNext, enabled = hasNext) { Text(">", fontSize = 16.sp) }
+        RoundIconButton(UiIcon.CHEVRON_RIGHT, "다음 달", hasNext, onNext)
     }
+}
+
+@Composable
+fun RoundIconButton(icon: UiIcon, description: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(40.dp).clip(CircleShape).background(DonColors.Surface)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, 22.dp, if (enabled) DonColors.Ink else DonColors.Line) }
 }
 
 @Composable
@@ -76,13 +93,13 @@ fun HistoryScreen(
         item { MonthSwitcher(view, hasPrev, hasNext, onPrev, onNext) }
         item {
             RealCard("이번 달 ${won(Stats.total(view.entries))} 썼어요") {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 MonthCalendar(view.cycle.start, view.cycle.end, weekStart, daily, view.today, selectedDate) { d ->
                     onSelectDate(if (d == selectedDate) null else d)
                 }
                 Text("칸 색이 진할수록 그날 많이 썼어요. 날짜를 누르면 그날 내역만 봐요.", fontSize = 11.sp, color = ChartColors.InkMuted)
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
         }
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -93,18 +110,19 @@ fun HistoryScreen(
                 }
             }
         }
-        if (filtered.isEmpty()) item { Text("기록이 없어요.", modifier = Modifier.padding(vertical = 24.dp), color = ChartColors.InkSecondary) }
+        if (filtered.isEmpty()) item { Text("기록이 없어요.", modifier = Modifier.padding(vertical = 24.dp), color = DonColors.InkMuted) }
         groups.forEach { (day, list) ->
-            item(key = "h$day") {
+            item(key = "d$day") {
                 val d = LocalDate.ofEpochDay(day)
                 val sum = list.sumOf { if (it.type == EntryType.REFUND.name) -it.amount else it.amount }
-                Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp)) {
-                    Text(shortDate(d), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                    Text(won(sum), fontSize = 13.sp, color = ChartColors.InkSecondary)
+                Column(Modifier.padding(top = 10.dp).fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp)) {
+                        Text(shortDate(d), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
+                        Text(won(sum), fontSize = 13.sp, color = DonColors.InkMuted)
+                    }
+                    list.forEach { e -> EntryRow(e, onOpen) }
                 }
-                HorizontalDivider()
             }
-            items(list, key = { it.id }) { e -> EntryRow(e, onOpen) }
         }
         item { Spacer(Modifier.height(96.dp)) }
     }
@@ -114,13 +132,13 @@ fun HistoryScreen(
 fun EntryRow(e: EntryEntity, onOpen: (EntryEntity) -> Unit) {
     val c = Category.of(e.category)
     Row(
-        Modifier.fillMaxWidth().clickable { onOpen(e) }.padding(vertical = 10.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onOpen(e) }.padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.pixelPanel(DonColors.PaperLight, depth = 1.dp).padding(5.dp)) { CategoryIcon(c, 22.dp) }
+        CategoryIcon(c, 40.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(e.label, fontSize = 15.sp, maxLines = 1)
+            Text(e.label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = DonColors.Ink, maxLines = 1)
             Text(
                 buildString {
                     append(c.label)
@@ -129,7 +147,7 @@ fun EntryRow(e: EntryEntity, onOpen: (EntryEntity) -> Unit) {
                     if (e.memo.isNotBlank()) append(" · ${e.memo}")
                 },
                 fontSize = 12.sp,
-                color = ChartColors.InkMuted,
+                color = DonColors.InkMuted,
                 maxLines = 1,
             )
         }
@@ -137,25 +155,23 @@ fun EntryRow(e: EntryEntity, onOpen: (EntryEntity) -> Unit) {
             if (e.type == EntryType.REFUND.name) "+${won(e.amount)}" else "−${won(e.amount)}",
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
-            color = if (e.type == EntryType.REFUND.name) DonColors.Good else ChartColors.InkPrimary,
+            color = if (e.type == EntryType.REFUND.name) DonColors.Real else DonColors.Ink,
         )
     }
 }
 
+/** 흰 카드 + 제목 (+ 오른쪽 더보기) */
 @Composable
-fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().pixelPanel(DonColors.PaperLight).padding(16.dp)) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DonColors.Ink)
-        Spacer(Modifier.height(12.dp))
+fun SectionCard(title: String, trailing: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().card().padding(horizontal = 20.dp, vertical = 18.dp)) {
+        PanelTitle(title, trailing = trailing)
+        Spacer(Modifier.height(10.dp))
         content()
     }
 }
 
-/** 칩 안의 카테고리: 도트 아이콘 + 이름 */
+/** 칩 안의 카테고리 이름 */
 @Composable
 fun CategoryLabel(c: Category) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        CategoryIcon(c, 16.dp)
-        Text(c.label)
-    }
+    Text(c.label)
 }

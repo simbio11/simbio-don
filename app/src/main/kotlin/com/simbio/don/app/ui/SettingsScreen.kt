@@ -1,6 +1,11 @@
 package com.simbio.don.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.simbio.don.app.ui.kit.BackBar
+import com.simbio.don.app.ui.kit.Badge
+import com.simbio.don.app.ui.kit.Icon
+import com.simbio.don.app.ui.kit.UiIcon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,7 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import com.simbio.don.app.ui.kit.Button
 import androidx.compose.material3.Checkbox
-import com.simbio.don.app.ui.kit.OutlinedButton
+import com.simbio.don.app.ui.kit.SubButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -68,24 +73,27 @@ fun SettingsScreen(
     var showHidden by remember { mutableStateOf(false) }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("설정", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        ScreenTitle("설정", Modifier.padding(top = 8.dp))
 
-        RealCard("결제 알림 자동 기록") {
-            Text(if (listenerEnabled) "켜져 있어요" else "꺼져 있어요", color = if (listenerEnabled) DonColors.Good else DonColors.Warn)
+        RealCard(
+            "결제 알림 자동 기록",
+            trailing = { Badge(if (listenerEnabled) "켜짐" else "꺼짐", if (listenerEnabled) DonColors.Good else DonColors.Warn) },
+        ) {
             Text(
                 "알림 접근 권한은 모든 알림을 볼 수 있는 권한이에요. 이 앱은 아래에서 고른 앱의 알림만 열어보고, 기기 밖으로 보내지 않아요.",
-                fontSize = 12.sp,
+                fontSize = 13.sp,
+                color = DonColors.InkSoft,
             )
-            OutlinedButton(onClick = onOpenListenerSettings) { Text("알림 접근 설정 열기") }
-            Text("갤럭시는 배터리 최적화 때문에 알림 수신이 끊길 수 있어요. '제한 없음'으로 바꿔 주세요.", fontSize = 12.sp)
-            OutlinedButton(onClick = onOpenBatterySettings) { Text("배터리 설정 열기") }
+            SubButton(onClick = onOpenListenerSettings, modifier = Modifier.fillMaxWidth()) { Text("알림 접근 설정 열기") }
+            Text("갤럭시는 배터리 최적화 때문에 알림 수신이 끊길 수 있어요. '제한 없음'으로 바꿔 주세요.", fontSize = 13.sp, color = DonColors.InkSoft)
+            SubButton(onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth()) { Text("배터리 설정 열기") }
         }
 
         RealCard("알림 읽을 앱") {
-            Text("켜진 앱의 알림만 읽어요. 앱을 누르면 키워드 규칙을 바꿀 수 있어요.", fontSize = 12.sp)
+            Text("켜진 앱의 알림만 읽어요. 앱을 누르면 키워드 규칙을 바꿀 수 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
             // 이 폰에 없는 기본 앱은 접어 둔다
             val presetPackages = DefaultApps.presets.map { it.packageName }.toSet()
             val (shown, hidden) = rules.partition { appLabel(it.packageName) != null || it.packageName !in presetPackages }
@@ -97,8 +105,8 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(r.displayName)
-                        if (!installed) Text("이 폰에 없음", fontSize = 11.sp)
+                        Text(r.displayName, fontSize = 15.sp, color = DonColors.Ink)
+                        if (!installed) Text("이 폰에 없음", fontSize = 12.sp, color = DonColors.InkMuted)
                     }
                     Switch(
                         checked = r.enabled,
@@ -118,11 +126,12 @@ fun SettingsScreen(
             val candidates = seenApps.filter { it.packageName !in ruled }
             if (candidates.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Text("최근 알림을 보낸 앱 (눌러서 추가)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("최근 알림을 보낸 앱 (눌러서 추가)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = DonColors.Ink)
                 candidates.take(15).forEach { a ->
                     val label = appLabel(a.packageName) ?: a.packageName
                     Text(
                         "+ $label",
+                        color = DonColors.Real,
                         modifier = Modifier.fillMaxWidth().clickable {
                             val rule = AppRule(a.packageName, label, enabled = true)
                             if (a.packageName in DefaultApps.messagingPackages) messagingWarning = rule else onSaveRule(rule)
@@ -133,10 +142,10 @@ fun SettingsScreen(
         }
 
         RealCard("예산") {
-            Text("고정비", fontWeight = FontWeight.Bold)
+            Text("고정비", fontWeight = FontWeight.Bold, color = DonColors.InkSoft, fontSize = 14.sp)
             FixedExpenseEditor(rows)
             MoneyField("매달 먼저 떼어둘 저축", savings, { savings = it })
-            Text("결산 요일 (다음 달부터 적용)", fontWeight = FontWeight.Bold)
+            Text("결산 요일 (다음 달부터 적용)", fontWeight = FontWeight.Bold, color = DonColors.InkSoft, fontSize = 14.sp)
             DayOfWeekPicker(settlementDay) { settlementDay = it }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = applyNow, onCheckedChange = { applyNow = it })
@@ -144,24 +153,28 @@ fun SettingsScreen(
             }
             Button(onClick = {
                 onSaveBudget(rows.mapNotNull { it.toFixed() }, savings.toLongOrNull() ?: 0, settlementDay, applyNow)
-            }) { Text("예산 설정 저장") }
+            }, modifier = Modifier.fillMaxWidth()) { Text("예산 설정 저장") }
         }
 
         RealCard("카테고리 자동 분류") {
-            Text("가게 이름으로 카테고리를 정해요. 기록에서 카테고리를 고치면 그 가게는 다음부터 고친 대로 분류해요.", fontSize = 12.sp)
-            Text("기억한 가게 ${learnedCount}곳", fontSize = 13.sp)
-            if (learnedCount > 0) OutlinedButton(onClick = onResetLearned) { Text("기억한 가게 지우기") }
+            Text("가게 이름으로 카테고리를 정해요. 기록에서 카테고리를 고치면 그 가게는 다음부터 고친 대로 분류해요.", fontSize = 13.sp, color = DonColors.InkSoft)
+            Text("기억한 가게 ${learnedCount}곳", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            if (learnedCount > 0) SubButton(onClick = onResetLearned) { Text("기억한 가게 지우기") }
         }
 
         RealCard("백업") {
-            Text("모든 기록을 CSV 파일로 내보내요. 엑셀이나 구글 시트에서 열 수 있어요.", fontSize = 12.sp)
-            OutlinedButton(onClick = onExport) { Text("내역 내보내기 (CSV)") }
+            Text("모든 기록을 CSV 파일로 내보내요. 엑셀이나 구글 시트에서 열 수 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
+            SubButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) {
+                Icon(UiIcon.DOWNLOAD, 18.dp, DonColors.InkSoft)
+                Text("내역 내보내기 (CSV)")
+            }
         }
 
         Text(
-            "글꼴: 갈무리 (Lee Minseo, SIL Open Font License 1.1)",
+            "아이콘: Material Symbols (Google, Apache License 2.0)",
             fontSize = 11.sp,
             color = DonColors.InkMuted,
+            modifier = Modifier.padding(horizontal = 4.dp),
         )
         Spacer(Modifier.height(80.dp))
     }
@@ -186,15 +199,15 @@ fun RuleEditScreen(rule: AppRule, onSave: (AppRule) -> Unit, onDelete: () -> Uni
         }
     }
     var name by remember(rule) { mutableStateOf(rule.displayName) }
+    Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
+    BackBar("키워드 규칙", onBack)
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TextButton(onClick = onBack) { Text("← 돌아가기") }
-        Text("키워드 규칙", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text(rule.packageName, fontSize = 12.sp)
+        Text(rule.packageName, fontSize = 12.sp, color = DonColors.InkMuted)
         OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, label = { Text("표시 이름") }, singleLine = true)
-        Text("알림 제목이나 본문에 아래 단어가 들어가면 그렇게 처리해요. 쉼표로 나눠 적어요. 위에 있는 규칙이 먼저예요.", fontSize = 12.sp)
+        Text("알림 제목이나 본문에 아래 단어가 들어가면 그렇게 처리해요. 쉼표로 나눠 적어요. 위에 있는 규칙이 먼저예요.", fontSize = 13.sp, color = DonColors.InkSoft)
         RuleAction.entries.forEach { a ->
             var value by fields.getValue(a)
             OutlinedTextField(
@@ -220,7 +233,8 @@ fun RuleEditScreen(rule: AppRule, onSave: (AppRule) -> Unit, onDelete: () -> Uni
             onSave(rule.copy(displayName = name.ifBlank { rule.displayName }, keywordRules = rules))
             onBack()
         }, modifier = Modifier.fillMaxWidth()) { Text("저장") }
-        OutlinedButton(onClick = { onSave(rule.copy(keywordRules = AppRule.DEFAULT_KEYWORD_RULES)); onBack() }) { Text("기본 규칙으로 되돌리기") }
-        TextButton(onClick = { onDelete(); onBack() }) { Text("이 앱 목록에서 빼기", color = DonColors.Warn) }
+        SubButton(onClick = { onSave(rule.copy(keywordRules = AppRule.DEFAULT_KEYWORD_RULES)); onBack() }, modifier = Modifier.fillMaxWidth()) { Text("기본 규칙으로 되돌리기") }
+        TextButton(onClick = { onDelete(); onBack() }, color = DonColors.Warn) { Text("이 앱 목록에서 빼기") }
+    }
     }
 }

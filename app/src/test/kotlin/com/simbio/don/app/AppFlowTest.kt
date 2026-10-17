@@ -91,7 +91,7 @@ class AppFlowTest {
         // 가게 이름으로 카테고리가 골라진다
         rule.onNode(hasText("카페·간식") and isSelected()).assertExists()
         shot("02_add_entry")
-        rule.onNodeWithText("저장").performScrollTo().performClick()
+        rule.onNodeWithText("저장").performClick()
 
         waitText("−4,500원")
         rule.onNodeWithText("내역").performClick()
@@ -175,16 +175,22 @@ class AppFlowTest {
         rule.onNodeWithText("내 집").performClick()
         waitText("모의 지갑")
         shot("20_house")
+        rule.onNodeWithText("모의 지갑").performScrollTo()
+        shot("20b_house_bottom")
         rule.onAllNodesWithText("모의 쇼핑").onFirst().performScrollTo().performClick()
         waitText("뭘 사고 싶어요?")
         rule.onNodeWithText("물건 이름").performTextReplacement("나이키 덩크 로우")
         rule.onNode(hasSetTextAction() and hasText("가격")).performTextReplacement("139000")
         shot("21_shop_form")
-        rule.onNodeWithText("결제하러 가기").performScrollTo().performClick()
+        rule.onNodeWithText("결제하러 가기").performClick()
         waitText("주문 / 결제")
         shot("22_checkout")
         rule.onNodeWithText("139,000원 결제하기").performClick()
         waitText("결제 완료!")
         shot("23_paid")
+        rule.onNodeWithText("내 집 보기").performClick()
+        waitText("배송 중 2개")
+        rule.onNodeWithText("배송 중 2개").performScrollTo()
+        shot("24_house_shipping")
     }
 }

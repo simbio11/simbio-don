@@ -37,8 +37,8 @@ import com.simbio.don.app.data.toRule
 import com.simbio.don.app.ui.AppState
 import com.simbio.don.app.ui.DonColors
 import com.simbio.don.app.ui.DonTheme
-import com.simbio.don.app.ui.kit.PixelFab
-import com.simbio.don.app.ui.kit.PixelTabBar
+import com.simbio.don.app.ui.kit.AddFab
+import com.simbio.don.app.ui.kit.TabBar
 import com.simbio.don.app.ui.kit.TabItem
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.EntryEditScreen
@@ -61,12 +61,12 @@ import com.simbio.don.game.SharedTextParser
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-private enum class Tab(val label: String, val icon: UiIcon) {
-    Home("홈", UiIcon.HOME),
-    History("내역", UiIcon.LIST),
-    House("내 집", UiIcon.HOUSE),
-    Stats("통계", UiIcon.CHART),
-    Settings("설정", UiIcon.GEAR),
+private enum class Tab(val label: String, val icon: UiIcon, val selectedIcon: UiIcon) {
+    Home("홈", UiIcon.HOME, UiIcon.HOME_ON),
+    History("내역", UiIcon.LIST, UiIcon.LIST_ON),
+    House("내 집", UiIcon.HOUSE, UiIcon.HOUSE_ON),
+    Stats("통계", UiIcon.CHART, UiIcon.CHART_ON),
+    Settings("설정", UiIcon.GEAR, UiIcon.GEAR_ON),
 }
 
 /** 탭 위에 덮어 여는 화면 */
@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
         readShare(intent)
         setContent {
             DonTheme {
-                Surface(Modifier.fillMaxSize()) {
+                Surface(Modifier.fillMaxSize(), color = DonColors.Bg) {
                     Box(Modifier.safeDrawingPadding()) { App() }
                 }
             }
@@ -164,10 +164,10 @@ class MainActivity : ComponentActivity() {
         }
 
         Scaffold(
-            containerColor = DonColors.Paper,
+            containerColor = DonColors.Bg,
             bottomBar = {
-                PixelTabBar(
-                    items = Tab.entries.map { TabItem(it.label, it.icon) },
+                TabBar(
+                    items = Tab.entries.map { TabItem(it.label, it.icon, it.selectedIcon) },
                     selected = tab.ordinal,
                 ) { i ->
                     val t = Tab.entries[i]
@@ -179,7 +179,7 @@ class MainActivity : ComponentActivity() {
             },
             floatingActionButton = {
                 if (tab == Tab.Home || tab == Tab.History) {
-                    PixelFab(onClick = { overlay = Overlay.Edit(null) }, contentDescription = "지출 입력")
+                    AddFab(onClick = { overlay = Overlay.Edit(null) }, contentDescription = "지출 입력")
                 }
             },
         ) { padding ->

@@ -1,6 +1,11 @@
 package com.simbio.don.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import com.simbio.don.app.ui.kit.BackBar
+import com.simbio.don.app.ui.kit.card
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -9,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import com.simbio.don.app.ui.kit.Button
-import com.simbio.don.app.ui.kit.OutlinedButton
+import com.simbio.don.app.ui.kit.SubButton
 import androidx.compose.material3.Text
 import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.runtime.Composable
@@ -30,12 +35,16 @@ fun ReviewScreen(
     onResolve: (ReviewItemEntity, ReviewResolution) -> Unit,
     onBack: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        TextButton(onClick = onBack) { Text("← 돌아가기") }
-        Text("확인 필요", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("자동으로 넣기 애매한 결제 알림이에요. 하나씩 골라 정리해 주세요.", fontSize = 13.sp)
-        if (items.isEmpty()) Text("정리할 게 없어요.", modifier = Modifier.padding(top = 16.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
+    Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
+        BackBar("확인 필요", onBack)
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        ) {
+            item {
+                Text("자동으로 넣기 애매한 결제 알림이에요. 하나씩 골라 정리해 주세요.", fontSize = 13.sp, color = DonColors.InkSoft)
+                if (items.isEmpty()) Text("정리할 게 없어요.", modifier = Modifier.padding(top = 16.dp), color = DonColors.InkMuted)
+            }
             items(items, key = { it.id }) { item -> ReviewCard(item, canException, onResolve) }
         }
     }
@@ -58,27 +67,32 @@ private fun ReviewCard(
             ReviewReason.UNCLASSIFIED -> "어떤 알림인지 모르겠어요"
         },
     ) {
-        Text("${item.label} · ${won(item.amount)}", fontWeight = FontWeight.Bold)
-        Text("${shortDate(time.toLocalDate())} ${"%02d:%02d".format(time.hour, time.minute)}", fontSize = 12.sp)
-        Text(item.rawText, fontSize = 12.sp)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("${item.label} · ${won(item.amount)}", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = DonColors.Ink)
+        Text("${shortDate(time.toLocalDate())} ${"%02d:%02d".format(time.hour, time.minute)}", fontSize = 12.sp, color = DonColors.InkMuted)
+        Text(
+            item.rawText,
+            fontSize = 12.sp,
+            color = DonColors.InkSoft,
+            modifier = Modifier.fillMaxWidth().card(DonColors.SurfaceAlt, 10.dp).padding(10.dp),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when (reason) {
                 ReviewReason.POSSIBLE_DUPLICATE -> {
                     Button(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("하나만 반영") }
-                    OutlinedButton(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("둘 다 반영") }
+                    SubButton(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("둘 다 반영") }
                 }
                 ReviewReason.LOOKS_LIKE_FIXED_EXPENSE -> {
                     Button(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("고정비라 제외") }
-                    OutlinedButton(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("지출로 반영") }
+                    SubButton(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("지출로 반영") }
                 }
                 ReviewReason.REFUND -> {
                     Button(onClick = { onResolve(item, ReviewResolution.APPLY_REFUND) }) { Text("환불로 반영") }
-                    OutlinedButton(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("무시") }
+                    SubButton(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("무시") }
                 }
                 ReviewReason.UNCLASSIFIED -> {
                     Button(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("지출로 반영") }
-                    OutlinedButton(onClick = { onResolve(item, ReviewResolution.APPLY_REFUND) }) { Text("환불") }
-                    OutlinedButton(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("무시") }
+                    SubButton(onClick = { onResolve(item, ReviewResolution.APPLY_REFUND) }) { Text("환불") }
+                    SubButton(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("무시") }
                 }
             }
             if (canException && reason != ReviewReason.REFUND) {

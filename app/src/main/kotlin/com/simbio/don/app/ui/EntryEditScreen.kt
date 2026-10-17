@@ -1,10 +1,19 @@
 package com.simbio.don.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import com.simbio.don.app.ui.kit.BackBar
+import com.simbio.don.app.ui.kit.CategoryIcon
+import com.simbio.don.app.ui.kit.card
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,7 +66,7 @@ data class EntryDraft(
  * 지출 입력·수정. [existing]이 있으면 수정.
  * 가게 이름을 적는 동안 카테고리를 추측하고, 사용자가 고르면 그대로 둔다.
  */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EntryEditScreen(
     cycle: PayCycle,
@@ -85,86 +94,88 @@ fun EntryEditScreen(
     val exceptionAllowed = canAddException || wasException
     val recent = (0L..6L).map { today.minusDays(it) }.filter { it in cycle }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        TextButton(onClick = onBack) { Text("← 돌아가기") }
-        Text(if (existing == null) "지출 입력" else "기록 고치기", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        if (existing?.source == EntrySource.NOTIFICATION.name) {
-            Text("결제 알림에서 자동으로 기록됐어요.", fontSize = 12.sp, color = ChartColors.InkMuted)
-        }
-        MoneyField("금액", amount, { amount = it })
-        OutlinedTextField(
-            value = label,
-            onValueChange = { label = it.take(40) },
-            label = { Text("어디에 썼나요") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
+        BackBar(if (existing == null) "지출 입력" else "기록 고치기", onBack)
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            FormCard {
+                if (existing?.source == EntrySource.NOTIFICATION.name) {
+                    Text("결제 알림에서 자동으로 기록됐어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                }
+                MoneyField("금액", amount, { amount = it })
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it.take(40) },
+                    label = { Text("어디에 썼나요") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
-        Text("카테고리", fontWeight = FontWeight.Bold)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Category.entries.forEach { c ->
-                FilterChip(selected = c == category, onClick = { picked = c }, label = { CategoryLabel(c) })
+            FormCard("카테고리") {
+                CategoryGrid(category) { picked = it }
+                if (existing != null && picked != null && picked!!.name != existing.category) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = applySame, onCheckedChange = { applySame = it })
+                        Text("'${label.ifBlank { existing.label }}'의 다른 기록도 바꾸기", fontSize = 13.sp)
+                    }
+                }
+            }
+
+            FormCard("날짜") {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    (if (date in recent) recent else listOf(date) + recent).forEach { d ->
+                        FilterChip(selected = d == date, onClick = { date = d }, label = { Text(shortDate(d)) })
+                    }
+                    FilterChip(selected = false, onClick = { showPicker = true }, label = { Text("달력에서 고르기") })
+                }
+            }
+
+            FormCard("종류") {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    FilterChip(selected = type == EntryType.SPEND, onClick = { type = EntryType.SPEND }, label = { Text("일반 지출") })
+                    FilterChip(selected = type == EntryType.REFUND, onClick = { type = EntryType.REFUND }, label = { Text("환불") })
+                    FilterChip(
+                        selected = type == EntryType.EXCEPTION,
+                        onClick = { if (exceptionAllowed) type = EntryType.EXCEPTION },
+                        enabled = exceptionAllowed,
+                        label = { Text("예외 지출 $exceptionCount/2") },
+                    )
+                }
+                if (type == EntryType.EXCEPTION) {
+                    Text(
+                        "병원비·경조사비처럼 피할 수 없는 큰 지출이에요. 이번 주 결산에는 영향이 없고, 남은 주 예산을 줄여서 다시 나눠요.",
+                        fontSize = 13.sp,
+                        color = DonColors.Warn,
+                    )
+                }
+                OutlinedTextField(
+                    value = memo,
+                    onValueChange = { memo = it.take(100) },
+                    label = { Text("메모 (선택)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            if (onDelete != null) {
+                if (confirmDelete) {
+                    TextButton(onClick = { onDelete(); onBack() }, color = DonColors.Warn) { Text("정말 지우기") }
+                } else {
+                    TextButton(onClick = { confirmDelete = true }, color = DonColors.InkMuted) { Text("이 기록 지우기") }
+                }
             }
         }
-        if (existing != null && picked != null && picked!!.name != existing.category) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = applySame, onCheckedChange = { applySame = it })
-                Text("'${label.ifBlank { existing.label }}'의 다른 기록도 바꾸기", fontSize = 13.sp)
-            }
-        }
-
-        Text("날짜", fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            (if (date in recent) recent else listOf(date) + recent).forEach { d ->
-                FilterChip(selected = d == date, onClick = { date = d }, label = { Text(shortDate(d)) })
-            }
-            FilterChip(selected = false, onClick = { showPicker = true }, label = { Text("달력에서 고르기") })
-        }
-
-        Text("종류", fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            FilterChip(selected = type == EntryType.SPEND, onClick = { type = EntryType.SPEND }, label = { Text("일반 지출") })
-            FilterChip(selected = type == EntryType.REFUND, onClick = { type = EntryType.REFUND }, label = { Text("환불") })
-            FilterChip(
-                selected = type == EntryType.EXCEPTION,
-                onClick = { if (exceptionAllowed) type = EntryType.EXCEPTION },
-                enabled = exceptionAllowed,
-                label = { Text("예외 지출 $exceptionCount/2") },
-            )
-        }
-        if (type == EntryType.EXCEPTION) {
-            Text(
-                "병원비·경조사비처럼 피할 수 없는 큰 지출이에요. 이번 주 결산에는 영향이 없고, 남은 주 예산을 줄여서 다시 나눠요.",
-                fontSize = 13.sp,
-                color = DonColors.Warn,
-            )
-        }
-
-        OutlinedTextField(
-            value = memo,
-            onValueChange = { memo = it.take(100) },
-            label = { Text("메모 (선택)") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Button(
-            onClick = {
-                onSave(EntryDraft(date, amount.toLong(), label.trim(), type, category, memo.trim(), applySame))
-                onBack()
-            },
-            enabled = (amount.toLongOrNull() ?: 0) > 0,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("저장") }
-
-        if (onDelete != null) {
-            if (confirmDelete) {
-                TextButton(onClick = { onDelete(); onBack() }) { Text("정말 지우기", color = DonColors.Warn) }
-            } else {
-                TextButton(onClick = { confirmDelete = true }) { Text("이 기록 지우기") }
-            }
+        BottomBar {
+            Button(
+                onClick = {
+                    onSave(EntryDraft(date, amount.toLong(), label.trim(), type, category, memo.trim(), applySame))
+                    onBack()
+                },
+                enabled = (amount.toLongOrNull() ?: 0) > 0,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("저장") }
         }
     }
 
@@ -188,6 +199,47 @@ fun EntryEditScreen(
             },
             dismissButton = { TextButton(onClick = { showPicker = false }) { Text("취소") } },
         ) { DatePicker(state) }
+    }
+}
+
+/** 흰 카드 (+ 선택 소제목) */
+@Composable
+fun FormCard(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        title?.let { Text(it, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DonColors.Ink) }
+        content()
+    }
+}
+
+/** 카테고리 고르기: 동그란 아이콘 + 이름, 한 줄에 4개 */
+@Composable
+fun CategoryGrid(selected: Category, onSelect: (Category) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Category.entries.chunked(4).forEach { row ->
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { c ->
+                    val on = c == selected
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                            .background(if (on) DonColors.RealSurface else Color.Transparent)
+                            .selectable(selected = on, role = Role.RadioButton, onClick = { onSelect(c) })
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        CategoryIcon(c, 40.dp)
+                        Text(
+                            c.label,
+                            fontSize = 12.sp,
+                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                            color = if (on) DonColors.RealDeep else DonColors.InkSoft,
+                            maxLines = 1,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 

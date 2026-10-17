@@ -54,10 +54,54 @@ PALETTE = {
     "f": "#a4dcff",
     "F": "#6fbcf2",
     "N": "#33416f",
+    # 밝은 쪽 (빛 받는 면)
+    "1": "#ff9a88",  # 빨강
+    "2": "#fff0a3",  # 노랑
+    "3": "#b6e396",  # 초록
+    "4": "#a8eadb",  # 청록
+    "5": "#c9acf5",  # 보라
+    "6": "#ffd4e3",  # 분홍
+    "7": "#ffc78c",  # 주황
+    "8": "#f2d29c",  # 황토
+    "9": "#e8c08a",  # 나무
+    # 어두운 쪽 (그늘)
+    "d": "#86283a",  # 빨강
+    "E": "#a5651c",  # 노랑
+    "#": "#2f6a40",  # 초록
+    "0": "#2a6b62",  # 청록
+    "M": "#4c338f",  # 보라
+    "V": "#a6527e",  # 분홍
+    "Z": "#924a20",  # 주황
+    "J": "#b47c55",  # 머리 빛
+    "+": "#eef4fb",  # 유리 반사
 }
 
 # 방을 그릴 때 쓰는 이름 있는 색
 ROOM = {
+    "wall_stripe": "#efdcbd",
+    "wainscot": "#e6cfa6",
+    "wainscot_dark": "#d3b88c",
+    "wainscot_hi": "#f1dfbd",
+    "frame_hi": "#ffffff",
+    "glass_glint": "#ffffff",
+    "lamp_shade": "#f6e7c4",
+    "lamp_shade_dark": "#dcc196",
+    "lamp_lit": "#ffe9a3",
+    "lamp_lit_hi": "#fff7d6",
+    "bulb_off": "#d9cfbf",
+    "clock_face": "#fbf6ec",
+    "quilt": "#7fa0e0",
+    "quilt_dark": "#5d7fc4",
+    "quilt_hi": "#a5bff0",
+    "quilt_stitch": "#4a68a8",
+    "headboard": "#9a6440",
+    "headboard_dark": "#6e4329",
+    "headboard_hi": "#c08856",
+    "rug_fringe": "#efe2c4",
+    "plank_1": "#d29d67",
+    "plank_2": "#c99360",
+    "plank_3": "#c18a58",
+    "knot": "#a8744a",
     "wall": "#f3e4c8",
     "wall_dot": "#e9d5b2",
     "wall_shade": "#e4cfa8",
