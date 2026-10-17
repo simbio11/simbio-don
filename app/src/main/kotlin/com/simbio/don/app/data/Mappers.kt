@@ -21,12 +21,16 @@ internal val zone: ZoneId get() = ZoneId.systemDefault()
 internal fun LocalDateTime.epochSecond(): Long = atZone(zone).toEpochSecond()
 internal fun Long.toLocalDateTime(): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(this), zone)
 
+/** 저장된 이름을 enum으로. 모르는 이름(예: 새 버전에서 쓰다 되돌린 경우)은 [default]로 — 앱이 죽지 않게 */
+inline fun <reified T : Enum<T>> enumOr(name: String?, default: T): T =
+    enumValues<T>().firstOrNull { it.name == name } ?: default
+
 fun EntryEntity.toEntry() = Entry(
     date = LocalDate.ofEpochDay(epochDay),
     amount = amount,
     label = label,
-    type = EntryType.valueOf(type),
-    source = EntrySource.valueOf(source),
+    type = enumOr(type, EntryType.SPEND),
+    source = enumOr(source, EntrySource.MANUAL),
     category = Category.of(category),
 )
 
@@ -49,7 +53,7 @@ fun EntryEntity.toParsedOrNull(): ParsedPayment? {
 }
 
 fun ReviewItemEntity.toParsed() =
-    ParsedPayment(packageName, RuleAction.valueOf(action), amount, label, postedAtEpochSecond.toLocalDateTime(), rawText)
+    ParsedPayment(packageName, enumOr(action, RuleAction.SPEND), amount, label, postedAtEpochSecond.toLocalDateTime(), rawText)
 
 fun MockPurchaseEntity.toItem() = com.simbio.don.game.MockItem(
     id = id,
@@ -57,6 +61,6 @@ fun MockPurchaseEntity.toItem() = com.simbio.don.game.MockItem(
     price = price,
     kind = com.simbio.don.game.ItemKind.of(kind),
     date = LocalDate.ofEpochDay(epochDay),
-    status = com.simbio.don.game.PurchaseStatus.valueOf(status),
+    status = enumOr(status, com.simbio.don.game.PurchaseStatus.DISCARDED),
     createdAt = createdAtEpochSecond.toLocalDateTime(),
 )

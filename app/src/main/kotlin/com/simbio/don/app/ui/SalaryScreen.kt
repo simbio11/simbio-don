@@ -37,8 +37,10 @@ fun SalaryScreen(
     var amount by remember { mutableStateOf(home.lastSalary.toString()) }
     LaunchedEffect(Unit) { suggest().takeIf { it > 0 }?.let { amount = it.toString() } }
     // 예상 월급날 앞뒤로 실제 입금일을 고른다
-    val candidates = (-3L..2L).map { home.nextExpectedPayday.plusDays(it) }.filter { !it.isAfter(home.today) }
-    var start by remember { mutableStateOf(home.nextExpectedPayday) }
+    // 지난 주기 시작일보다 뒤여야 새 달이 된다
+    val candidates = (-3L..2L).map { home.nextExpectedPayday.plusDays(it) }
+        .filter { !it.isAfter(home.today) && it.isAfter(home.cycle.start) }
+    var start by remember { mutableStateOf(home.nextExpectedPayday.takeIf { it in candidates } ?: candidates.lastOrNull() ?: home.nextExpectedPayday) }
     val diff = (amount.toLongOrNull() ?: 0) - home.lastSalary
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {

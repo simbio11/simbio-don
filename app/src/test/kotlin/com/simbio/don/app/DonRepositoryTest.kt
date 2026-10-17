@@ -14,7 +14,11 @@ import com.simbio.don.game.Slot
 import com.simbio.don.notify.AppRule
 import com.simbio.don.notify.RawNotification
 import com.simbio.don.notify.ReviewReason
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -220,6 +224,79 @@ class DonRepositoryTest {
         val reviews = db.dao().reviewItemsNow()
         assertEquals(listOf(ReviewReason.POSSIBLE_DUPLICATE.name), reviews.map { it.reason })
         assertTrue(reviews.single().relatedEntryId != null)
+    }
+
+    @Test
+    fun `두 앱 알림이 동시에 와도 한 번만 기록한다`() = runTest {
+        repeat(5) { i ->
+            val amount = 10_000L + i * 1_000
+            withContext(Dispatchers.IO) {
+                listOf(
+                    async { repo.handleNotification(RawNotification("card.app", "OO카드", "승인 ${"%,d".format(amount)}원", at(10, 27, 10 + i, 2))) },
+                    async { repo.handleNotification(RawNotification("pay.app", "OO페이", "결제 ${"%,d".format(amount)}원", at(10, 27, 10 + i, 2, 1))) },
+                ).awaitAll()
+            }
+        }
+        assertEquals((0 until 5).sumOf { 10_000L + it * 1_000 }, home(at(10, 27, 20)).currentWeek!!.spent)
+        assertEquals(5, db.dao().reviewItemsNow().count { it.reason == ReviewReason.POSSIBLE_DUPLICATE.name })
+    }
+
+    @Test
+    fun `같은 앱이 같은 알림을 다시 올리면 무시`() = runTest {
+        repo.handleNotification(RawNotification("card.app", "OO카드", "승인 7,000원", at(10, 27, 19)))
+        repo.handleNotification(RawNotification("card.app", "OO카드", "승인 7,000원 (갱신)", at(10, 27, 19)))
+        assertEquals(7_000, home(at(10, 27, 20)).currentWeek!!.spent)
+        assertTrue(db.dao().reviewItemsNow().isEmpty())
+    }
+
+    @Test
+    fun `키워드 없는 알림·환불도 다른 앱 짝이면 중복으로, 정오 결산에서 한 번만 반영`() = runTest {
+        repo.handleNotification(RawNotification("pay.app", "OO페이", "결제 23,000원", at(10, 27, 19, 2)))
+        repo.handleNotification(RawNotification("card.app", "", "OO치킨 23,000원", at(10, 27, 19, 3)))
+        repo.handleNotification(RawNotification("card.app", "", "승인취소 9,000원", at(10, 28, 12)))
+        repo.handleNotification(RawNotification("pay.app", "", "결제 취소 9,000원", at(10, 28, 12, 0, 30)))
+        assertEquals(
+            listOf(ReviewReason.POSSIBLE_DUPLICATE, ReviewReason.REFUND, ReviewReason.POSSIBLE_DUPLICATE).map { it.name },
+            db.dao().reviewItemsNow().sortedBy { it.postedAtEpochSecond }.map { it.reason },
+        )
+        val noon = home(at(11, 2, 12))
+        repo.settle(noon.settleable.single(), at(11, 2, 12))
+        assertEquals(14_000, home(at(11, 2, 13)).results[0].spent)
+    }
+
+    @Test
+    fun `결산을 두 번 눌러도 한 번만`() = runTest {
+        repo.handleNotification(RawNotification("card.app", "", "OO마트 12,000원", at(10, 30))) // 미분류
+        val week = home(at(11, 2, 12)).settleable.single()
+        withContext(Dispatchers.IO) {
+            listOf(async { repo.settle(week, at(11, 2, 12)) }, async { repo.settle(week, at(11, 2, 12)) }).awaitAll()
+        }
+        assertEquals(12_000, home(at(11, 2, 13)).results[0].spent)
+        assertEquals(1, db.dao().settledWeeksNow("2026-10").size)
+    }
+
+    @Test
+    fun `월급이 예상보다 늦게 들어와도 사이 날의 지출과 모의 구매가 빠지지 않고, 두 번 눌러도 새 달은 하나`() = runTest {
+        repo.addManual(LocalDate.of(2026, 11, 25), 10_000, "국밥", EntryType.SPEND)
+        repo.buyMock("모자", 50_000, ItemKind.CLOTHES, null, LocalDate.of(2026, 11, 25), at(11, 25))
+        repo.confirmSalary(3_300_000, LocalDate.of(2026, 11, 26), at(11, 26, 10))
+        repo.confirmSalary(3_300_000, LocalDate.of(2026, 11, 26), at(11, 26, 10, 1))
+        val h = home(at(11, 26, 11))
+        assertEquals(LocalDate.of(2026, 11, 26), h.cycle.start)
+        assertTrue(h.shipping.isEmpty())
+        assertEquals(1_980_000L, h.wallet)
+        assertEquals(2, repo.cycles.first().size)
+        val last = repo.month("2026-10", LocalDate.of(2026, 11, 26)).first()!!
+        assertEquals(LocalDate.of(2026, 11, 25), last.cycle.end)
+        assertTrue(last.entities.any { it.label == "국밥" })
+    }
+
+    @Test
+    fun `한 달 중간에 시작한 첫 달도 저축을 바꾸면 남은 날 몫만큼 예산에 반영`() = runTest {
+        repo.completeOnboarding(3_300_000, 25, listOf(FixedExpense("월세", 1_000_000)), 320_000, DayOfWeek.MONDAY, LocalDate.of(2026, 11, 10))
+        assertEquals(900_000, home(at(11, 10)).plan.disposable)
+        repo.updateSettings(listOf(FixedExpense("월세", 1_000_000)), 900_000, DayOfWeek.MONDAY, applyNow = true)
+        assertEquals(637_000, home(at(11, 10)).plan.disposable)
     }
 
     @Test

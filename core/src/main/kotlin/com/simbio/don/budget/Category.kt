@@ -27,7 +27,7 @@ enum class Category(val label: String, val emoji: String) {
  */
 object CategoryGuesser {
 
-    /** 앞에 있는 카테고리가 먼저. 예: "배민 카페"는 배달 */
+    /** 가장 길게 맞은 단어의 카테고리. 길이가 같으면 앞에 있는 카테고리가 먼저 (예: "배민 카페"는 배달) */
     private val KEYWORDS: List<Pair<Category, List<String>>> = listOf(
         Category.DELIVERY to listOf("배달의민족", "배민", "쿠팡이츠", "요기요", "땡겨요", "배달"),
         Category.CAFE to listOf(
@@ -68,6 +68,18 @@ object CategoryGuesser {
         learned[key(text)]?.let { return it }
         val t = key(text)
         if (t.isEmpty()) return Category.ETC
-        return KEYWORDS.firstOrNull { (_, words) -> words.any { key(it) in t } }?.first ?: Category.ETC
+        // 가장 길게 맞은 단어가 이긴다 ("스마트스토어"가 "마트"보다 먼저). 길이가 같으면 앞 카테고리
+        var best: Category? = null
+        var bestLen = 0
+        KEYWORDS.forEach { (category, words) ->
+            words.forEach { w ->
+                val k = key(w)
+                if (k.length > bestLen && k in t) {
+                    best = category
+                    bestLen = k.length
+                }
+            }
+        }
+        return best ?: Category.ETC
     }
 }

@@ -28,11 +28,15 @@ class PaymentListenerService : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val repo by lazy { DonRepository.get(applicationContext) }
 
-    @Volatile private var watched: Set<String> = emptySet()
+    /** 아직 규칙을 못 읽었으면 null — 그동안 온 알림은 DB에서 직접 확인한다 */
+    @Volatile private var watched: Set<String>? = null
 
-    /** 같은 알림이 갱신돼 다시 올 때 두 번 세지 않도록 */
-    private val processed = object : LinkedHashMap<String, Unit>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>?) = size > 200
+    /**
+     * 같은 알림이 갱신돼 다시 올 때 두 번 세지 않도록 (알림 키 + 알림 시각 + 내용). 10분 지나면 잊는다 —
+     * 같은 알림 칸을 다시 쓰는 앱에서 같은 금액을 또 결제한 건 새로 센다.
+     */
+    private val processed = object : LinkedHashMap<String, Long>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?) = size > 200
     }
     private val lastSeenWrite = HashMap<String, Long>()
 
@@ -46,11 +50,14 @@ class PaymentListenerService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val pkg = sbn.packageName
         if (pkg == packageName) return
-        val postedAt = LocalDateTime.ofInstant(Instant.ofEpochMilli(sbn.postTime), ZoneId.systemDefault())
+        val n = sbn.notification ?: return
+        // 알림 시각: 앱이 정한 when (갱신돼 다시 올라와도 그대로). 비었거나 올라온 시각과 한 시간 넘게
+        // 다르면(다른 뜻으로 쓰는 앱) 올라온 시각
+        val time = n.`when`.takeIf { it > 0 && kotlin.math.abs(it - sbn.postTime) <= WHEN_TOLERANCE_MS } ?: sbn.postTime
+        val postedAt = LocalDateTime.ofInstant(Instant.ofEpochMilli(time), ZoneId.systemDefault())
         recordSeen(pkg, sbn.postTime, postedAt)
 
-        if (pkg !in watched) return
-        val n = sbn.notification ?: return
+        watched?.let { if (pkg !in it) return }
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
         val extras = n.extras
@@ -59,12 +66,15 @@ class PaymentListenerService : NotificationListenerService() {
             ?.toString().orEmpty()
         if (title.isBlank() && text.isBlank()) return
 
-        val key = "${sbn.key}|${title.hashCode()}|${text.hashCode()}"
+        val key = "${sbn.key}|$time|${title.hashCode()}|${text.hashCode()}"
+        val now = System.currentTimeMillis()
         synchronized(processed) {
-            if (processed.containsKey(key)) return
-            processed[key] = Unit
+            val at = processed[key]
+            if (at != null && now - at < DEDUP_MS) return
+            processed[key] = now
         }
         scope.launch {
+            if (watched == null && pkg !in repo.watchedPackages()) return@launch
             repo.handleNotification(RawNotification(pkg, title, text, postedAt))
             WeekWidget.refresh(this@PaymentListenerService)
         }
@@ -84,5 +94,7 @@ class PaymentListenerService : NotificationListenerService() {
 
     companion object {
         private const val SEEN_THROTTLE_MS = 60 * 60 * 1000L
+        private const val DEDUP_MS = 10 * 60 * 1000L
+        private const val WHEN_TOLERANCE_MS = 60 * 60 * 1000L
     }
 }

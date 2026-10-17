@@ -16,6 +16,15 @@ class CategoryGuesserTest {
     }
 
     @Test
+    fun `가장 길게 맞은 단어가 이긴다`() {
+        assertEquals(Category.SHOPPING, CategoryGuesser.guess("네이버 스마트스토어"))
+        assertEquals(Category.DELIVERY, CategoryGuesser.guess("쿠팡이츠"))
+        assertEquals(Category.SHOPPING, CategoryGuesser.guess("쿠팡"))
+        assertEquals(Category.LIVING, CategoryGuesser.guess("이마트 성수점"))
+        assertEquals(Category.DELIVERY, CategoryGuesser.guess("배민 카페"))
+    }
+
+    @Test
     fun `사용자가 고친 가게는 다음부터 그대로 쓴다`() {
         val learned = mapOf(CategoryGuesser.key("스타벅스 강남점") to Category.FOOD)
         assertEquals(Category.FOOD, CategoryGuesser.guess("스타벅스  강남점", learned))

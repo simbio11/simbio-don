@@ -147,12 +147,14 @@ fun SettlementScreen(
         }
         BottomBar {
             val haptic = LocalHapticFeedback.current
+            var sent by remember { mutableStateOf(false) }
             Button(
                 onClick = {
+                    sent = true
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onDone(selected)
                 },
-                enabled = !mustReturn || enough,
+                enabled = !sent && (!mustReturn || enough),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (mustReturn) "반품하고 결산 완료" else "결산 완료") }
         }

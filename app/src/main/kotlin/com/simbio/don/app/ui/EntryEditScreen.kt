@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.EntryEntity
+import com.simbio.don.app.data.enumOr
 import com.simbio.don.app.data.QuickPick
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.CategoryGuesser
@@ -83,7 +84,7 @@ fun EntryEditScreen(
 ) {
     var amount by remember { mutableStateOf(existing?.amount?.toString() ?: "") }
     var label by remember { mutableStateOf(existing?.label ?: "") }
-    var type by remember { mutableStateOf(existing?.let { EntryType.valueOf(it.type) } ?: EntryType.SPEND) }
+    var type by remember { mutableStateOf(existing?.let { enumOr(it.type, EntryType.SPEND) } ?: EntryType.SPEND) }
     var picked by remember { mutableStateOf(existing?.let { Category.of(it.category) }) }
     var memo by remember { mutableStateOf(existing?.memo ?: "") }
     var date by remember { mutableStateOf(existing?.let { LocalDate.ofEpochDay(it.epochDay) } ?: today.coerceIn(cycle.start, cycle.end)) }

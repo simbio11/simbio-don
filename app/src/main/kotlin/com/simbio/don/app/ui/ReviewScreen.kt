@@ -24,7 +24,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.ReviewItemEntity
 import com.simbio.don.app.data.ReviewResolution
+import com.simbio.don.app.data.enumOr
 import com.simbio.don.notify.ReviewReason
+import com.simbio.don.notify.RuleAction
 import java.time.Instant
 import java.time.ZoneId
 
@@ -57,7 +59,7 @@ private fun ReviewCard(
     canException: Boolean,
     onResolve: (ReviewItemEntity, ReviewResolution) -> Unit,
 ) {
-    val reason = ReviewReason.valueOf(item.reason)
+    val reason = enumOr(item.reason, ReviewReason.UNCLASSIFIED)
     val time = Instant.ofEpochSecond(item.postedAtEpochSecond).atZone(ZoneId.systemDefault()).toLocalDateTime()
     RealCard(
         when (reason) {
@@ -79,7 +81,8 @@ private fun ReviewCard(
             when (reason) {
                 ReviewReason.POSSIBLE_DUPLICATE -> {
                     Button(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("하나만 반영") }
-                    SubButton(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("둘 다 반영") }
+                    val both = if (item.action == RuleAction.REFUND.name) ReviewResolution.APPLY_REFUND else ReviewResolution.APPLY_SPEND
+                    SubButton(onClick = { onResolve(item, both) }) { Text("둘 다 반영") }
                 }
                 ReviewReason.LOOKS_LIKE_FIXED_EXPENSE -> {
                     Button(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("고정비라 제외") }

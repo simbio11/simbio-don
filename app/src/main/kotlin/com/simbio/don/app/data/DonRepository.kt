@@ -39,6 +39,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import com.simbio.don.notify.ParseResult
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Mutex
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -109,6 +112,12 @@ enum class ReviewResolution { APPLY_SPEND, APPLY_REFUND, APPLY_EXCEPTION, DISMIS
 
 class DonRepository(private val dao: DonDao) {
 
+    /**
+     * 읽고 → 판단하고 → 쓰는 작업은 한 번에 하나씩. 알림 두 개가 동시에 오거나
+     * 결산·월급 확인 버튼을 두 번 눌러도 같은 돈이 두 번 기록되지 않게.
+     */
+    private val writeLock = Mutex()
+
     val settings: Flow<SettingsEntity?> = dao.settings()
     val fixedExpenses: Flow<List<FixedExpenseEntity>> = dao.fixedExpenses()
     val reviewItems: Flow<List<ReviewItemEntity>> = dao.reviewItems()
@@ -174,7 +183,7 @@ class DonRepository(private val dao: DonDao) {
             mockEntities = mocks,
             mockItems = mocks.map { it.toItem() },
             wallet = MockWallet.balance(plan.disposable, Stats.total(entries.map { it.toEntry() }), mocks.map { it.toItem() }),
-            house = HouseLayout.of(HouseLevel.valueOf(house?.level ?: HouseLevel.ONE_ROOM.name), mocks.map { it.toItem() }),
+            house = HouseLayout.of(enumOr(house?.level, HouseLevel.ONE_ROOM), mocks.map { it.toItem() }),
             mood = Moods.of(current, today),
         )
     }
@@ -300,7 +309,7 @@ class DonRepository(private val dao: DonDao) {
             append('\uFEFF')
             append("날짜,구분,카테고리,내용,금액,메모,기록 방식\n")
             rows.forEach { e ->
-                val type = when (EntryType.valueOf(e.type)) {
+                val type = when (enumOr(e.type, EntryType.SPEND)) {
                     EntryType.SPEND -> "지출"
                     EntryType.REFUND -> "환불"
                     EntryType.EXCEPTION -> "예외 지출"
@@ -374,7 +383,18 @@ class DonRepository(private val dao: DonDao) {
             ),
         )
         if (applyNow) {
-            dao.latestCycleNow()?.let { dao.saveCycle(it.copy(savings = savings, fixedTotal = fixed.sumOf { f -> f.amount })) }
+            dao.latestCycleNow()?.let { c ->
+                val newFixed = fixed.sumOf { f -> f.amount }
+                // 한 달 중간에 시작한 첫 달은 예산을 따로 정해 두었으므로, 바뀐 만큼을 남은 날 몫으로 더하거나 뺀다
+                val override = c.budgetOverride?.let { o ->
+                    val diff = (c.fixedTotal + c.savings) - (newFixed + savings)
+                    val full = PayCycle.cycleFor(YearMonth.parse(c.nominal), s.payDay)
+                    val from = LocalDate.ofEpochDay(c.startEpochDay)
+                    val part = BudgetEngine.proratedDisposable(kotlin.math.abs(diff), full, from)
+                    (o + if (diff >= 0) part else -part).coerceAtLeast(0)
+                }
+                dao.saveCycle(c.copy(savings = savings, fixedTotal = newFixed, budgetOverride = override))
+            }
         }
     }
 
@@ -386,10 +406,17 @@ class DonRepository(private val dao: DonDao) {
         return dao.largestIncomeSince(since)?.amount ?: dao.latestCycleNow()?.salary ?: 0
     }
 
-    suspend fun confirmSalary(amount: Long, actualStart: LocalDate, now: LocalDateTime) {
-        val s = dao.settingsNow() ?: return
-        val prev = dao.latestCycleNow() ?: return
-        settleAllRemaining(prev, s, now)
+    suspend fun confirmSalary(amount: Long, actualStart: LocalDate, now: LocalDateTime) = writeLock.withLock {
+        val s = dao.settingsNow() ?: return@withLock
+        val prev = dao.latestCycleNow() ?: return@withLock
+        // 이미 확인했거나(두 번 누름) 지난 주기 시작보다 앞선 날짜
+        if (!actualStart.isAfter(LocalDate.ofEpochDay(prev.startEpochDay))) return@withLock
+        // 실제 입금일이 예상과 달라도 지난 주기는 새 주기 시작 전날에 끝난다 (겹치거나 비는 날이 없게)
+        val prevCycle = prev.toPayCycle(s.payDay).let { it.copy(end = actualStart.minusDays(1).coerceAtLeast(it.start)) }
+        settleAllRemaining(prev, prevCycle, s, now)
+        // 어느 주에도 들지 못한 지난 모의 구매가 영영 "배송 중"으로 남지 않게
+        val stale = dao.mockPurchasesNow().filter { it.status == PurchaseStatus.SHIPPING.name && it.epochDay < actualStart.toEpochDay() }
+        if (stale.isNotEmpty()) dao.updateMocks(stale.map { it.copy(status = PurchaseStatus.DELIVERED.name) })
         val settlementDay = s.pendingSettlementDay ?: s.settlementDay
         val nominal = YearMonth.parse(prev.nominal).plusMonths(1)
         dao.saveCycle(
@@ -405,12 +432,12 @@ class DonRepository(private val dao: DonDao) {
         dao.saveSettings(s.copy(settlementDay = settlementDay, pendingSettlementDay = null))
     }
 
-    private suspend fun settleAllRemaining(c: CycleEntity, s: SettingsEntity, now: LocalDateTime) {
+    private suspend fun settleAllRemaining(c: CycleEntity, cycle: PayCycle, s: SettingsEntity, now: LocalDateTime) {
         val done = dao.settledWeeksNow(c.nominal).map { it.weekIndex }.toSet()
-        val plan = planFor(c, c.toPayCycle(s.payDay))
+        val plan = planFor(c, cycle)
         plan.weeks.filter { it.index !in done }.forEach { w ->
             resolveLeftoverReviews(w.end)
-            val r = weekResultNow(c, s.payDay, w.index)
+            val r = weekResultNow(c, cycle, w.index)
             settleMocks(w.start, w.end, r?.overspent ?: 0, null)
             dao.markSettled(SettledWeekEntity(c.nominal, w.index, now.epochSecond(), auto = true))
         }
@@ -488,15 +515,30 @@ class DonRepository(private val dao: DonDao) {
 
     suspend fun markSeen(pkg: String, at: LocalDateTime) = dao.markSeen(SeenAppEntity(pkg, at.epochSecond()))
 
-    suspend fun handleNotification(n: RawNotification) {
+    suspend fun handleNotification(n: RawNotification) = writeLock.withLock {
         val rules = dao.appRulesNow().map { it.toRule() }
         val result = NotificationParser.parse(n, rules)
+        val parsed = when (result) {
+            is ParseResult.Payment -> result.payment
+            is ParseResult.Unclassified -> result.payment
+            else -> null
+        }
         val since = n.postedAt.minus(ReviewPolicy.DUPLICATE_WINDOW).epochSecond()
         val recentEntries = dao.notificationEntriesSince(since)
+        val inbox = dao.reviewItemsNow().filter { it.postedAtEpochSecond >= since }
+        // 같은 앱이 같은 알림을 다시 올린 것 (앱을 다시 켠 뒤 갱신된 알림 등) — 이미 센 것
+        if (parsed != null) {
+            val at = parsed.postedAt.epochSecond()
+            val seen = recentEntries.any { it.packageName == parsed.packageName && it.amount == parsed.amount && it.postedAtEpochSecond == at } ||
+                inbox.any { it.packageName == parsed.packageName && it.amount == parsed.amount && it.postedAtEpochSecond == at }
+            if (seen) return@withLock
+        }
         val recent = recentEntries.mapNotNull { e -> e.toParsedOrNull()?.let { it to e.id } }
+        // 확인함에 있는 것도 짝 찾기에 넣는다 (둘 다 확인함에 들어가 정오에 둘 다 반영되는 것을 막음)
+        val pending = inbox.map { it.toParsed() to null }
         val fixed = dao.fixedExpensesNow().map { it.toFixed() }
 
-        when (val d = ReviewPolicy.decide(result, recent.map { it.first }, fixed)) {
+        when (val d = ReviewPolicy.decide(result, (recent + pending).map { it.first }, fixed)) {
             null -> Unit
             is Decision.AutoApply -> insertFromPayment(d.payment, EntryType.SPEND)
             is Decision.Income -> dao.insertIncome(IncomeEntity(amount = d.payment.amount, postedAtEpochSecond = d.payment.postedAt.epochSecond()))
@@ -533,7 +575,14 @@ class DonRepository(private val dao: DonDao) {
         )
     }
 
-    suspend fun resolveReview(item: ReviewItemEntity, resolution: ReviewResolution) {
+    suspend fun resolveReview(item: ReviewItemEntity, resolution: ReviewResolution) = writeLock.withLock {
+        resolveReviewLocked(item, resolution)
+    }
+
+    /** [writeLock]을 쥔 상태에서만 부른다 (Mutex는 다시 잠글 수 없음) */
+    private suspend fun resolveReviewLocked(item: ReviewItemEntity, resolution: ReviewResolution) {
+        // 두 번 눌러도 한 번만
+        if (dao.reviewItemsNow().none { it.id == item.id }) return
         val p = item.toParsed()
         when (resolution) {
             ReviewResolution.APPLY_SPEND -> insertFromPayment(p, EntryType.SPEND)
@@ -550,18 +599,19 @@ class DonRepository(private val dao: DonDao) {
      * 주간 결산. [returnIds]는 사용자가 고른 반품 물건 (null이면 자동으로 고른다).
      * 자동 결산이면 확인함을 먼저 정리하고, 정리된 지출로 초과액을 다시 계산한다.
      */
-    suspend fun settle(week: WeekResult, now: LocalDateTime, returnIds: Set<Long>? = null) {
-        val c = dao.latestCycleNow() ?: return
-        val s = dao.settingsNow() ?: return
+    suspend fun settle(week: WeekResult, now: LocalDateTime, returnIds: Set<Long>? = null) = writeLock.withLock {
+        val c = dao.latestCycleNow() ?: return@withLock
+        val s = dao.settingsNow() ?: return@withLock
+        // 이미 결산한 주 (버튼 두 번 누름 등)
+        if (dao.settledWeeksNow(c.nominal).any { it.weekIndex == week.week.index }) return@withLock
         val auto = Settlement.mustAutoSettle(week.week.end, now)
         if (auto) resolveLeftoverReviews(week.week.end)
-        val result = weekResultNow(c, s.payDay, week.week.index) ?: week
+        val result = weekResultNow(c, c.toPayCycle(s.payDay), week.week.index) ?: week
         settleMocks(result.week.start, result.week.end, result.overspent, returnIds)
         dao.markSettled(SettledWeekEntity(c.nominal, week.week.index, now.epochSecond(), auto))
     }
 
-    private suspend fun weekResultNow(c: CycleEntity, payDay: Int, index: Int): WeekResult? {
-        val cycle = c.toPayCycle(payDay)
+    private suspend fun weekResultNow(c: CycleEntity, cycle: PayCycle, index: Int): WeekResult? {
         val plan = planFor(c, cycle)
         val entries = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).map { it.toEntry() }
         val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e) }.getOrDefault(l) }
@@ -579,7 +629,7 @@ class DonRepository(private val dao: DonDao) {
                 ReviewReason.LOOKS_LIKE_FIXED_EXPENSE.name -> ReviewResolution.DISMISS
                 else -> if (item.action == RuleAction.REFUND.name) ReviewResolution.APPLY_REFUND else ReviewResolution.APPLY_SPEND
             }
-            resolveReview(item, resolution)
+            resolveReviewLocked(item, resolution)
         }
     }
 

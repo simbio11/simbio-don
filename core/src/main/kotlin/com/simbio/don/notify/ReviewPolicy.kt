@@ -41,12 +41,23 @@ object ReviewPolicy {
     ): Decision? {
         val payment = when (result) {
             is ParseResult.Payment -> result.payment
-            is ParseResult.Unclassified -> return Decision.NeedsReview(result.payment, ReviewReason.UNCLASSIFIED)
+            is ParseResult.Unclassified -> {
+                // 키워드가 없어도 다른 앱에 같은 금액이 막 잡혔다면 같은 결제일 가능성이 크다
+                val dup = recent.firstOrNull { isDuplicate(result.payment, it) }
+                return if (dup != null) {
+                    Decision.NeedsReview(result.payment, ReviewReason.POSSIBLE_DUPLICATE, dup)
+                } else {
+                    Decision.NeedsReview(result.payment, ReviewReason.UNCLASSIFIED)
+                }
+            }
             ParseResult.Ignored, ParseResult.NotWatched -> return null
         }
         return when (payment.action) {
             RuleAction.INCOME -> Decision.Income(payment)
-            RuleAction.REFUND -> Decision.NeedsReview(payment, ReviewReason.REFUND)
+            RuleAction.REFUND -> {
+                val dup = recent.firstOrNull { isDuplicate(payment, it) }
+                Decision.NeedsReview(payment, if (dup != null) ReviewReason.POSSIBLE_DUPLICATE else ReviewReason.REFUND, dup)
+            }
             RuleAction.IGNORE -> null
             RuleAction.SPEND -> {
                 val dup = recent.firstOrNull { isDuplicate(payment, it) }
@@ -61,8 +72,9 @@ object ReviewPolicy {
         }
     }
 
+    /** 다른 앱에서 비슷한 시각에 같은 금액·같은 종류(지출끼리, 환불끼리)로 잡힘 */
     fun isDuplicate(a: ParsedPayment, b: ParsedPayment): Boolean =
-        a.action == RuleAction.SPEND && b.action == RuleAction.SPEND &&
+        a.action == b.action && (a.action == RuleAction.SPEND || a.action == RuleAction.REFUND) &&
             a.amount == b.amount && a.packageName != b.packageName &&
             abs(Duration.between(a.postedAt, b.postedAt).toSeconds()) <= DUPLICATE_WINDOW.toSeconds()
 

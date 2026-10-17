@@ -41,16 +41,18 @@ interface DonDao {
     }
 
     // 주기
-    @Query("SELECT * FROM cycle ORDER BY startEpochDay DESC LIMIT 1")
+    // 최신 주기 = 가장 늦은 달(nominal "YYYY-MM"). 시작일로 고르면 한 달 중간에 시작한 첫 달과
+    // 앞당겨 입금된 다음 달이 같은 날일 때 옛 달에 머문다
+    @Query("SELECT * FROM cycle ORDER BY nominal DESC LIMIT 1")
     fun latestCycle(): Flow<CycleEntity?>
 
-    @Query("SELECT * FROM cycle ORDER BY startEpochDay DESC LIMIT 1")
+    @Query("SELECT * FROM cycle ORDER BY nominal DESC LIMIT 1")
     suspend fun latestCycleNow(): CycleEntity?
 
     @Upsert
     suspend fun saveCycle(c: CycleEntity)
 
-    @Query("SELECT * FROM cycle ORDER BY startEpochDay DESC")
+    @Query("SELECT * FROM cycle ORDER BY nominal DESC")
     fun cycles(): Flow<List<CycleEntity>>
 
     // 지출
