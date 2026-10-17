@@ -14,6 +14,7 @@ import com.simbio.don.budget.FixedExpense
 import com.simbio.don.budget.WeekResult
 import com.simbio.don.game.ItemKind
 import com.simbio.don.notify.AppRule
+import com.simbio.don.app.weather.WeatherService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -55,6 +56,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshClock() {
         clock.value = LocalDateTime.now()
+        refreshWeather()
+    }
+
+    /** 창밖 날씨 (null = 끔 또는 아직 모름 → 맑음) */
+    val weather = MutableStateFlow(WeatherService.cached(app))
+
+    fun refreshWeather() = viewModelScope.launch { weather.value = WeatherService.refresh(getApplication()) }
+
+    fun setWeatherCity(name: String?) {
+        WeatherService.setCity(getApplication(), name)
+        weather.value = null
+        refreshWeather()
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -73,6 +86,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // 내역·통계: 고른 달 (null = 이번 달)
     val cycles = repo.cycles.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 달마다 요약 (월별 추이·모은 돈) */
+    val summaries = repo.summaries(clock).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val categoryBudgets = repo.categoryBudgets.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    fun saveCategoryBudgets(b: Map<com.simbio.don.budget.Category, Long>) = viewModelScope.launch { repo.saveCategoryBudgets(b) }
+
+    val goals = repo.goals.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addGoal(name: String, target: Long, icon: String) = viewModelScope.launch { repo.addGoal(name, target, icon, clock.value.toLocalDate()) }
+
+    fun updateGoal(g: com.simbio.don.app.data.SavingsGoalEntity) = viewModelScope.launch { repo.updateGoal(g) }
+
+    fun deleteGoal(g: com.simbio.don.app.data.SavingsGoalEntity) = viewModelScope.launch { repo.deleteGoal(g) }
     private val selectedNominal = MutableStateFlow<String?>(null)
 
     @OptIn(ExperimentalCoroutinesApi::class)

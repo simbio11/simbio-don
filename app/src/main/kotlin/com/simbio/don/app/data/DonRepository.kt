@@ -81,6 +81,17 @@ data class HomeState(
     val wallet: Long,
     val house: HouseLayout,
     val mood: Mood,
+    // ── 가계부 더 ──
+    /** 이번 달 수입 */
+    val monthIncome: Long = 0,
+    val categoryBudgets: Map<Category, Long> = emptyMap(),
+    /** 지금까지 모은 돈 (모든 달) */
+    val savedTotal: Long = 0,
+    /** 이번 달 모은 돈 (먼저 뗀 저축 + 지금까지 아낀 돈) */
+    val savedThisMonth: Long = 0,
+    val goals: List<GoalProgress> = emptyList(),
+    /** 예산을 지킨 결산이 몇 주 연속인지 */
+    val streak: Int = 0,
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
 
@@ -97,6 +108,7 @@ data class HomeState(
 
 /** 내역·통계 화면용 한 달 묶음. */
 data class MonthView(
+    val categoryBudgets: Map<Category, Long> = emptyMap(),
     val nominal: String,
     val cycle: PayCycle,
     val plan: CyclePlan,
@@ -124,8 +136,42 @@ class DonRepository(private val dao: DonDao) {
     val appRules: Flow<List<AppRuleEntity>> = dao.appRules()
     val seenApps: Flow<List<SeenAppEntity>> = dao.seenApps()
 
+    /** 홈에 함께 보여주는 것들 (카테고리 예산·목표·결산 기록) */
+    private data class HomeExtras(
+        val budgets: Map<Category, Long>,
+        val goals: List<SavingsGoalEntity>,
+        val settled: List<SettledWeekEntity>,
+    )
+
+    private val extras: Flow<HomeExtras> = combine(dao.categoryBudgets(), dao.goals(), dao.allSettledWeeks()) { b, g, w ->
+        HomeExtras(b.associate { Category.of(it.category) to it.amount }, g, w)
+    }
+
+    /** 달마다 요약 (최신 달 먼저): 월별 추이·모은 돈 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun summaries(now: Flow<LocalDateTime>): Flow<List<CycleSummary>> =
+        combine(dao.settings(), dao.cycles()) { s, cs -> s to cs }.flatMapLatest { (s, cs) ->
+            if (s == null || cs.isEmpty()) return@flatMapLatest flowOf(emptyList())
+            combine(dao.entriesSince(cs.last().startEpochDay), now) { all, t -> Summaries.cycles(s.payDay, cs, all, t.toLocalDate()) }
+        }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     fun home(now: Flow<LocalDateTime>): Flow<HomeState?> =
+        combine(homeBase(now), extras, summaries(now)) { h, x, sums ->
+            h?.let {
+                val total = sums.sumOf { s -> s.saved }
+                it.copy(
+                    categoryBudgets = x.budgets,
+                    savedTotal = total,
+                    savedThisMonth = sums.firstOrNull()?.saved ?: 0,
+                    goals = Summaries.goals(total, x.goals),
+                    streak = Summaries.streak(x.settled),
+                )
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun homeBase(now: Flow<LocalDateTime>): Flow<HomeState?> =
         combine(dao.settings(), dao.latestCycle()) { s, c -> s to c }.flatMapLatest { (s, c) ->
             if (s == null || c == null) return@flatMapLatest flowOf(null)
             val cycle = c.toPayCycle(s.payDay)
@@ -179,12 +225,19 @@ class DonRepository(private val dao: DonDao) {
             lastSalary = c.salary,
             entries = entries,
             monthSpent = Stats.total(entries.map { it.toEntry() }),
+            monthIncome = Stats.income(entries.map { it.toEntry() }),
             todayAllowance = current?.let { Stats.todayAllowance(it, today) } ?: 0,
             mockEntities = mocks,
             mockItems = mocks.map { it.toItem() },
             wallet = MockWallet.balance(plan.disposable, Stats.total(entries.map { it.toEntry() }), mocks.map { it.toItem() }),
             house = HouseLayout.of(enumOr(house?.level, HouseLevel.ONE_ROOM), mocks.map { it.toItem() }),
-            mood = Moods.of(current, today),
+            mood = Moods.of(
+                current,
+                today,
+                MockWallet.balance(plan.disposable, Stats.total(entries.map { it.toEntry() }), mocks.map { it.toItem() }),
+                plan.disposable,
+                cycle,
+            ),
         )
     }
 
@@ -267,6 +320,10 @@ class DonRepository(private val dao: DonDao) {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun month(nominal: String, today: LocalDate): Flow<MonthView?> =
+        combine(monthBase(nominal, today), dao.categoryBudgets()) { m, b -> m?.copy(categoryBudgets = b.associate { Category.of(it.category) to it.amount }) }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun monthBase(nominal: String, today: LocalDate): Flow<MonthView?> =
         combine(dao.settings(), dao.cycles()) { s, cs -> s to cs }.flatMapLatest { (s, cs) ->
             val idx = cs.indexOfFirst { it.nominal == nominal }
             if (s == null || idx < 0) return@flatMapLatest flowOf(null)
@@ -313,6 +370,7 @@ class DonRepository(private val dao: DonDao) {
                     EntryType.SPEND -> "지출"
                     EntryType.REFUND -> "환불"
                     EntryType.EXCEPTION -> "예외 지출"
+                    EntryType.INCOME -> "수입"
                 }
                 val src = if (e.source == EntrySource.NOTIFICATION.name) "알림 자동" else "직접 입력"
                 append(listOf(LocalDate.ofEpochDay(e.epochDay).toString(), type, Category.of(e.category).label, q(e.label),
@@ -439,7 +497,7 @@ class DonRepository(private val dao: DonDao) {
             resolveLeftoverReviews(w.end)
             val r = weekResultNow(c, cycle, w.index)
             settleMocks(w.start, w.end, r?.overspent ?: 0, null)
-            dao.markSettled(SettledWeekEntity(c.nominal, w.index, now.epochSecond(), auto = true))
+            dao.markSettled(settledOf(c.nominal, w.index, now, true, r))
         }
     }
 
@@ -453,9 +511,20 @@ class DonRepository(private val dao: DonDao) {
         category: Category? = null,
         memo: String = "",
     ) {
-        val name = label.ifBlank { if (type == EntryType.EXCEPTION) "예외 지출" else "지출" }
-        val cat = category ?: CategoryGuesser.guess(name, learned())
-        if (category != null && label.isNotBlank()) learn(name, category)
+        val name = label.ifBlank {
+            when (type) {
+                EntryType.EXCEPTION -> "예외 지출"
+                EntryType.INCOME -> "수입"
+                else -> "지출"
+            }
+        }
+        val cat = category ?: if (type == EntryType.INCOME) {
+            Category.guessIncome(name, amount, dao.latestCycleNow()?.salary ?: 0)
+        } else {
+            CategoryGuesser.guess(name, learned())
+        }
+        // 가게별 카테고리 기억은 지출에만 (수입 카테고리를 지출 추측에 섞지 않게)
+        if (category != null && label.isNotBlank() && !category.income) learn(name, category)
         dao.insertEntry(
             EntryEntity(
                 epochDay = date.toEpochDay(),
@@ -475,11 +544,11 @@ class DonRepository(private val dao: DonDao) {
      */
     suspend fun updateEntry(updated: EntryEntity, previous: EntryEntity, applyToSameLabel: Boolean) {
         dao.updateEntry(updated)
-        if (updated.category != previous.category) {
+        if (updated.category != previous.category && !Category.of(updated.category).income) {
             learn(updated.label, Category.of(updated.category))
             if (applyToSameLabel) {
                 val key = CategoryGuesser.key(updated.label)
-                val same = dao.allEntriesNow().filter { it.id != updated.id && CategoryGuesser.key(it.label) == key }
+                val same = dao.allEntriesNow().filter { it.id != updated.id && it.type != EntryType.INCOME.name && CategoryGuesser.key(it.label) == key }
                 dao.updateEntries(same.map { it.copy(category = updated.category) })
             }
         }
@@ -541,7 +610,12 @@ class DonRepository(private val dao: DonDao) {
         when (val d = ReviewPolicy.decide(result, (recent + pending).map { it.first }, fixed)) {
             null -> Unit
             is Decision.AutoApply -> insertFromPayment(d.payment, EntryType.SPEND)
-            is Decision.Income -> dao.insertIncome(IncomeEntity(amount = d.payment.amount, postedAtEpochSecond = d.payment.postedAt.epochSecond()))
+            is Decision.Income -> {
+                dao.insertIncome(IncomeEntity(amount = d.payment.amount, postedAtEpochSecond = d.payment.postedAt.epochSecond()))
+                // 다른 앱에 같은 입금이 막 잡혔으면 한 번만 적는다
+                val dup = recent.any { (p, _) -> ReviewPolicy.isDuplicate(d.payment, p) }
+                if (!dup) insertFromPayment(d.payment, EntryType.INCOME)
+            }
             is Decision.NeedsReview -> dao.insertReview(
                 ReviewItemEntity(
                     packageName = d.payment.packageName,
@@ -559,8 +633,11 @@ class DonRepository(private val dao: DonDao) {
 
     private suspend fun insertFromPayment(p: ParsedPayment, type: EntryType) {
         val learned = learned()
-        val category = CategoryGuesser.guess(p.label, learned).takeIf { it != Category.ETC }
-            ?: CategoryGuesser.guess(p.rawText, learned)
+        val category = if (type == EntryType.INCOME) {
+            Category.guessIncome(p.rawText, p.amount, dao.latestCycleNow()?.salary ?: 0)
+        } else {
+            CategoryGuesser.guess(p.label, learned).takeIf { it != Category.ETC } ?: CategoryGuesser.guess(p.rawText, learned)
+        }
         dao.insertEntry(
             EntryEntity(
                 epochDay = p.postedAt.toLocalDate().toEpochDay(),
@@ -608,8 +685,19 @@ class DonRepository(private val dao: DonDao) {
         if (auto) resolveLeftoverReviews(week.week.end)
         val result = weekResultNow(c, c.toPayCycle(s.payDay), week.week.index) ?: week
         settleMocks(result.week.start, result.week.end, result.overspent, returnIds)
-        dao.markSettled(SettledWeekEntity(c.nominal, week.week.index, now.epochSecond(), auto))
+        dao.markSettled(settledOf(c.nominal, week.week.index, now, auto, result))
     }
+
+    private fun settledOf(nominal: String, index: Int, now: LocalDateTime, auto: Boolean, r: WeekResult?) = SettledWeekEntity(
+        nominal = nominal,
+        weekIndex = index,
+        settledAtEpochSecond = now.epochSecond(),
+        auto = auto,
+        budget = r?.budget ?: 0,
+        spent = r?.spent ?: 0,
+        savedBps = r?.savedBps ?: -1,
+        overspent = r?.overspent ?: 0,
+    )
 
     private suspend fun weekResultNow(c: CycleEntity, cycle: PayCycle, index: Int): WeekResult? {
         val plan = planFor(c, cycle)
@@ -632,6 +720,24 @@ class DonRepository(private val dao: DonDao) {
             resolveReviewLocked(item, resolution)
         }
     }
+
+    // ── 카테고리 예산·저축 목표 ───────────────────────────────
+
+    val categoryBudgets: Flow<Map<Category, Long>> = dao.categoryBudgets().map { l -> l.associate { Category.of(it.category) to it.amount } }
+
+    suspend fun saveCategoryBudgets(budgets: Map<Category, Long>) =
+        dao.replaceCategoryBudgets(budgets.filterValues { it > 0 }.map { (c, a) -> CategoryBudgetEntity(c.name, a) })
+
+    val goals: Flow<List<SavingsGoalEntity>> = dao.goals()
+
+    suspend fun addGoal(name: String, target: Long, icon: String, today: LocalDate) {
+        val order = (dao.goalsNow().maxOfOrNull { it.sortOrder } ?: -1) + 1
+        dao.saveGoal(SavingsGoalEntity(name = name.take(30), target = target, icon = icon, createdAtEpochDay = today.toEpochDay(), sortOrder = order))
+    }
+
+    suspend fun updateGoal(g: SavingsGoalEntity) = dao.saveGoal(g)
+
+    suspend fun deleteGoal(g: SavingsGoalEntity) = dao.deleteGoal(g)
 
     // ── 알림 규칙 ─────────────────────────────────────────────
 

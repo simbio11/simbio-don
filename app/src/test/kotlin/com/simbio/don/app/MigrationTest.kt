@@ -21,7 +21,7 @@ class MigrationTest {
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (1, 20000, 4500, '스타벅스 강남점', 'SPEND', 'MANUAL')")
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
-        val db = helper.runMigrationsAndValidate("m.db", 3, true, DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3)
+        val db = helper.runMigrationsAndValidate("m.db", 4, true, DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3, DonDatabase.MIGRATION_3_4)
         db.query("SELECT id, amount, category, memo FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
             c.moveToNext(); assertEquals("ETC", c.getString(2))

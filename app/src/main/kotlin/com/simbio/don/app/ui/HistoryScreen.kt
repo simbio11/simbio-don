@@ -136,7 +136,7 @@ fun HistoryScreen(
             Spacer(Modifier.height(12.dp))
         }
         if (q.isNotEmpty()) item {
-            val sum = filtered.sumOf { if (it.type == EntryType.REFUND.name) -it.amount else it.amount }
+            val sum = filtered.sumOf(::spendSigned)
             Text(
                 "'$q' ${filtered.size}건 · ${won(sum)}",
                 fontSize = 14.sp,
@@ -146,6 +146,7 @@ fun HistoryScreen(
             )
         } else item {
             RealCard("이번 달 ${won(Stats.total(view.entries))} 썼어요") {
+                MonthSummaryRow(Stats.income(view.entries), Stats.total(view.entries))
                 Spacer(Modifier.height(4.dp))
                 MonthCalendar(view.cycle.start, view.cycle.end, weekStart, daily, view.today, selectedDate) { d ->
                     onSelectDate(if (d == selectedDate) null else d)
@@ -167,7 +168,7 @@ fun HistoryScreen(
         groups.forEach { (day, list) ->
             item(key = "d$day") {
                 val d = LocalDate.ofEpochDay(day)
-                val sum = list.sumOf { if (it.type == EntryType.REFUND.name) -it.amount else it.amount }
+                val sum = list.sumOf(::spendSigned)
                 Column(Modifier.padding(top = 10.dp).fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp)) {
                         Text(shortDate(d), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
@@ -178,6 +179,30 @@ fun HistoryScreen(
             }
         }
         item { Spacer(Modifier.height(96.dp)) }
+    }
+}
+
+/** 지출 쪽 금액 (환불은 빼고 수입은 0) */
+fun spendSigned(e: EntryEntity): Long = when (e.type) {
+    EntryType.REFUND.name -> -e.amount
+    EntryType.INCOME.name -> 0
+    else -> e.amount
+}
+
+/** 수입 · 지출 · 남은 돈 세 칸 */
+@Composable
+fun MonthSummaryRow(income: Long, spent: Long) {
+    Row(Modifier.fillMaxWidth().card(DonColors.SurfaceAlt, 12.dp).padding(vertical = 12.dp)) {
+        listOf(
+            Triple("수입", "+${won(income)}", DonColors.Real),
+            Triple("지출", "−${won(spent)}", DonColors.Ink),
+            Triple("합계", (if (income - spent >= 0) "+" else "−") + won(kotlin.math.abs(income - spent)), if (income - spent >= 0) DonColors.Good else DonColors.Warn),
+        ).forEach { (label, value, color) ->
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(label, fontSize = 12.sp, color = DonColors.InkMuted)
+                Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1)
+            }
+        }
     }
 }
 
@@ -197,6 +222,7 @@ fun EntryRow(e: EntryEntity, onOpen: (EntryEntity) -> Unit) {
                     append(c.label)
                     append(if (e.source == EntrySource.NOTIFICATION.name) " · 알림 자동" else " · 직접 입력")
                     if (e.type == EntryType.EXCEPTION.name) append(" · 예외 지출")
+                    if (e.type == EntryType.INCOME.name) append(" · 수입")
                     if (e.memo.isNotBlank()) append(" · ${e.memo}")
                 },
                 fontSize = 12.sp,
@@ -204,11 +230,12 @@ fun EntryRow(e: EntryEntity, onOpen: (EntryEntity) -> Unit) {
                 maxLines = 1,
             )
         }
+        val plus = e.type == EntryType.REFUND.name || e.type == EntryType.INCOME.name
         Text(
-            if (e.type == EntryType.REFUND.name) "+${won(e.amount)}" else "−${won(e.amount)}",
+            if (plus) "+${won(e.amount)}" else "−${won(e.amount)}",
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
-            color = if (e.type == EntryType.REFUND.name) DonColors.Real else DonColors.Ink,
+            color = if (plus) DonColors.Real else DonColors.Ink,
         )
     }
 }

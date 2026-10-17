@@ -48,7 +48,11 @@ fun CycleEntity.toPayCycle(payDay: Int): PayCycle {
 fun EntryEntity.toParsedOrNull(): ParsedPayment? {
     val pkg = packageName ?: return null
     val posted = postedAtEpochSecond ?: return null
-    val action = if (type == EntryType.REFUND.name) RuleAction.REFUND else RuleAction.SPEND
+    val action = when (type) {
+        EntryType.REFUND.name -> RuleAction.REFUND
+        EntryType.INCOME.name -> RuleAction.INCOME
+        else -> RuleAction.SPEND
+    }
     return ParsedPayment(pkg, action, amount, label, posted.toLocalDateTime(), "")
 }
 

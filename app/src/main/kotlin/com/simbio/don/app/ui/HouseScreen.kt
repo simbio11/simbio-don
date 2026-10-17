@@ -40,6 +40,7 @@ import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.kit.WarnLine
 import com.simbio.don.app.ui.kit.card
 import com.simbio.don.app.ui.kit.Divider
+import com.simbio.don.app.weather.Weather
 import com.simbio.don.game.MockItem
 import com.simbio.don.game.MockWallet
 import com.simbio.don.game.Wishlist
@@ -52,6 +53,8 @@ fun HouseScreen(
     onDiscard: (Set<Long>) -> Unit,
     onBuyWish: (MockItem) -> Unit = {},
     onGiveUpWish: (MockItem) -> Unit = {},
+    weather: Weather? = null,
+    city: String? = null,
 ) {
     val house = home.house
     var picking by remember { mutableStateOf<Pair<String, List<MockItem>>?>(null) }
@@ -63,7 +66,11 @@ fun HouseScreen(
         Row(Modifier.padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("내 ${house.level.label}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
-                Text("나는 지금 ${home.mood.label}", fontSize = 13.sp, color = DonColors.GameDeep)
+                Text(
+                    "나는 지금 ${home.mood.label}" + if (weather != null && city != null) " · $city ${weather.label}" else "",
+                    fontSize = 13.sp,
+                    color = DonColors.GameDeep,
+                )
             }
             Badge(
                 "수납 ${house.itemCount}/${house.capacity}",
@@ -77,6 +84,7 @@ fun HouseScreen(
                 home.mood,
                 modifier = Modifier.clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                 phase = DayPhase.of(home.now.toLocalTime()),
+                weather = weather ?: Weather.CLEAR,
                 onTap = { hit ->
                     when (hit) {
                         is RoomHit.OfSlot -> picking = hit.slot.label to house.slots[hit.slot].orEmpty()
@@ -127,7 +135,7 @@ fun HouseScreen(
         GameCard("모의 지갑", icon = { Icon(UiIcon.WALLET, 18.dp, DonColors.Game) }) {
             Text(won(home.wallet), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
             Text("이번 달 쓸 수 있는 돈에서 실제 지출과 아직 돌려받지 않은 모의 구매를 뺀 금액이에요.", fontSize = 12.sp, color = DonColors.InkSoft)
-            Text("쇼핑 앱에서 '공유 → 돈 아끼는 게임'을 눌러도 바로 와요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            Text("쇼핑 앱에서 '공유 → 돈't'를 눌러도 바로 와요.", fontSize = 12.sp, color = DonColors.InkMuted)
         }
 
         if (home.shipping.isNotEmpty()) {
@@ -235,7 +243,7 @@ private fun DiscardDialog(title: String, items: List<MockItem>, onDismiss: () ->
 
 /** 첫 화면용 집 카드: 지금 내 방 모습 그대로 */
 @Composable
-fun HomeGameCard(home: HomeState, onHouse: () -> Unit, onShop: () -> Unit) {
+fun HomeGameCard(home: HomeState, onHouse: () -> Unit, onShop: () -> Unit, weather: Weather? = null) {
     Column(Modifier.fillMaxWidth().card(DonColors.GameSurface)) {
         Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -244,7 +252,7 @@ fun HomeGameCard(home: HomeState, onHouse: () -> Unit, onShop: () -> Unit) {
             }
             MoreButton("내 집 보기", onHouse)
         }
-        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)), DayPhase.of(home.now.toLocalTime()))
+        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)), DayPhase.of(home.now.toLocalTime()), weather ?: Weather.CLEAR)
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

@@ -25,12 +25,23 @@ data class SpendingPace(
  */
 object Stats {
 
-    fun signed(e: Entry): Long = if (e.type == EntryType.REFUND) -e.amount else e.amount
+    /** 지출 쪽 금액 (환불은 빼고, 수입은 0) */
+    fun signed(e: Entry): Long = when (e.type) {
+        EntryType.REFUND -> -e.amount
+        EntryType.INCOME -> 0
+        else -> e.amount
+    }
 
     fun total(entries: List<Entry>): Long = entries.sumOf { signed(it) }.coerceAtLeast(0)
 
+    /** 수입 합계 */
+    fun income(entries: List<Entry>): Long = entries.filter { it.type == EntryType.INCOME }.sumOf { it.amount }
+
+    private fun spending(entries: List<Entry>) = entries.filter { it.type != EntryType.INCOME }
+
+    /** 카테고리별 지출 (수입 제외) */
     fun byCategory(entries: List<Entry>): List<CategoryTotal> {
-        val groups = entries.groupBy { it.category }
+        val groups = spending(entries).groupBy { it.category }
             .mapValues { (_, list) -> list.sumOf { signed(it) } to list.count { it.type != EntryType.REFUND } }
             .filterValues { it.first > 0 }
         val sum = groups.values.sumOf { it.first }
@@ -40,10 +51,10 @@ object Stats {
     }
 
     fun daily(entries: List<Entry>): Map<LocalDate, Long> =
-        entries.groupBy { it.date }.mapValues { (_, l) -> l.sumOf { signed(it) } }.filterValues { it != 0L }
+        spending(entries).groupBy { it.date }.mapValues { (_, l) -> l.sumOf { signed(it) } }.filterValues { it != 0L }
 
     fun topPlaces(entries: List<Entry>, n: Int = 5): List<PlaceTotal> =
-        entries.filter { it.type != EntryType.REFUND }
+        entries.filter { it.type != EntryType.REFUND && it.type != EntryType.INCOME }
             .groupBy { CategoryGuesser.key(it.label) }
             .map { (_, l) -> PlaceTotal(l.first().label, l.sumOf { it.amount }, l.size) }
             .sortedByDescending { it.amount }

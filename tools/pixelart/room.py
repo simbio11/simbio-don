@@ -625,14 +625,22 @@ def draw_base():
 
 # ── 시간대 레이어 ───────────────────────────────────────────
 
-def sky(phase):
+def sky(phase, overcast=False):
+    """창밖 하늘 띠. [overcast]면 흐린 날 (비·눈·흐림·천둥·안개 — 비·눈 알갱이는 앱이 따로 뿌린다)"""
     gx, gy, gw, gh = GLASS
     cv = Canvas(SKY_W, gh)
-    stops = {
-        "day": ["#7cc3f2", "#8fd0f7", "#a9dcfa", "#c8edff"],
-        "sunset": ["#6a5aa8", "#c86f9a", "#f39a74", "#ffcf7a"],
-        "night": ["#141a3a", "#1c2550", "#263266", "#2f3c78"],
-    }[phase]
+    if overcast:
+        stops = {
+            "day": ["#8e9aab", "#a3aebc", "#b6bfcb", "#c9d0d9"],
+            "sunset": ["#6f6a86", "#8d7f95", "#a8939c", "#bba6a3"],
+            "night": ["#15182a", "#1b1f33", "#22273d", "#2a3047"],
+        }[phase]
+    else:
+        stops = {
+            "day": ["#7cc3f2", "#8fd0f7", "#a9dcfa", "#c8edff"],
+            "sunset": ["#6a5aa8", "#c86f9a", "#f39a74", "#ffcf7a"],
+            "night": ["#141a3a", "#1c2550", "#263266", "#2f3c78"],
+        }[phase]
     band = gh / len(stops)
     for y in range(gh):
         i = min(len(stops) - 1, int(y / band))
@@ -642,6 +650,14 @@ def sky(phase):
             for x in range(SKY_W):
                 if dot(x, y, 6):
                     cv.px(x, y, rgba(stops[i + 1]))
+    if overcast:
+        # 두꺼운 회색 구름 띠
+        cloud = {"day": ("#d5dbe3", "#aab4c1"), "sunset": ("#b7a7ad", "#8f8090"), "night": ("#2f354c", "#23283b")}[phase]
+        for (x, y, w) in [(0, 1, 14), (12, 4, 16), (26, 0, 14), (38, 5, 18), (52, 2, 12), (6, 10, 12), (30, 12, 14), (48, 11, 14)]:
+            cv.rect(x + 2, y, w - 4, 1, rgba(cloud[0]))
+            cv.rect(x, y + 1, w, 3, rgba(cloud[0]))
+            cv.hline(x + 1, y + 3, w - 2, rgba(cloud[1]))
+        return cv.img
     if phase == "night":
         for (x, y) in [(3, 2), (11, 6), (19, 1), (27, 9), (36, 3), (44, 7), (52, 2), (59, 11), (8, 13), (31, 15), (48, 14)]:
             cv.px(x, y, rgba("#fff6c8"))

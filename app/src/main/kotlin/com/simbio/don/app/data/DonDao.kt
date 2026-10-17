@@ -163,4 +163,44 @@ interface DonDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun markSettled(s: SettledWeekEntity)
+
+    // ── 결산 기록 (모든 달) ──
+    @Query("SELECT * FROM settled_week ORDER BY nominal, weekIndex")
+    fun allSettledWeeks(): Flow<List<SettledWeekEntity>>
+
+    @Query("SELECT * FROM settled_week ORDER BY nominal, weekIndex")
+    suspend fun allSettledWeeksNow(): List<SettledWeekEntity>
+
+    // ── 카테고리 예산 ──
+    @Query("SELECT * FROM category_budget")
+    fun categoryBudgets(): Flow<List<CategoryBudgetEntity>>
+
+    @Query("DELETE FROM category_budget")
+    suspend fun clearCategoryBudgets()
+
+    @Insert
+    suspend fun insertCategoryBudgets(items: List<CategoryBudgetEntity>)
+
+    @Transaction
+    suspend fun replaceCategoryBudgets(items: List<CategoryBudgetEntity>) {
+        clearCategoryBudgets()
+        insertCategoryBudgets(items)
+    }
+
+    // ── 저축 목표 ──
+    @Query("SELECT * FROM savings_goal ORDER BY sortOrder, id")
+    fun goals(): Flow<List<SavingsGoalEntity>>
+
+    @Query("SELECT * FROM savings_goal ORDER BY sortOrder, id")
+    suspend fun goalsNow(): List<SavingsGoalEntity>
+
+    @Upsert
+    suspend fun saveGoal(g: SavingsGoalEntity): Long
+
+    @Delete
+    suspend fun deleteGoal(g: SavingsGoalEntity)
+
+    // ── 여러 달 기록 (월별 추이·모은 돈) ──
+    @Query("SELECT * FROM entry WHERE epochDay >= :from ORDER BY epochDay")
+    fun entriesSince(from: Long): Flow<List<EntryEntity>>
 }

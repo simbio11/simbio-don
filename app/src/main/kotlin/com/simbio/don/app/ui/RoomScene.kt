@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.simbio.don.app.weather.Weather
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -56,6 +58,36 @@ sealed interface RoomHit {
     data class OfSlot(val slot: Slot) : RoomHit
     data object Floor : RoomHit
     data object Trash : RoomHit
+}
+
+/** 번개: 6초마다 0.12초쯤 번쩍 */
+private fun lightning(ms: Int) = ms % 6_000 < 120 || ms % 6_000 in 220..300
+
+/** 유리창 안 날씨 (비·눈 알갱이, 안개, 번개). 원본 픽셀 좌표 */
+private fun DrawScope.drawWeather(weather: Weather, ms: Int, g: androidx.compose.ui.unit.IntRect) {
+    val t = ms / 1000f
+    when (weather) {
+        Weather.RAIN, Weather.STORM -> {
+            // 비 오는 하늘은 더 어둡게, 빗줄기는 밝게
+            drawRect(Color(0x40303A4C), Offset(g.left.toFloat(), g.top.toFloat()), Size(g.width.toFloat(), g.height.toFloat()))
+            repeat(30) { i ->
+                val speed = 30f + (i * 7 % 12)
+                // 빗방울마다 시작 높이를 흩어 둔다
+                val y = kotlin.math.floor(((t * speed + (i * 47) % (g.height + 6)) % (g.height + 6)) - 3)
+                val x = kotlin.math.floor(((i * 37 % g.width) - y / 3 + g.width) % g.width)
+                drawRect(Color(0xFFEAF3FF), Offset(g.left + x, g.top + y), Size(1f, 2f))
+                drawRect(Color(0xAAEAF3FF), Offset(g.left + x - 1, g.top + y + 2), Size(1f, 2f))
+            }
+            if (weather == Weather.STORM && lightning(ms)) drawRect(Color(0xB0FFFFFF), Offset(g.left.toFloat(), g.top.toFloat()), Size(g.width.toFloat(), g.height.toFloat()))
+        }
+        Weather.SNOW -> repeat(14) { i ->
+            val y = ((t * (3.5f + i % 3) + i * 7) % (g.height + 2)) - 1
+            val x = ((i * 23 % g.width) + kotlin.math.sin(t * 1.3f + i) * 1.5f + g.width) % g.width
+            drawRect(Color.White, Offset(g.left + kotlin.math.floor(x), g.top + kotlin.math.floor(y)), Size(1f, 1f))
+        }
+        Weather.FOG -> drawRect(Color(0x66FFFFFF), Offset(g.left.toFloat(), g.top.toFloat()), Size(g.width.toFloat(), g.height.toFloat()))
+        else -> Unit
+    }
 }
 
 private fun hitAt(x: Int, y: Int): RoomHit? {
@@ -121,20 +153,24 @@ fun PixelRoom(
     mood: Mood,
     modifier: Modifier = Modifier,
     phase: DayPhase = remember { DayPhase.of(LocalTime.now()) },
+    weather: Weather = Weather.CLEAR,
     onTap: ((RoomHit) -> Unit)? = null,
 ) {
     val room = ImageBitmap.imageResource(R.drawable.px_room_one_room)
+    val overcast = weather.overcast
     val sky = ImageBitmap.imageResource(
         when (phase) {
-            DayPhase.DAY -> R.drawable.px_sky_day
-            DayPhase.SUNSET -> R.drawable.px_sky_sunset
-            DayPhase.NIGHT -> R.drawable.px_sky_night
+            DayPhase.DAY -> if (overcast) R.drawable.px_sky_day_overcast else R.drawable.px_sky_day
+            DayPhase.SUNSET -> if (overcast) R.drawable.px_sky_sunset_overcast else R.drawable.px_sky_sunset
+            DayPhase.NIGHT -> if (overcast) R.drawable.px_sky_night_overcast else R.drawable.px_sky_night
         },
     )
-    val light = when (phase) {
-        DayPhase.DAY -> ImageBitmap.imageResource(R.drawable.px_light_day)
-        DayPhase.SUNSET -> ImageBitmap.imageResource(R.drawable.px_light_sunset)
-        DayPhase.NIGHT -> null
+    // 흐린 날엔 바닥에 햇빛이 들지 않는다
+    val light = when {
+        overcast -> null
+        phase == DayPhase.DAY -> ImageBitmap.imageResource(R.drawable.px_light_day)
+        phase == DayPhase.SUNSET -> ImageBitmap.imageResource(R.drawable.px_light_sunset)
+        else -> null
     }
     val nightShade = if (phase == DayPhase.NIGHT) ImageBitmap.imageResource(R.drawable.px_night_shade) else null
     val nightLights = if (phase == DayPhase.NIGHT) ImageBitmap.imageResource(R.drawable.px_night_lights) else null
@@ -187,9 +223,15 @@ fun PixelRoom(
                     val off = skyOffset.toInt()
                     put(sky, g.left - off, g.top)
                     put(sky, g.left - off + RoomLayout.SKY_W, g.top)
+                    drawWeather(weather, ms.toInt(), g)
                 }
                 put(room, 0, 0)
                 light?.let { put(it, 0, 0) }
+                // 눈 오는 날엔 창턱에 눈이 쌓인다
+                if (weather == Weather.SNOW) {
+                    drawRect(Color.White, Offset((g.left - 5).toFloat(), (g.bottom + 2).toFloat()), Size((g.width + 10).toFloat(), 1f))
+                    drawRect(Color(0xFFE3ECF7), Offset((g.left - 4).toFloat(), (g.bottom + 3).toFloat()), Size((g.width + 8).toFloat(), 1f))
+                }
 
                 RoomLayout.slots.forEach { (slot, spots) ->
                     house.slots[slot].orEmpty().zip(spots).forEach { (item, p) -> put(items.getValue(item.kind), p.x, p.y) }
@@ -203,7 +245,10 @@ fun PixelRoom(
                 house.floor.zip(RoomLayout.floorPile).sortedBy { it.second.y }.forEach { (item, p) ->
                     put(items.getValue(item.kind), p.x, p.y)
                 }
-                if (phase == DayPhase.SUNSET) drawRect(Color(0x22FF8C50))
+                if (phase == DayPhase.SUNSET) drawRect(Color(if (overcast) 0x14FF8C50 else 0x22FF8C50))
+                // 비·흐린 날엔 방이 조금 어둑하다, 번개가 치면 잠깐 환해진다
+                if (overcast && phase != DayPhase.NIGHT) drawRect(Color(if (weather == Weather.RAIN || weather == Weather.STORM) 0x2A28354A else 0x1A28354A))
+                if (weather == Weather.STORM && lightning(ms.toInt())) drawRect(Color(0x30FFFFFF))
                 nightShade?.let { put(it, 0, 0) }
                 nightLights?.let { put(it, 0, 0) }
             }

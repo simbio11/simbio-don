@@ -78,9 +78,12 @@ fun ItemThumb(kind: ItemKind, size: Dp, modifier: Modifier = Modifier, fill: Col
 /** 캐릭터 그림 한 장: 0 기본, 1 눈 감음, 2·3 걷기 */
 @DrawableRes
 fun Mood.sprite(frame: Int): Int = when (this) {
+    Mood.JOYFUL -> listOf(R.drawable.px_char_joyful_0, R.drawable.px_char_joyful_1, R.drawable.px_char_joyful_2, R.drawable.px_char_joyful_3)
     Mood.HAPPY -> listOf(R.drawable.px_char_happy_0, R.drawable.px_char_happy_1, R.drawable.px_char_happy_2, R.drawable.px_char_happy_3)
     Mood.CALM -> listOf(R.drawable.px_char_calm_0, R.drawable.px_char_calm_1, R.drawable.px_char_calm_2, R.drawable.px_char_calm_3)
     Mood.WORRIED -> listOf(R.drawable.px_char_worried_0, R.drawable.px_char_worried_1, R.drawable.px_char_worried_2, R.drawable.px_char_worried_3)
+    Mood.SAD -> listOf(R.drawable.px_char_sad_0, R.drawable.px_char_sad_1, R.drawable.px_char_sad_2, R.drawable.px_char_sad_3)
+    Mood.ANGRY -> listOf(R.drawable.px_char_angry_0, R.drawable.px_char_angry_1, R.drawable.px_char_angry_2, R.drawable.px_char_angry_3)
     Mood.CHEER -> listOf(R.drawable.px_char_cheer_0, R.drawable.px_char_cheer_1, R.drawable.px_char_cheer_2, R.drawable.px_char_cheer_3)
 }[frame]
 

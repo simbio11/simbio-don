@@ -173,3 +173,23 @@ fun ScreenTitle(text: String, modifier: Modifier = Modifier, trailing: (@Composa
         trailing?.invoke()
     }
 }
+
+/** 앱 이름 "돈't" — 't만 파랑 */
+@Composable
+fun AppName(fontSize: androidx.compose.ui.unit.TextUnit = 22.sp, modifier: Modifier = Modifier) {
+    Text(
+        androidx.compose.ui.text.buildAnnotatedString {
+            append("돈")
+            pushStyle(androidx.compose.ui.text.SpanStyle(color = DonColors.Real))
+            append("'t")
+            pop()
+        },
+        fontSize = fontSize,
+        fontWeight = FontWeight.ExtraBold,
+        color = DonColors.Ink,
+        modifier = modifier,
+    )
+}
+
+/** 한 줄 소개 */
+const val TAGLINE = "쓰는 척은 마음껏, 진짜 돈은 차곡차곡"

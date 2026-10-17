@@ -13,6 +13,7 @@ import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.CategoryIcon
 import com.simbio.don.app.ui.kit.card
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -92,17 +93,24 @@ fun EntryEditScreen(
     var showPicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    val category = picked ?: CategoryGuesser.guess(label, learned)
+    val isIncome = type == EntryType.INCOME
+    // 지출↔수입을 바꾸면 고른 카테고리가 맞지 않을 수 있어 다시 추측
+    val category = picked?.takeIf { it.income == isIncome }
+        ?: if (isIncome) Category.guessIncome(label, amount.toLongOrNull() ?: 0, 0) else CategoryGuesser.guess(label, learned)
     val wasException = existing?.type == EntryType.EXCEPTION.name
     val exceptionAllowed = canAddException || wasException
     val recent = (0L..6L).map { today.minusDays(it) }.filter { it in cycle }
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
-        BackBar(if (existing == null) "지출 입력" else "기록 고치기", onBack)
+        BackBar(if (existing == null) (if (isIncome) "수입 입력" else "지출 입력") else "기록 고치기", onBack)
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            SegmentedToggle(
+                listOf("지출", "수입"),
+                if (isIncome) 1 else 0,
+            ) { i -> type = if (i == 1) EntryType.INCOME else EntryType.SPEND }
             FormCard {
                 if (existing?.source == EntrySource.NOTIFICATION.name) {
                     Text("결제 알림에서 자동으로 기록됐어요.", fontSize = 12.sp, color = DonColors.InkMuted)
@@ -112,12 +120,12 @@ fun EntryEditScreen(
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it.take(40) },
-                    label = { Text("어디에 썼나요") },
+                    label = { Text(if (isIncome) "어디서 들어왔나요" else "어디에 썼나요") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 // 자주 쓰는 곳: 누르면 이름·금액·카테고리를 한 번에
-                val shown = if (existing != null) emptyList() else picks.filter { p ->
+                val shown = if (existing != null || isIncome) emptyList() else picks.filter { p ->
                     label.isBlank() || (p.label.contains(label.trim(), ignoreCase = true) && !p.label.equals(label.trim(), ignoreCase = true))
                 }.take(6)
                 if (shown.isNotEmpty()) {
@@ -139,7 +147,7 @@ fun EntryEditScreen(
             }
 
             FormCard("카테고리") {
-                CategoryGrid(category) { picked = it }
+                CategoryGrid(category, if (isIncome) Category.incomes else Category.spending) { picked = it }
                 if (existing != null && picked != null && picked!!.name != existing.category) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = applySame, onCheckedChange = { applySame = it })
@@ -157,8 +165,8 @@ fun EntryEditScreen(
                 }
             }
 
-            FormCard("종류") {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            FormCard(if (isIncome) "메모" else "종류") {
+                if (!isIncome) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     FilterChip(selected = type == EntryType.SPEND, onClick = { type = EntryType.SPEND }, label = { Text("일반 지출") })
                     FilterChip(selected = type == EntryType.REFUND, onClick = { type = EntryType.REFUND }, label = { Text("환불") })
                     FilterChip(
@@ -226,6 +234,30 @@ fun EntryEditScreen(
     }
 }
 
+/** 두세 칸 중 하나 고르기 (지출 | 수입) */
+@Composable
+fun SegmentedToggle(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().card(DonColors.Line.copy(alpha = 0.6f), 12.dp).padding(4.dp)) {
+        options.forEachIndexed { i, label ->
+            val on = i == selected
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                    .background(if (on) DonColors.Surface else Color.Transparent)
+                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(i) })
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    fontSize = 15.sp,
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    color = if (on) DonColors.Ink else DonColors.InkMuted,
+                )
+            }
+        }
+    }
+}
+
 /** 흰 카드 (+ 선택 소제목) */
 @Composable
 fun FormCard(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
@@ -237,9 +269,9 @@ fun FormCard(title: String? = null, content: @Composable ColumnScope.() -> Unit)
 
 /** 카테고리 고르기: 동그란 아이콘 + 이름, 한 줄에 4개 */
 @Composable
-fun CategoryGrid(selected: Category, onSelect: (Category) -> Unit) {
+fun CategoryGrid(selected: Category, options: List<Category> = Category.spending, onSelect: (Category) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Category.entries.chunked(4).forEach { row ->
+        options.chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { c ->
                     val on = c == selected

@@ -291,6 +291,18 @@ enum class UiIcon(@DrawableRes val res: Int) {
     NOTIFY(R.drawable.ic_notifications),
     WIDGET(R.drawable.ic_widgets_fill),
     BOLT(R.drawable.ic_bolt_fill),
+    FIRE(R.drawable.ic_local_fire_department_fill),
+    FLAG(R.drawable.ic_flag_fill),
+    FLIGHT(R.drawable.ic_flight_fill),
+    COMPUTER(R.drawable.ic_computer_fill),
+    CAR(R.drawable.ic_directions_car_fill),
+    DIAMOND(R.drawable.ic_diamond_fill),
+    TREND_UP(R.drawable.ic_trending_up),
+    UP(R.drawable.ic_arrow_upward),
+    DOWN(R.drawable.ic_arrow_downward),
+    PET(R.drawable.ic_pets_fill),
+    CLOTHES(R.drawable.ic_checkroom_fill),
+    SOFA(R.drawable.ic_weekend_fill),
 }
 
 @Composable
@@ -322,6 +334,11 @@ private fun Category.look(): CategoryLook = when (this) {
     Category.EVENT -> CategoryLook(R.drawable.ic_redeem_fill, Color(0xFFF2A100))
     Category.EDUCATION -> CategoryLook(R.drawable.ic_school_fill, Color(0xFF4C6EF5))
     Category.ETC -> CategoryLook(R.drawable.ic_more_horiz_fill, Color(0xFF8B95A1))
+    Category.SALARY -> CategoryLook(R.drawable.ic_payments_fill, Color(0xFF346AFF))
+    Category.SIDE_INCOME -> CategoryLook(R.drawable.ic_bolt_fill, Color(0xFF14A06A))
+    Category.ALLOWANCE -> CategoryLook(R.drawable.ic_redeem_fill, Color(0xFFE5508E))
+    Category.INTEREST -> CategoryLook(R.drawable.ic_savings_fill, Color(0xFF0FA3B1))
+    Category.OTHER_INCOME -> CategoryLook(R.drawable.ic_add, Color(0xFF6B7684))
 }
 
 /** 카테고리 동그라미 아이콘 */

@@ -1,7 +1,7 @@
 package com.simbio.don.budget
 
-/** 지출 카테고리. 저장할 때는 [name]을 쓰므로 이름을 바꾸지 않는다. */
-enum class Category(val label: String, val emoji: String) {
+/** 카테고리. 저장할 때는 [name]을 쓰므로 이름을 바꾸지 않는다. [income]이면 수입 카테고리. */
+enum class Category(val label: String, val emoji: String, val income: Boolean = false) {
     FOOD("식비", "🍚"),
     CAFE("카페·간식", "☕"),
     DELIVERY("배달", "🛵"),
@@ -13,10 +13,34 @@ enum class Category(val label: String, val emoji: String) {
     EVENT("경조사·선물", "🎁"),
     EDUCATION("교육", "📚"),
     ETC("기타", "📌"),
+
+    SALARY("월급", "💰", income = true),
+    SIDE_INCOME("부수입", "💼", income = true),
+    ALLOWANCE("용돈", "🧧", income = true),
+    INTEREST("이자·환급", "🏦", income = true),
+    OTHER_INCOME("기타 수입", "➕", income = true),
     ;
 
     companion object {
         fun of(name: String?): Category = entries.firstOrNull { it.name == name } ?: ETC
+
+        /** 지출 카테고리 11개 */
+        val spending: List<Category> get() = entries.filter { !it.income }
+
+        /** 수입 카테고리 */
+        val incomes: List<Category> get() = entries.filter { it.income }
+
+        /** 수입 이름·금액으로 카테고리 추측: 지난 월급의 절반 이상이거나 "급여"면 월급 */
+        fun guessIncome(label: String, amount: Long, lastSalary: Long): Category {
+            val t = label.lowercase()
+            return when {
+                listOf("급여", "월급", "상여").any { it in t } -> SALARY
+                listOf("이자", "환급", "캐시백").any { it in t } -> INTEREST
+                listOf("용돈").any { it in t } -> ALLOWANCE
+                lastSalary > 0 && amount * 2 >= lastSalary -> SALARY
+                else -> OTHER_INCOME
+            }
+        }
     }
 }
 

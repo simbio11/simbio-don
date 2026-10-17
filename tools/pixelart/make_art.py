@@ -55,11 +55,36 @@ def build():
     outputs["px_room_one_room"] = room.draw_base()
     for phase in room.PHASES:
         outputs[f"px_sky_{phase}"] = room.sky(phase)
+        outputs[f"px_sky_{phase}_overcast"] = room.sky(phase, overcast=True)
     outputs["px_light_day"] = room.sunlight("day")
     outputs["px_light_sunset"] = room.sunlight("sunset")
     outputs["px_night_shade"] = room.night_shade()
     outputs["px_night_lights"] = room.night_lights()
     return outputs
+
+
+MIPMAP_SCALES = {"mdpi": 2, "hdpi": 3, "xhdpi": 4, "xxhdpi": 6, "xxxhdpi": 8}
+
+
+def write_launcher_icon():
+    """런처 아이콘 앞면(색)과 테마 아이콘용 흑백 앞면. 54칸 격자, 기기 밀도마다 정수배."""
+    art = grid_image(sprites.ICON, "icon")
+    canvas = Image.new("RGBA", (54, 54), (0, 0, 0, 0))
+    canvas.alpha_composite(art, ((54 - art.width) // 2, (54 - art.height) // 2 + 1))
+    mono = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    k = room.col("K")
+    for y in range(canvas.height):
+        for x in range(canvas.width):
+            p = canvas.getpixel((x, y))
+            if p[3] and p[:3] != k[:3]:
+                mono.putpixel((x, y), (255, 255, 255, 255))
+    res = os.path.join(ROOT, "app/src/main/res")
+    for dens, s in MIPMAP_SCALES.items():
+        d = os.path.join(res, f"mipmap-{dens}")
+        os.makedirs(d, exist_ok=True)
+        canvas.resize((54 * s, 54 * s), Image.NEAREST).save(os.path.join(d, "ic_launcher_foreground.png"), optimize=True)
+        mono.resize((54 * s, 54 * s), Image.NEAREST).save(os.path.join(d, "ic_launcher_monochrome.png"), optimize=True)
+    return canvas
 
 
 def save(img, name):
@@ -139,11 +164,15 @@ def main():
     for name, img in outputs.items():
         save(img, name)
     write_layout_kt()
-    print(f"{len(outputs)}개 그림 → {OUT}")
+    icon = write_launcher_icon()
+    print(f"{len(outputs)}개 그림 → {OUT}, 런처 아이콘")
 
     if preview:
         os.makedirs(preview, exist_ok=True)
         make_sheet(outputs, os.path.join(preview, "sheet.png"))
+        bg = Image.new("RGBA", icon.size, room.rgba("#346AFF"))
+        bg.alpha_composite(icon)
+        bg.resize((54 * 6, 54 * 6), Image.NEAREST).save(os.path.join(preview, "icon.png"))
         for phase in room.PHASES:
             make_scene(outputs, phase).resize((room.W * 5, room.H * 5), Image.NEAREST).save(
                 os.path.join(preview, f"scene_{phase}.png"))

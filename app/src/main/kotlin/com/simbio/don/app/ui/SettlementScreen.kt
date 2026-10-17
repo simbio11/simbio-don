@@ -59,6 +59,9 @@ fun SettlementScreen(
     mockItems: List<MockItem>,
     onDone: (returnIds: Set<Long>) -> Unit,
     onBack: () -> Unit,
+    /** 이번 주 전까지 이어진 연속 기록 */
+    streakBefore: Int = 0,
+    savedTotal: Long = 0,
 ) {
     val week = WeeklySettlement.shippingIn(mockItems, result.week.start, result.week.end)
     val mustReturn = result.overspent > 0 && week.isNotEmpty()
@@ -75,23 +78,33 @@ fun SettlementScreen(
         ) {
             // 결과 한 줄 (지켰으면 초록, 넘겼으면 빨강)
             val over = result.overspent > 0
-            Column(
-                Modifier.fillMaxWidth().card().padding(vertical = 24.dp, horizontal = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Box(Modifier.popIn().size(88.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
-                    CharacterSprite(if (over) Mood.CHEER else Mood.HAPPY, 60.dp)
+            Box(Modifier.fillMaxWidth().card()) {
+                Column(
+                    Modifier.fillMaxWidth().padding(vertical = 24.dp, horizontal = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(Modifier.popIn().size(88.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
+                        CharacterSprite(if (over) Mood.CHEER else Mood.JOYFUL, 60.dp)
+                    }
+                    Badge(if (over) "예산 초과" else "예산 지킴", if (over) DonColors.Warn else DonColors.Good)
+                    if (!over && result.savedVsBudget > 0) {
+                        // 아낀 돈이 0부터 올라간다
+                        CountUpWon(result.savedVsBudget, 32.sp, DonColors.Good, prefix = "+", durationMs = 1_400)
+                    }
+                    Text(
+                        result.headline(),
+                        fontSize = if (over) 22.sp else 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DonColors.Ink,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text("${shortDate(result.week.start)} ~ ${shortDate(result.week.end)} · ${result.week.days}일", fontSize = 13.sp, color = DonColors.InkMuted)
+                    if (!over) StreakBadge(streakBefore + 1)
+                    else if (streakBefore > 0) Text("${streakBefore}주 연속 기록은 여기서 멈춰요. 다음 주에 다시 시작해요!", fontSize = 12.sp, color = DonColors.InkSoft)
+                    if (savedTotal > 0) Text("지금까지 모은 돈 ${won(savedTotal)}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Real)
                 }
-                Badge(if (over) "예산 초과" else "예산 지킴", if (over) DonColors.Warn else DonColors.Good)
-                Text(
-                    result.headline(),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = DonColors.Ink,
-                    textAlign = TextAlign.Center,
-                )
-                Text("${shortDate(result.week.start)} ~ ${shortDate(result.week.end)} · ${result.week.days}일", fontSize = 13.sp, color = DonColors.InkMuted)
+                if (!over) Confetti(Modifier.matchParentSize())
             }
 
             RealCard("실제 내 돈") {

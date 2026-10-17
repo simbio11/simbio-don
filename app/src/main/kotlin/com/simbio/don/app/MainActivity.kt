@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import com.simbio.don.app.notify.DailyReminder
 import com.simbio.don.app.widget.WeekWidget
+import com.simbio.don.app.weather.WeatherService
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
@@ -50,6 +51,8 @@ import com.simbio.don.app.data.HomeState
 import com.simbio.don.app.data.QuickPick
 import com.simbio.don.app.data.toRule
 import com.simbio.don.app.ui.AppState
+import com.simbio.don.app.ui.BudgetsScreen
+import com.simbio.don.app.ui.GoalsScreen
 import com.simbio.don.app.ui.DonColors
 import com.simbio.don.app.ui.DonTheme
 import com.simbio.don.app.ui.kit.AddFab
@@ -92,6 +95,8 @@ private sealed interface Overlay {
     data object Salary : Overlay
     data class EditRule(val packageName: String) : Overlay
     data class Shop(val prefill: SharedProduct?) : Overlay
+    data object Budgets : Overlay
+    data object Goals : Overlay
 }
 
 class MainActivity : ComponentActivity() {
@@ -185,6 +190,7 @@ class MainActivity : ComponentActivity() {
                 addRequested = false
             }
         }
+        val weather by vm.weather.collectAsStateWithLifecycle()
         // 지운 기록 되돌리기
         val snackbar = remember { SnackbarHostState() }
         val deleted by vm.deleted.collectAsStateWithLifecycle()
@@ -252,6 +258,9 @@ class MainActivity : ComponentActivity() {
                         onStats = { vm.resetMonth(); tab = Tab.Stats },
                         onHouse = { tab = Tab.House },
                         onShop = { overlay = Overlay.Shop(null) },
+                        onBudgets = { overlay = Overlay.Budgets },
+                        onGoals = { overlay = Overlay.Goals },
+                        weather = weather,
                     )
                     Tab.House -> HouseScreen(
                         home = home,
@@ -260,10 +269,13 @@ class MainActivity : ComponentActivity() {
                         onDiscard = { vm.discard(it) },
                         onBuyWish = { vm.buyWished(it.id) },
                         onGiveUpWish = { vm.giveUpWished(it.id) },
+                        weather = weather,
+                        city = WeatherService.city(this@MainActivity)?.name,
                     )
                     Tab.History, Tab.Stats -> {
                         val view by vm.month.collectAsStateWithLifecycle()
                         val cycles by vm.cycles.collectAsStateWithLifecycle()
+                        val summaries by vm.summaries.collectAsStateWithLifecycle()
                         val v = view ?: return@Box
                         val i = cycles.indexOfFirst { it.nominal == v.nominal }
                         val hasPrev = i in 0 until cycles.lastIndex
@@ -291,6 +303,8 @@ class MainActivity : ComponentActivity() {
                                 onPrev = { vm.moveMonth(-1) },
                                 onNext = { vm.moveMonth(1) },
                                 onCategory = { c -> historyCategory = c; historyDate = null; tab = Tab.History },
+                                summaries = summaries,
+                                onBudgets = { overlay = Overlay.Budgets },
                             )
                         }
                     }
@@ -308,6 +322,7 @@ class MainActivity : ComponentActivity() {
         val seen by vm.seenApps.collectAsStateWithLifecycle()
         val learned by vm.learned.collectAsStateWithLifecycle()
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
+        var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
         val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
                 DailyReminder.setOn(this, true)
@@ -335,10 +350,11 @@ class MainActivity : ComponentActivity() {
                 onOpenBatterySettings = ::openBatterySettings,
                 onSaveBudget = { f, sv, d, now -> vm.updateSettings(f, sv, d, now) },
                 onEditRule = { pkg -> open(Overlay.EditRule(pkg)) },
+                onBudgets = { open(Overlay.Budgets) },
                 onSaveRule = { r -> vm.saveRule(r) },
                 learnedCount = learned,
                 onResetLearned = { vm.resetLearned() },
-                onExport = { export.launch("돈아끼는게임_내역_${LocalDate.now()}.csv") },
+                onExport = { export.launch("돈트_내역_${LocalDate.now()}.csv") },
                 reminderOn = reminderOn,
                 onReminder = { on ->
                     if (on && !DailyReminder.canNotify(this) && Build.VERSION.SDK_INT >= 33) {
@@ -354,6 +370,11 @@ class MainActivity : ComponentActivity() {
                     null
                 },
                 version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty(),
+                weatherCity = weatherCity,
+                onWeatherCity = { name ->
+                    vm.setWeatherCity(name)
+                    weatherCity = name
+                },
             )
         }
     }
@@ -394,7 +415,14 @@ class MainActivity : ComponentActivity() {
                 if (week == null) {
                     LaunchedEffect(Unit) { close() }
                 } else {
-                    SettlementScreen(week, home.mockItems, onDone = { ids -> vm.settle(week, ids) }, onBack = close)
+                    SettlementScreen(
+                        week,
+                        home.mockItems,
+                        onDone = { ids -> vm.settle(week, ids) },
+                        onBack = close,
+                        streakBefore = home.streak,
+                        savedTotal = home.savedTotal,
+                    )
                 }
             }
             Overlay.Salary -> SalaryScreen(home, { vm.suggestedSalary(home) }, { a, d -> vm.confirmSalary(a, d) }, close)
@@ -406,6 +434,30 @@ class MainActivity : ComponentActivity() {
                 onHouse = goHouse,
                 onBack = close,
             )
+            Overlay.Budgets -> {
+                val budgets by vm.categoryBudgets.collectAsStateWithLifecycle()
+                val month by vm.month.collectAsStateWithLifecycle()
+                val last = month?.takeIf { it.isCurrent }?.previousEntries.orEmpty()
+                BudgetsScreen(
+                    current = budgets,
+                    lastMonth = com.simbio.don.budget.Stats.byCategory(last).associate { it.category to it.amount },
+                    disposable = home.plan.disposable,
+                    onSave = { vm.saveCategoryBudgets(it) },
+                    onBack = close,
+                )
+            }
+            Overlay.Goals -> {
+                val all by vm.goals.collectAsStateWithLifecycle()
+                GoalsScreen(
+                    savedTotal = home.savedTotal,
+                    goals = home.goals,
+                    usedGoals = all.filter { it.used },
+                    onAdd = { n, t, i -> vm.addGoal(n, t, i) },
+                    onUpdate = { vm.updateGoal(it) },
+                    onDelete = { vm.deleteGoal(it) },
+                    onBack = close,
+                )
+            }
             is Overlay.EditRule -> {
                 val rules by vm.appRules.collectAsStateWithLifecycle()
                 rules.firstOrNull { it.packageName == o.packageName }?.let { r ->

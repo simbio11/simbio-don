@@ -118,6 +118,35 @@ data class SettledWeekEntity(
     val weekIndex: Int,
     val settledAtEpochSecond: Long,
     val auto: Boolean,
+    /** 결산 때의 결과 (v4부터). 그 전에 결산한 주는 savedBps = -1 (모름) */
+    @ColumnInfo(defaultValue = "0") val budget: Long = 0,
+    @ColumnInfo(defaultValue = "0") val spent: Long = 0,
+    @ColumnInfo(defaultValue = "-1") val savedBps: Int = -1,
+    @ColumnInfo(defaultValue = "0") val overspent: Long = 0,
+) {
+    /** 예산을 지킨 주인지 (모르면 null) */
+    val kept: Boolean? get() = if (savedBps < 0) null else overspent == 0L
+}
+
+/** 카테고리별 한 달(월급날 기준) 예산. 없으면 정하지 않은 것. */
+@Entity(tableName = "category_budget")
+data class CategoryBudgetEntity(
+    @PrimaryKey val category: String,
+    val amount: Long,
+)
+
+/** 저축 목표. 모은 돈을 순서대로 채운다. 쓴 목표(used)는 그 금액만큼 모은 돈에서 빠진다. */
+@Entity(tableName = "savings_goal")
+data class SavingsGoalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val target: Long,
+    /** 아이콘 이름 (ui UiIcon) */
+    val icon: String,
+    val createdAtEpochDay: Long,
+    val sortOrder: Int,
+    val achievedAtEpochDay: Long? = null,
+    val used: Boolean = false,
 )
 
 /** 모의로 산 물건. 실제 돈과 무관한 게임 기록이다. */

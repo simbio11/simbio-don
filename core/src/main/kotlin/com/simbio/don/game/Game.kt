@@ -1,5 +1,6 @@
 package com.simbio.don.game
 
+import com.simbio.don.budget.PayCycle
 import com.simbio.don.budget.WeekResult
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -137,18 +138,43 @@ data class HouseLayout(
 }
 
 enum class Mood(val label: String) {
+    JOYFUL("기뻐요"),
     HAPPY("신났어요"),
     CALM("평온해요"),
     WORRIED("조마조마해요"),
+    SAD("슬퍼요"),
+    ANGRY("화났어요"),
+
+    /** 결산에서 예산을 넘긴 주 — 혼내지 않고 응원 */
     CHEER("다시 해보자!"),
 }
 
 object Moods {
     /**
-     * 이번 주 예산을 쓰는 속도로 표정을 정한다. 넘겨도 혼내지 않고 응원한다.
-     * 지난 날 비율보다 덜 썼으면 신남, 비슷하면 평온, 더 빨리 쓰면 조마조마, 넘기면 응원.
+     * 표정. 모의 지갑(게임에서 쓸 수 있는 돈) 여유가 먼저, 그다음 이번 주 쓰는 속도.
+     *
+     * 여유 = 지갑 ÷ 지금쯤 남아 있어야 할 돈(한 달 생활비 × 남은 날 비율).
+     * 실제로 너무 써서 지갑이 비면 화나고, 바닥나 가면 슬프고, 많이 남으면 기쁘다.
+     * 지갑 정보가 없으면 이번 주 속도만 본다 (넘긴 주는 응원).
      */
-    fun of(week: WeekResult?, today: LocalDate): Mood {
+    fun of(week: WeekResult?, today: LocalDate, wallet: Long? = null, disposable: Long = 0, cycle: PayCycle? = null): Mood {
+        val pace = paceMood(week, today)
+        if (wallet == null || cycle == null || disposable <= 0) return pace
+        if (wallet <= 0) return Mood.ANGRY
+        val daysLeft = (cycle.end.toEpochDay() - today.toEpochDay() + 1).coerceIn(1, cycle.days.toLong())
+        val expected = (disposable * daysLeft / cycle.days).coerceAtLeast(1)
+        val ratio = wallet.toDouble() / expected
+        return when {
+            ratio < 0.4 -> Mood.SAD
+            ratio < 0.75 -> Mood.WORRIED
+            pace == Mood.CHEER || pace == Mood.WORRIED -> Mood.WORRIED
+            pace == Mood.HAPPY && ratio >= 1.15 -> Mood.JOYFUL
+            else -> pace
+        }
+    }
+
+    /** 이번 주 예산을 쓰는 속도: 지난 날 비율보다 덜 썼으면 신남, 비슷하면 평온, 더 빨리 쓰면 조마조마, 넘기면 응원 */
+    private fun paceMood(week: WeekResult?, today: LocalDate): Mood {
         if (week == null || week.budget <= 0) return Mood.CALM
         if (week.overspent > 0) return Mood.CHEER
         val elapsed = (today.toEpochDay() - week.week.start.toEpochDay() + 1).coerceIn(1, week.week.days.toLong())

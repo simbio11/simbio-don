@@ -99,4 +99,17 @@ class GameTest {
         assertEquals(0, HouseLayout.of(HouseLevel.ONE_ROOM, items).itemCount)
         assertEquals(30_000, Wishlist.gaveUpTotal(items))
     }
+
+    @Test
+    fun `모의 지갑 여유로 표정이 바뀐다 (비면 화남, 바닥나면 슬픔, 넉넉하면 기쁨)`() {
+        val cycle = com.simbio.don.budget.PayCycle(java.time.YearMonth.of(2026, 11), d(1), d(30))
+        val week = WeekResult(com.simbio.don.budget.Week(0, d(1), d(7), 70_000), 0, 10_000, 0)
+        // 11/4: 한 달 300만 중 27일 남음 → 지금쯤 270만이 있어야 함
+        fun mood(wallet: Long) = Moods.of(week, d(4), wallet, 3_000_000, cycle)
+        assertEquals(Mood.ANGRY, mood(0))
+        assertEquals(Mood.SAD, mood(800_000))
+        assertEquals(Mood.WORRIED, mood(1_500_000))
+        assertEquals(Mood.HAPPY, mood(2_700_000))
+        assertEquals(Mood.JOYFUL, mood(3_200_000))
+    }
 }

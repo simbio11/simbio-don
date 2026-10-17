@@ -112,8 +112,10 @@ fun OnboardingScreen(
         Modifier.fillMaxSize().background(DonColors.Bg).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("돈 아끼는 게임", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Real)
-        Text("처음 설정", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+        AppName(30.sp)
+        Text(TAGLINE, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Real)
+        Spacer(Modifier.height(8.dp))
+        Text("처음 설정", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
         Text("입력한 내용은 이 폰에만 저장되고 어디로도 보내지 않아요.", fontSize = 14.sp, color = DonColors.InkSoft)
 
         RealCard("1. 월급") {

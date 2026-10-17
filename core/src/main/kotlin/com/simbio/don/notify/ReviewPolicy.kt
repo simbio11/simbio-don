@@ -72,9 +72,9 @@ object ReviewPolicy {
         }
     }
 
-    /** 다른 앱에서 비슷한 시각에 같은 금액·같은 종류(지출끼리, 환불끼리)로 잡힘 */
+    /** 다른 앱에서 비슷한 시각에 같은 금액·같은 종류(지출끼리, 환불끼리, 입금끼리)로 잡힘 */
     fun isDuplicate(a: ParsedPayment, b: ParsedPayment): Boolean =
-        a.action == b.action && (a.action == RuleAction.SPEND || a.action == RuleAction.REFUND) &&
+        a.action == b.action && a.action != RuleAction.IGNORE &&
             a.amount == b.amount && a.packageName != b.packageName &&
             abs(Duration.between(a.postedAt, b.postedAt).toSeconds()) <= DUPLICATE_WINDOW.toSeconds()
 

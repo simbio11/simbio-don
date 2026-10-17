@@ -18,6 +18,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,14 +57,20 @@ fun HomeScreen(
     onStats: () -> Unit,
     onHouse: () -> Unit,
     onShop: () -> Unit,
+    onBudgets: () -> Unit = {},
+    onGoals: () -> Unit = {},
+    weather: com.simbio.don.app.weather.Weather? = null,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val celebrations = remember { Celebrations(context) }
+    var dismissed by remember { mutableStateOf(0) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(Modifier.padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("돈 아끼는 게임", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                AppName(24.sp)
                 Text(shortDate(home.today), fontSize = 13.sp, color = DonColors.InkMuted)
             }
             Box(Modifier.size(48.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
@@ -134,13 +145,38 @@ fun HomeScreen(
 
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("이번 달 쓴 돈", won(home.monthSpent), null, Modifier.weight(1f))
+            StatTile("이번 달 수입", won(home.monthIncome), null, Modifier.weight(1f))
             StatTile("아낀 돈", won(home.savedSoFar), "지난 주들 합계", Modifier.weight(1f))
-            StatTile("모은 돈", won(home.plan.savings), "먼저 뗀 저축", Modifier.weight(1f))
         }
 
-        HomeGameCard(home, onHouse, onShop)
+        // 모은 돈이 마일스톤을 넘었거나 목표를 이뤘으면 한 번 축하
+        key(dismissed) {
+            val goal = celebrations.pendingGoal(home.goals)
+            val milestone = if (goal == null) celebrations.pendingMilestone(home.savedTotal) else null
+            when {
+                goal != null -> CelebrationCard("목표 달성!", "'${goal.goal.name}' ${won(goal.goal.target)}을 모았어요.") {
+                    celebrations.celebrateGoal(goal.goal.id)
+                    dismissed++
+                }
+                milestone != null -> CelebrationCard("모은 돈 ${compactWon(milestone)}원 돌파!", "아낀 돈이 진짜로 쌓이고 있어요. 지금 ${won(home.savedTotal)}.") {
+                    celebrations.celebrateMilestone(milestone)
+                    dismissed++
+                }
+            }
+        }
+        SavingsCard(home, onGoals)
+
+        HomeGameCard(home, onHouse, onShop, weather)
 
         val categories = Stats.byCategory(home.entries.map { it.toEntry() })
+        // 카테고리 예산: 80% 넘게 쓴 것만 미리 알려준다
+        val spentBy = categories.associate { it.category to it.amount }
+        val tight = home.categoryBudgets.filter { (c, b) -> b > 0 && (spentBy[c] ?: 0) * 10 >= b * 8 }
+        if (tight.isNotEmpty()) {
+            SectionCard("카테고리 예산 주의", trailing = { MoreButton("예산", onBudgets) }) {
+                BudgetBars(tight, spentBy, limit = 3)
+            }
+        }
         if (categories.isNotEmpty()) {
             SectionCard("이번 달 많이 쓴 카테고리", trailing = { MoreButton("통계", onStats) }) {
                 CategoryBars(categories, limit = 3)

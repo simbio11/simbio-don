@@ -23,8 +23,10 @@ import com.simbio.don.budget.CategoryGuesser
         CategoryRuleEntity::class,
         MockPurchaseEntity::class,
         HouseEntity::class,
+        CategoryBudgetEntity::class,
+        SavingsGoalEntity::class,
     ],
-    version = 3,
+    version = 4,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -42,7 +44,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 }
                 ).build().also { instance = it }
         }
@@ -51,6 +53,22 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v4: 카테고리 예산, 저축 목표, 결산 결과 저장 (연속 기록·마일리지용) */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS category_budget (category TEXT NOT NULL, amount INTEGER NOT NULL, PRIMARY KEY(category))")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS savings_goal (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, " +
+                        "target INTEGER NOT NULL, icon TEXT NOT NULL, createdAtEpochDay INTEGER NOT NULL, sortOrder INTEGER NOT NULL, " +
+                        "achievedAtEpochDay INTEGER, used INTEGER NOT NULL)",
+                )
+                db.execSQL("ALTER TABLE settled_week ADD COLUMN budget INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE settled_week ADD COLUMN spent INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE settled_week ADD COLUMN savedBps INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("ALTER TABLE settled_week ADD COLUMN overspent INTEGER NOT NULL DEFAULT 0")
+            }
         }
 
         /** v3: 모의 쇼핑과 집 */

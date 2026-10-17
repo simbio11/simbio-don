@@ -34,8 +34,11 @@ fun StatsScreen(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onCategory: (Category) -> Unit,
+    summaries: List<com.simbio.don.app.data.CycleSummary> = emptyList(),
+    onBudgets: () -> Unit = {},
 ) {
     val spent = Stats.total(view.entries)
+    val income = Stats.income(view.entries)
     val prevSpent = Stats.total(view.previousEntries)
     val pace = Stats.pace(view.entries, view.cycle.start, view.cycle.end, view.plan.disposable, view.today)
     val byCategory = Stats.byCategory(view.entries)
@@ -48,6 +51,8 @@ fun StatsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         MonthSwitcher(view, hasPrev, hasNext, onPrev, onNext)
+
+        RealCard("이번 달 가계부") { MonthSummaryRow(income, spent) }
 
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile(
@@ -87,6 +92,21 @@ fun StatsScreen(
                         if (shown) "${won(pace.cumulative[i])} / 페이스 ${won(pace.pace[i])}" else "페이스 ${won(pace.pace[i])}",
                     )
                 }
+            }
+        }
+
+        if (view.isCurrent && summaries.size >= 2) {
+            SectionCard("월별 추이") { MonthTrendChart(summaries) }
+        }
+
+        SectionCard(
+            "카테고리 예산",
+            trailing = { com.simbio.don.app.ui.kit.MoreButton(if (view.categoryBudgets.isEmpty()) "정하기" else "고치기", onBudgets) },
+        ) {
+            if (view.categoryBudgets.isEmpty()) {
+                Text("카페·배달처럼 자주 새는 카테고리에 한 달 예산을 정해 두면 넘기 전에 알려줘요.", fontSize = 13.sp, color = DonColors.InkSoft)
+            } else {
+                BudgetBars(view.categoryBudgets, byCategory.associate { it.category to it.amount })
             }
         }
 

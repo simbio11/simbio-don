@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Badge
 import com.simbio.don.app.ui.kit.Divider
+import com.simbio.don.app.ui.kit.FilterChip
 import com.simbio.don.app.ui.kit.Icon
 import com.simbio.don.app.ui.kit.UiIcon
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,7 @@ import com.simbio.don.notify.KeywordRuleCodec
 import com.simbio.don.notify.RuleAction
 import java.time.DayOfWeek
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     settings: SettingsEntity,
@@ -61,6 +63,7 @@ fun SettingsScreen(
     onOpenBatterySettings: () -> Unit,
     onSaveBudget: (List<FixedExpense>, Long, DayOfWeek, Boolean) -> Unit,
     onEditRule: (String) -> Unit,
+    onBudgets: () -> Unit = {},
     onSaveRule: (AppRule) -> Unit,
     learnedCount: Int,
     onResetLearned: () -> Unit,
@@ -69,6 +72,8 @@ fun SettingsScreen(
     onReminder: (Boolean) -> Unit = {},
     onPinWidget: (() -> Unit)? = null,
     version: String = "",
+    weatherCity: String? = null,
+    onWeatherCity: (String?) -> Unit = {},
 ) {
     val rows = remember(fixed) { mutableStateListOf<FixedRow>().apply { addAll(fixed.map { FixedRow(it.name, it.amount.toString()) }); if (isEmpty()) add(FixedRow()) } }
     var savings by remember(settings) { mutableStateOf(settings.savings.toString()) }
@@ -114,7 +119,20 @@ fun SettingsScreen(
                     Text("홈 화면에 위젯 추가")
                 }
             } else {
-                Text("홈 화면을 길게 눌러 위젯 → '돈 아끼는 게임'을 고르세요.", fontSize = 12.sp, color = DonColors.InkSoft)
+                Text("홈 화면을 길게 눌러 위젯 → '돈't'를 고르세요.", fontSize = 12.sp, color = DonColors.InkSoft)
+            }
+        }
+
+        GameCard("내 방 창밖 날씨") {
+            Text("고른 도시의 지금 날씨에 따라 창밖에 비·눈·구름이 보여요. 도시 좌표만 Open-Meteo로 보내고, 가계부 기록은 보내지 않아요.", fontSize = 12.sp, color = DonColors.InkSoft)
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                FilterChip(selected = weatherCity == null, onClick = { onWeatherCity(null) }, label = { Text("끄기") })
+                com.simbio.don.app.weather.WeatherService.CITIES.forEach { c ->
+                    FilterChip(selected = weatherCity == c.name, onClick = { onWeatherCity(c.name) }, label = { Text(c.name) })
+                }
             }
         }
 
@@ -180,6 +198,7 @@ fun SettingsScreen(
             Button(onClick = {
                 onSaveBudget(rows.mapNotNull { it.toFixed() }, savings.toLongOrNull() ?: 0, settlementDay, applyNow)
             }, modifier = Modifier.fillMaxWidth()) { Text("예산 설정 저장") }
+            SubButton(onClick = onBudgets, modifier = Modifier.fillMaxWidth()) { Text("카테고리별 예산 정하기") }
         }
 
         RealCard("카테고리 자동 분류") {
@@ -197,7 +216,7 @@ fun SettingsScreen(
         }
 
         Text(
-            "돈 아끼는 게임 $version · 아이콘: Material Symbols (Google, Apache License 2.0)",
+            "돈't $version · 아이콘: Material Symbols (Google, Apache License 2.0)",
             fontSize = 11.sp,
             color = DonColors.InkMuted,
             modifier = Modifier.padding(horizontal = 4.dp),

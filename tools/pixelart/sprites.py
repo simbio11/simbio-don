@@ -42,12 +42,35 @@ EYES = {
         ".KhsssssssssssssFhK.",
         ".KhsssKKssssKKssshK.",
     ],
+    "sad": [  # 처진 눈
+        ".KhsssssssssssssshK.",
+        ".KhssKKKssssKKKsshK.",
+        ".KhsssKKssssKKssshK.",
+    ],
+    "sad_blink": [
+        ".KhsssssssssssssshK.",
+        ".KhssKKKssssKKKsshK.",
+        ".KhsssssssssssssshK.",
+    ],
+    "angry": [  # 치켜올린 눈썹
+        ".KhsKKssssssssKKshK.",
+        ".KhsssKKssssKKssshK.",
+        ".KhsssKKssssKKssshK.",
+    ],
+    "angry_blink": [
+        ".KhsKKssssssssKKshK.",
+        ".KhsssssssssssssshK.",
+        ".KhsssKKssssKKssshK.",
+    ],
 }
 BLUSH = ".KhsbbssssssssbbshK."
 MOUTH = {
     "smile": [".KhSsssKssssKsssShK.", "..KhSsssKKKKsssShK.."],
     "open": [".KhSssssKKKKssssShK.", "..KhSsssKmmKsssShK.."],
     "frown": [".KhSsssssKKsssssShK.", "..KhSsssKssKsssShK.."],
+    "sad": [".KhSssssssssssssShK.", "..KhSssKKKKKsssShK.."],
+    "angry": [".KhSsssKKKKKKsssShK.", "..KhSssKWWWWKssShK.."],
+    "grin": [".KhSsssKKKKKKsssShK.", "..KhSssKmmmmKssShK.."],
 }
 JAW = [
     "...KhSSSssssSSSShK..",
@@ -118,7 +141,7 @@ def patch(rows, x, y, p):
     return rows
 
 
-def _char(eyes, mouth, legs="stand", fist=False, sparkle=False):
+def _char(eyes, mouth, legs="stand", fist=False, sparkle=False, tear=False, anger=False):
     rows = HAIR + EYES[eyes] + [BLUSH] + MOUTH[mouth] + JAW + BODY + LEGS[legs]
     rows = ["." + r + "." for r in rows]
     if fist:
@@ -126,25 +149,35 @@ def _char(eyes, mouth, legs="stand", fist=False, sparkle=False):
     if sparkle:
         rows = patch(rows, 0, 0, SPARKLE)
         rows = patch(rows, 19, 2, ["y.", "2y", "y."])
+    if tear:
+        rows = patch(rows, 6, 11, ["F", "F", "f"])
+        rows = patch(rows, 15, 11, ["F", "F", "f"])
+    if anger:
+        rows = patch(rows, 15, 1, [".r.r", "rr.r", ".r.r"])
     return rows
 
 
-# 기분마다 [기본, 눈 감음, 걷기1, 걷기2]
+# 기분마다 [기본, 눈 감음, 걷기1, 걷기2]. 모의 지갑 여유에 따라 기뻐요 → 화났어요
 _FACE = {
-    "happy": ("open", "blink", "open"),
-    "calm": ("open", "blink", "smile"),
-    "worried": ("sweat", "sweat_blink", "frown"),
-    "cheer": ("joy", "joy", "open"),
+    # 기분: (눈, 눈 감은 눈, 입, 꾸밈)
+    "joyful": ("joy", "joy", "grin", {"sparkle": True}),
+    "happy": ("open", "blink", "open", {}),
+    "calm": ("open", "blink", "smile", {}),
+    "worried": ("sweat", "sweat_blink", "frown", {}),
+    "sad": ("sad", "sad_blink", "sad", {"tear": True}),
+    "angry": ("angry", "angry_blink", "angry", {"anger": True}),
+    "cheer": ("joy", "joy", "open", {"fist": True}),
 }
 CHARACTER = {}
-for mood, (eyes, blink, mouth) in _FACE.items():
-    m = "open" if mood == "happy" else mouth
-    fist = mood == "cheer"
+for mood, (eyes, blink, mouth, deco) in _FACE.items():
+    blink_deco = dict(deco)
+    if mood == "cheer":
+        blink_deco["sparkle"] = True
     CHARACTER[mood] = [
-        _char(eyes, m, fist=fist),
-        _char(blink, m, fist=fist, sparkle=mood == "cheer"),
-        _char(eyes, m, "walk0", fist=fist),
-        _char(eyes, m, "walk1", fist=fist),
+        _char(eyes, mouth, **deco),
+        _char(blink, mouth, **blink_deco),
+        _char(eyes, mouth, "walk0", **deco),
+        _char(eyes, mouth, "walk1", **deco),
     ]
 
 # ── 물건 12×12 (집에 놓이는 것) ─────────────────────────────
@@ -335,3 +368,31 @@ ITEMS = {
         "zzZz........",
     ],
 }
+
+
+# ── 앱 아이콘 (돼지 저금통 + 떨어지는 동전) ─────────────────────
+# 런처 아이콘은 54칸 격자(1칸 = 2dp)의 가운데에 놓는다. 안전 영역(지름 33칸) 안에 들어가는 크기.
+ICON = [
+    ".........KKKKK.........",
+    "........Ky222yK........",
+    "........K2yyyyEK.......",
+    "........KyyyyyEK.......",
+    "........KyyyyEEK.......",
+    ".........KKKKK.........",
+    ".......................",
+    ".....KK..KKKKKKKK......",
+    "....K6IKK66666666KK....",
+    "....KIK666666666666K...",
+    "...K6666KKKKK666666iK..",
+    "...K66666666666666iiK.K",
+    "..K666K666666666iiiiKKK",
+    "..K666K66666666iiiiIIK.",
+    "KKKK666666666iiiiiiIIK.",
+    "KIIIK6bb666iiiiiiiIIIK.",
+    "KKIKK666iiiiiiiiiiIIIK.",
+    "KIIIK6iiiiiiiiiiiIIIIK.",
+    ".KKKKiiiiiiiiiiiIIIIK..",
+    "....KIIKKKKKKKKKIIIK...",
+    "....KIIK.......KIIK....",
+    "....KKKK.......KKKK....",
+]

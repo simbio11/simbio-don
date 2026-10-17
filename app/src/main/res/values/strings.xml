@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">돈 아끼는 게임</string>
+    <string name="app_name">돈\'t</string>
     <string name="listener_label">결제 알림 자동 기록</string>
     <string name="widget_label">이번 주 남은 돈</string>
     <string name="widget_title">이번 주 남은 돈</string>

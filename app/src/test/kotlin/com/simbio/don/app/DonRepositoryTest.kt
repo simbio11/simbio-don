@@ -300,6 +300,45 @@ class DonRepositoryTest {
     }
 
     @Test
+    fun `수입은 가계부에만 적고 주 예산·지갑은 그대로`() = runTest {
+        repo.addManual(LocalDate.of(2026, 10, 24), 150_000, "중고거래", EntryType.INCOME)
+        repo.handleNotification(RawNotification("card.app", "OO은행", "급여 입금 3,300,000원", at(10, 25, 9)))
+        repo.handleNotification(RawNotification("pay.app", "OO페이", "입금 3,300,000원", at(10, 25, 9, 0, 30)))
+        val h = home(at(10, 25, 10))
+        assertEquals(3_450_000L, h.monthIncome)
+        assertEquals(0, h.currentWeek!!.spent)
+        assertEquals(1_980_000L, h.wallet)
+        val incomes = h.entries.filter { it.type == EntryType.INCOME.name }
+        assertEquals(2, incomes.size)
+        assertEquals(Category.SALARY.name, incomes.first { it.amount == 3_300_000L }.category)
+        assertEquals(Category.OTHER_INCOME.name, incomes.first { it.amount == 150_000L }.category)
+    }
+
+    @Test
+    fun `모은 돈은 먼저 뗀 저축과 아낀 돈, 목표는 순서대로 채우고, 연속 기록을 센다`() = runTest {
+        repo.addManual(LocalDate.of(2026, 10, 24), 100_000, "장보기", EntryType.SPEND)
+        repo.addGoal("이어폰", 300_000, "COMPUTER", today)
+        repo.addGoal("여행", 1_000_000, "FLIGHT", today)
+        val week = home(at(11, 2, 12)).settleable.single()
+        repo.settle(week, at(11, 2, 12), emptySet())
+        val h = home(at(11, 2, 13))
+        // 저축 320,000 + 첫 주 아낀 500,000
+        assertEquals(820_000L, h.savedTotal)
+        assertEquals(listOf(300_000L, 520_000L), h.goals.map { it.filled })
+        assertTrue(h.goals[0].done)
+        assertEquals(1, h.streak)
+        val settled = db.dao().settledWeeksNow("2026-10").single()
+        assertEquals(100_000L, settled.spent)
+        assertEquals(8_333, settled.savedBps)
+    }
+
+    @Test
+    fun `카테고리 예산을 저장한다`() = runTest {
+        repo.saveCategoryBudgets(mapOf(Category.CAFE to 50_000L, Category.DELIVERY to 0L))
+        assertEquals(mapOf(Category.CAFE to 50_000L), home(at(10, 24)).categoryBudgets)
+    }
+
+    @Test
     fun `고정비와 비슷한 출금은 확인함으로`() = runTest {
         repo.handleNotification(RawNotification("card.app", "", "출금 1,000,000원", at(10, 25)))
         assertEquals(ReviewReason.LOOKS_LIKE_FIXED_EXPENSE.name, db.dao().reviewItemsNow().single().reason)

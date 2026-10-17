@@ -11,6 +11,9 @@ enum class EntryType {
 
     /** 병원비·경조사비 등 예외 지출 — 그 주는 그대로, 남은 주 예산을 다시 나눈다 */
     EXCEPTION,
+
+    /** 수입 (월급·부수입·용돈 등) — 가계부에만 적고 주 예산은 건드리지 않는다 */
+    INCOME,
 }
 
 enum class EntrySource { NOTIFICATION, MANUAL }
@@ -82,7 +85,7 @@ data class CycleLedger(val plan: CyclePlan, val entries: List<Entry> = emptyList
                 when (it.type) {
                     EntryType.SPEND -> it.amount
                     EntryType.REFUND -> -it.amount
-                    EntryType.EXCEPTION -> 0L
+                    EntryType.EXCEPTION, EntryType.INCOME -> 0L
                 }
             }
             WeekResult(week, carry, spent, overflow[i]).also { carry = it.carryOut }
