@@ -8,10 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
+import com.simbio.don.app.ui.kit.Button
+import com.simbio.don.app.ui.kit.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -52,8 +52,8 @@ private fun ReviewCard(
     val time = Instant.ofEpochSecond(item.postedAtEpochSecond).atZone(ZoneId.systemDefault()).toLocalDateTime()
     RealCard(
         when (reason) {
-            ReviewReason.POSSIBLE_DUPLICATE -> "⚠ 중복일 수 있어요"
-            ReviewReason.LOOKS_LIKE_FIXED_EXPENSE -> "⚠ 고정비와 비슷해요"
+            ReviewReason.POSSIBLE_DUPLICATE -> "중복일 수 있어요"
+            ReviewReason.LOOKS_LIKE_FIXED_EXPENSE -> "고정비와 비슷해요"
             ReviewReason.REFUND -> "취소·환불"
             ReviewReason.UNCLASSIFIED -> "어떤 알림인지 모르겠어요"
         },

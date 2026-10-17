@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -79,7 +80,7 @@ class AppFlowTest {
         rule.onNodeWithText("이번 달은 이미 시작됐어요").performScrollTo()
         rule.onNodeWithText("이대로 예산 짜기").performScrollTo().performClick()
 
-        waitText("이번 주 쓸 수 있는 돈")
+        waitText("실제 내 돈 · 이번 주")
         rule.onNodeWithText("결제 알림 자동 기록이 꺼져 있어요").assertExists()
         rule.onNodeWithText("지난주 결산이 준비됐어요").assertDoesNotExist()
 
@@ -88,7 +89,7 @@ class AppFlowTest {
         rule.onNode(hasSetTextAction() and hasText("금액")).performTextReplacement("4500")
         rule.onNodeWithText("어디에 썼나요").performTextReplacement("스타벅스")
         // 가게 이름으로 카테고리가 골라진다
-        rule.onNodeWithText("☕ 카페·간식").assertExists()
+        rule.onNode(hasText("카페·간식") and isSelected()).assertExists()
         shot("02_add_entry")
         rule.onNodeWithText("저장").performScrollTo().performClick()
 
@@ -99,6 +100,7 @@ class AppFlowTest {
         waitText("지출 속도")
         rule.onNodeWithText("설정").performClick()
         waitText("알림 읽을 앱")
+        shot("06_settings")
     }
 
     /** 2주쯤 쓴 상태를 만들어 화면을 찍는다. */
@@ -128,7 +130,7 @@ class AppFlowTest {
             sample.forEach { (ago, amount, label) -> repo.addManual(today.minusDays(ago.toLong()), amount, label, EntryType.SPEND) }
             repo.addManual(today.minusDays(6), 100_000, "친구 결혼식", EntryType.EXCEPTION, Category.EVENT)
         }
-        waitText("이번 주 쓸 수 있는 돈")
+        waitText("실제 내 돈 · 이번 주")
         shot("10_home")
         rule.onNodeWithText("최근 내역").performScrollTo()
         shot("11_home_bottom")
@@ -142,6 +144,11 @@ class AppFlowTest {
         shot("14_stats_categories")
         rule.onNodeWithText("주별 예산").performScrollTo()
         shot("15_stats_weeks")
+        rule.onNodeWithText("홈").performClick()
+        waitText("결산 보기")
+        rule.onNodeWithText("결산 보기").performClick()
+        waitText("지난주 결산")
+        shot("16_settlement")
     }
 
     /** 모의 쇼핑 → 결제 → 결산 → 집. */
@@ -164,11 +171,11 @@ class AppFlowTest {
             dao.updateMocks(dao.mockPurchasesNow().map { it.copy(status = com.simbio.don.game.PurchaseStatus.DELIVERED.name) })
             repo.buyMock("스타벅스 텀블러", 35_000, com.simbio.don.game.ItemKind.LIVING, "스타벅스", today, java.time.LocalDateTime.now())
         }
-        waitText("이번 주 쓸 수 있는 돈")
+        waitText("실제 내 돈 · 이번 주")
         rule.onNodeWithText("내 집").performClick()
         waitText("모의 지갑")
         shot("20_house")
-        rule.onNodeWithText("모의 쇼핑하기").performScrollTo().performClick()
+        rule.onAllNodesWithText("모의 쇼핑").onFirst().performScrollTo().performClick()
         waitText("뭘 사고 싶어요?")
         rule.onNodeWithText("물건 이름").performTextReplacement("나이키 덩크 로우")
         rule.onNode(hasSetTextAction() and hasText("가격")).performTextReplacement("139000")

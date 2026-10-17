@@ -12,13 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.simbio.don.app.ui.kit.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.OutlinedButton
+import com.simbio.don.app.ui.kit.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -157,6 +157,12 @@ fun SettingsScreen(
             Text("모든 기록을 CSV 파일로 내보내요. 엑셀이나 구글 시트에서 열 수 있어요.", fontSize = 12.sp)
             OutlinedButton(onClick = onExport) { Text("내역 내보내기 (CSV)") }
         }
+
+        Text(
+            "글꼴: 갈무리 (Lee Minseo, SIL Open Font License 1.1)",
+            fontSize = 11.sp,
+            color = DonColors.InkMuted,
+        )
         Spacer(Modifier.height(80.dp))
     }
 

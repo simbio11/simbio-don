@@ -18,7 +18,8 @@
 - `core/` — 순수 Kotlin 로직 (Android 의존 없음, 단위 테스트)
   - `budget/` — 월급날 기준 한 달(`PayCycle`), 주 예산 배분(`BudgetEngine`), 이월·예외 지출·결산 판정(`CycleLedger`, `Settlement`)
   - `notify/` — 결제 알림 규칙(앱 선택 → 키워드), 금액 추출, 중복·고정비 의심 판정(`ReviewPolicy`)
-- `app/` — Android 앱 (Kotlin · Jetpack Compose · Room)
+- `app/` — Android 앱 (Kotlin · Jetpack Compose · Room), 도트 UI (`ui/kit`, 글꼴 갈무리)
+- `tools/pixelart/` — 도트 그림 생성기 (`python3 tools/pixelart/make_art.py`) — [docs/art-spec.md](docs/art-spec.md)
   - `notify/PaymentListenerService` — 고른 앱의 결제 알림만 읽어 기기 안에서 기록
   - `data/` — Room 저장소, `ui/` — 화면
 

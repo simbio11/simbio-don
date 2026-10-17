@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,7 +67,7 @@ fun StatsScreen(
                 when {
                     !view.isCurrent -> if (spent <= view.plan.disposable) "예산보다 ${won(view.plan.disposable - spent)} 덜 썼어요" else "예산보다 ${won(spent - view.plan.disposable)} 더 썼어요"
                     pace.projectedLeft >= 0 -> "이 속도면 월말에 ${won(pace.projectedLeft)} 남아요"
-                    else -> "⚠ 이 속도면 월말에 ${won(-pace.projectedLeft)} 모자라요"
+                    else -> "이 속도면 월말에 ${won(-pace.projectedLeft)} 모자라요"
                 },
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,

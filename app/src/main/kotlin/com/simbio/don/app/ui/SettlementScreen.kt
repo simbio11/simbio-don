@@ -2,6 +2,7 @@ package com.simbio.don.app.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,10 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import com.simbio.don.app.ui.kit.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simbio.don.app.ui.kit.CharacterSprite
+import com.simbio.don.app.ui.kit.Icon
+import com.simbio.don.app.ui.kit.pixelPanel
+import com.simbio.don.game.Mood
+import com.simbio.don.app.ui.kit.ItemIcon
+import com.simbio.don.app.ui.kit.UiIcon
+import com.simbio.don.app.ui.kit.WarnLine
 import com.simbio.don.budget.WeekResult
 import com.simbio.don.budget.headline
 import com.simbio.don.game.MockItem
@@ -54,13 +62,20 @@ fun SettlementScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         TextButton(onClick = onBack) { Text("← 나중에") }
-        Text("지난주 결산", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("${shortDate(result.week.start)} ~ ${shortDate(result.week.end)} · ${result.week.days}일", fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("지난주 결산", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("${shortDate(result.week.start)} ~ ${shortDate(result.week.end)} · ${result.week.days}일", fontSize = 13.sp)
+            }
+            Box(Modifier.pixelPanel(DonColors.WoodSurface, depth = 2.dp).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                CharacterSprite(if (result.overspent > 0) Mood.CHEER else Mood.HAPPY, 64.dp)
+            }
+        }
 
         RealCard("실제 내 돈") {
             Text(
                 result.headline(),
-                fontSize = 24.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (result.overspent > 0) DonColors.Warn else DonColors.Good,
             )
@@ -82,10 +97,13 @@ fun SettlementScreen(
                 Text("모의로 쓴 돈은 전부 돌려받아요.", fontSize = 12.sp, color = ChartColors.InkSecondary)
                 Spacer(Modifier.height(8.dp))
                 if (mustReturn) {
-                    Text("⚠ 예산을 ${won(result.overspent)} 넘겨서 그만큼 반품해야 해요. 반품할 물건을 골라주세요.", fontSize = 13.sp, color = DonColors.Warn)
+                    WarnLine("예산을 ${won(result.overspent)} 넘겨서 그만큼 반품해야 해요. 반품할 물건을 골라주세요.")
                     Text("고른 금액 ${won(picked)} / 필요 ${won(need)}", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 } else {
-                    Text("📦 예산을 지켜서 전부 집에 도착해요!", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(UiIcon.BOX, 20.dp)
+                        Text("예산을 지켜서 전부 집에 도착해요!", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
                 week.forEach { m ->
                     Row(

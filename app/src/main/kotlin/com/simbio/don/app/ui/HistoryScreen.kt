@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,13 +12,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.FilterChip
+import com.simbio.don.app.ui.kit.FilterChip
+import com.simbio.don.app.ui.kit.OutlinedButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.MonthView
+import com.simbio.don.app.ui.kit.CategoryIcon
+import com.simbio.don.app.ui.kit.pixelPanel
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntrySource
 import com.simbio.don.budget.EntryType
@@ -35,14 +39,14 @@ import java.time.LocalDate
 /** 달(주기) 넘기기: ‹ 10월 (10/23~11/24) › */
 @Composable
 fun MonthSwitcher(view: MonthView, hasPrev: Boolean, hasNext: Boolean, onPrev: () -> Unit, onNext: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onPrev, enabled = hasPrev) { Text("‹", fontSize = 22.sp) }
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = onPrev, enabled = hasPrev) { Text("<", fontSize = 16.sp) }
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             // 월급날 기준 한 달은 두 달에 걸치므로 "9월"처럼 부르지 않고 기간으로 보여준다
             Text("${shortDate(view.cycle.start)} ~ ${shortDate(view.cycle.end)}", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text(if (view.isCurrent) "이번 달 · 월급날 기준" else "월급날 기준", fontSize = 12.sp, color = ChartColors.InkSecondary)
         }
-        TextButton(onClick = onNext, enabled = hasNext) { Text("›", fontSize = 22.sp) }
+        OutlinedButton(onClick = onNext, enabled = hasNext) { Text(">", fontSize = 16.sp) }
     }
 }
 
@@ -83,9 +87,9 @@ fun HistoryScreen(
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected = category == null && selectedDate == null, onClick = { onCategory(null); onSelectDate(null) }, label = { Text("전체") })
-                selectedDate?.let { d -> FilterChip(selected = true, onClick = { onSelectDate(null) }, label = { Text("${shortDate(d)} ✕") }) }
+                selectedDate?.let { d -> FilterChip(selected = true, onClick = { onSelectDate(null) }, label = { Text("${shortDate(d)} ×") }) }
                 Category.entries.filter { it in present }.forEach { c ->
-                    FilterChip(selected = c == category, onClick = { onCategory(if (c == category) null else c) }, label = { Text("${c.emoji} ${c.label}") })
+                    FilterChip(selected = c == category, onClick = { onCategory(if (c == category) null else c) }, label = { CategoryLabel(c) })
                 }
             }
         }
@@ -113,7 +117,8 @@ fun EntryRow(e: EntryEntity, onOpen: (EntryEntity) -> Unit) {
         Modifier.fillMaxWidth().clickable { onOpen(e) }.padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(c.emoji, fontSize = 20.sp, modifier = Modifier.padding(end = 12.dp))
+        Box(Modifier.pixelPanel(DonColors.PaperLight, depth = 1.dp).padding(5.dp)) { CategoryIcon(c, 22.dp) }
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(e.label, fontSize = 15.sp, maxLines = 1)
             Text(
@@ -139,11 +144,18 @@ fun EntryRow(e: EntryEntity, onOpen: (EntryEntity) -> Unit) {
 
 @Composable
 fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().background(ChartColors.Surface, androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).padding(16.dp),
-    ) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+    Column(Modifier.fillMaxWidth().pixelPanel(DonColors.PaperLight).padding(16.dp)) {
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DonColors.Ink)
         Spacer(Modifier.height(12.dp))
         content()
+    }
+}
+
+/** 칩 안의 카테고리: 도트 아이콘 + 이름 */
+@Composable
+fun CategoryLabel(c: Category) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        CategoryIcon(c, 16.dp)
+        Text(c.label)
     }
 }

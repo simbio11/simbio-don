@@ -14,16 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import com.simbio.don.app.ui.kit.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.OutlinedButton
+import com.simbio.don.app.ui.kit.FilterChip
+import com.simbio.don.app.ui.kit.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,6 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simbio.don.app.ui.kit.ItemIcon
+import com.simbio.don.app.ui.kit.pixelPanel
+import com.simbio.don.app.ui.kit.WarnLine
 import com.simbio.don.game.ItemKind
 import com.simbio.don.game.MockWallet
 import com.simbio.don.game.SharedProduct
@@ -91,7 +92,12 @@ fun MockShopScreen(
                 Text("종류 (집에서 놓일 자리)", fontWeight = FontWeight.Bold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ItemKind.entries.forEach { k ->
-                        FilterChip(selected = k == kind, onClick = { picked = k }, label = { Text("${k.emoji()} ${k.label}") })
+                        FilterChip(selected = k == kind, onClick = { picked = k }, label = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                ItemIcon(k, 16.dp)
+                                Text(k.label)
+                            }
+                        })
                     }
                 }
                 Text(
@@ -102,14 +108,14 @@ fun MockShopScreen(
                 Button(
                     onClick = { step = ShopStep.CHECKOUT },
                     enabled = amount > 0,
-                    colors = ButtonDefaults.buttonColors(containerColor = DonColors.Game),
+                    containerColor = DonColors.Game,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("결제하러 가기") }
             }
 
             ShopStep.CHECKOUT -> {
                 Text("주문 / 결제", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(12.dp)).padding(16.dp)) {
+                Column(Modifier.fillMaxWidth().pixelPanel(DonColors.PaperLight).padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ItemIcon(kind, 36.dp)
                         Spacer(Modifier.size(12.dp))
@@ -125,17 +131,17 @@ fun MockShopScreen(
                     Spacer(Modifier.height(8.dp))
                     Line("총 결제 금액", won(amount), bold = true)
                 }
-                Column(Modifier.fillMaxWidth().background(DonColors.GameSurface, RoundedCornerShape(12.dp)).padding(16.dp)) {
+                Column(Modifier.fillMaxWidth().pixelPanel(DonColors.GameSurface).padding(16.dp)) {
                     Line("지금 잔고", won(wallet))
                     Line("결제 후 잔고", won(wallet - amount), bold = true)
                 }
                 if (!affordable) {
-                    Text("⚠ 잔고가 부족해요. 이번 달 쓸 수 있는 돈보다 비싼 물건은 다음 버전에서 마일리지로 살 수 있어요.", fontSize = 13.sp, color = DonColors.Warn)
+                    WarnLine("잔고가 부족해요. 이번 달 쓸 수 있는 돈보다 비싼 물건은 다음 버전에서 마일리지로 살 수 있어요.")
                 }
                 Button(
                     onClick = { step = ShopStep.PAYING },
                     enabled = affordable,
-                    colors = ButtonDefaults.buttonColors(containerColor = DonColors.Game),
+                    containerColor = DonColors.Game,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                 ) { Text("${won(amount)} 결제하기", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
             }
@@ -150,7 +156,7 @@ fun MockShopScreen(
 
             ShopStep.DONE -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Spacer(Modifier.height(24.dp))
-                Text("✓", fontSize = 56.sp, color = DonColors.Game)
+                ItemIcon(kind, 72.dp)
                 Text("결제 완료!", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text("${name.ifBlank { kind.label }} · ${won(amount)}", fontSize = 15.sp)
                 Text(
@@ -160,7 +166,7 @@ fun MockShopScreen(
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = onHouse, colors = ButtonDefaults.buttonColors(containerColor = DonColors.Game), modifier = Modifier.fillMaxWidth()) { Text("내 집 보기") }
+                Button(onClick = onHouse, containerColor = DonColors.Game, modifier = Modifier.fillMaxWidth()) { Text("내 집 보기") }
                 OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("닫기") }
             }
         }
@@ -174,6 +180,6 @@ fun MockBadge() {
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
         color = Color.White,
-        modifier = Modifier.background(DonColors.Game, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+        modifier = Modifier.pixelPanel(DonColors.Game, depth = 2.dp).padding(horizontal = 10.dp, vertical = 5.dp),
     )
 }

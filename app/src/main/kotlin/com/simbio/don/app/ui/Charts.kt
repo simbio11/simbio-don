@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,6 +42,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simbio.don.app.ui.kit.CategoryIcon
+import com.simbio.don.app.ui.kit.WarnLine
+import com.simbio.don.app.ui.kit.pixelPanel
 import com.simbio.don.budget.CategoryTotal
 import com.simbio.don.budget.SpendingPace
 import com.simbio.don.budget.WeekResult
@@ -60,10 +62,10 @@ object ChartColors {
     val Grid = Color(0xFFE1E0D9)
     val Baseline = Color(0xFFC3C2B7)
     val Track = Color(0xFFCDE2FB)
-    val Surface = Color(0xFFFCFCFB)
-    val InkPrimary = Color(0xFF0B0B0B)
-    val InkSecondary = Color(0xFF52514E)
-    val InkMuted = Color(0xFF898781)
+    val Surface = DonColors.PaperLight
+    val InkPrimary = DonColors.Ink
+    val InkSecondary = DonColors.InkSoft
+    val InkMuted = DonColors.InkMuted
     val Critical = Color(0xFFD03B3B)
 
     /** 달력 칸: 하루 지출 크기 (한 색, 옅음 → 진함) */
@@ -116,7 +118,7 @@ fun PaceChart(pace: SpendingPace, modifier: Modifier = Modifier) {
     val (top, step) = niceMax(maxValue)
     var selected by remember(pace) { mutableStateOf<Int?>(null) }
     val tm = rememberTextMeasurer()
-    val axisStyle = TextStyle(fontSize = 10.sp, color = ChartColors.InkMuted)
+    val axisStyle = TextStyle(fontSize = 10.sp, color = ChartColors.InkMuted, fontFamily = PixelFont)
 
     Column(modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -190,8 +192,7 @@ fun PaceChart(pace: SpendingPace, modifier: Modifier = Modifier) {
                 val offsetX = (xPos - boxW / 2).coerceIn(0.dp, maxWidth - boxW)
                 Column(
                     Modifier.offset { IntOffset(offsetX.roundToPx(), 0) }.width(boxW)
-                        .background(Color.White, RoundedCornerShape(8.dp))
-                        .border(1.dp, ChartColors.Grid, RoundedCornerShape(8.dp))
+                        .pixelPanel(DonColors.PaperLight, depth = 2.dp)
                         .padding(8.dp),
                 ) {
                     Text(shortDate(pace.dateAt(i)), fontSize = 11.sp, color = ChartColors.InkSecondary)
@@ -230,7 +231,9 @@ fun CategoryBars(
         totals.take(limit).forEach { t ->
             Column(Modifier.fillMaxWidth().let { if (onClick != null) it.clickable { onClick(t.category) } else it }) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${t.category.emoji} ${t.category.label}", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    CategoryIcon(t.category, 20.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(t.category.label, fontSize = 14.sp, modifier = Modifier.weight(1f))
                     Text("${t.shareBps / 100}%", fontSize = 12.sp, color = ChartColors.InkMuted)
                     Spacer(Modifier.width(8.dp))
                     Text(won(t.amount), fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -238,11 +241,9 @@ fun CategoryBars(
                 Spacer(Modifier.height(4.dp))
                 Box(Modifier.fillMaxWidth().height(10.dp)) {
                     val frac = if (max == 0L) 0f else t.amount.toFloat() / max
-                    Box(
-                        Modifier.fillMaxWidth(frac.coerceAtLeast(0.01f)).height(10.dp)
-                            .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp))
-                            .background(ChartColors.Series),
-                    )
+                    Box(Modifier.fillMaxWidth(frac.coerceAtLeast(0.01f)).height(10.dp).background(ChartColors.Series)) {
+                        Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = 0.35f)))
+                    }
                 }
                 previous[t.category]?.let { p ->
                     val diff = t.amount - p
@@ -259,18 +260,17 @@ fun CategoryBars(
     }
 }
 
-/** 예산 대비 사용 막대 (트랙 = 예산). 넘으면 상태색 + ⚠ 문구. */
+/** 예산 대비 사용 막대 (트랙 = 예산). 넘으면 상태색 + 경고 문구. */
 @Composable
 fun Meter(spent: Long, budget: Long, modifier: Modifier = Modifier) {
     val over = budget in 1..<spent
     val frac = if (budget <= 0) (if (spent > 0) 1f else 0f) else (spent.toFloat() / budget).coerceIn(0f, 1f)
-    Box(modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(ChartColors.Track)) {
+    // 도트 막대: 외곽선 + 트랙(예산) + 채움(쓴 돈) + 위쪽 밝은 줄
+    Box(modifier.fillMaxWidth().height(14.dp).background(DonColors.Ink).padding(2.dp).background(ChartColors.Track)) {
         if (frac > 0f) {
-            Box(
-                Modifier.fillMaxWidth(frac).height(10.dp)
-                    .clip(RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp))
-                    .background(if (over) ChartColors.Critical else ChartColors.Series),
-            )
+            Box(Modifier.fillMaxWidth(frac).height(10.dp).background(if (over) ChartColors.Critical else ChartColors.Series)) {
+                Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = 0.35f)))
+            }
         }
     }
 }
@@ -301,7 +301,7 @@ fun WeekMeters(results: List<WeekResult>, today: LocalDate) {
                 Spacer(Modifier.height(4.dp))
                 Meter(if (future) 0 else r.spent, r.budget)
                 when {
-                    r.overspent > 0 && !future -> Text("⚠ ${won(r.overspent)} 초과", fontSize = 11.sp, color = ChartColors.Critical)
+                    r.overspent > 0 && !future -> WarnLine("${won(r.overspent)} 초과", fontSize = 11)
                     now -> Text("진행 중", fontSize = 11.sp, color = ChartColors.InkMuted)
                     !future -> Text("${r.savedBps / 100}% 아낌", fontSize = 11.sp, color = ChartColors.InkSecondary)
                 }
@@ -363,9 +363,9 @@ private fun DayCell(d: LocalDate, amount: Long, max: Long, isToday: Boolean, isS
     val ink = if (bin >= 2) Color.White else ChartColors.InkPrimary
     Column(
         Modifier.fillMaxWidth().aspectRatio(0.9f)
-            .clip(RoundedCornerShape(6.dp))
+
             .background(bg)
-            .let { if (isSelected) it.border(2.dp, DonColors.Real, RoundedCornerShape(6.dp)) else it }
+            .let { if (isSelected) it.border(2.dp, DonColors.Ink) else it }
             .clickable(onClick = onClick)
             .padding(2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -378,7 +378,7 @@ private fun DayCell(d: LocalDate, amount: Long, max: Long, isToday: Boolean, isS
             color = if (bin < 0) ChartColors.InkSecondary else ink,
         )
         if (amount != 0L) Text(compactWon(amount), fontSize = 9.sp, color = if (bin < 0) ChartColors.InkSecondary else ink, maxLines = 1)
-        if (isToday) Box(Modifier.size(4.dp).clip(RoundedCornerShape(2.dp)).background(if (bin >= 2) Color.White else DonColors.Real))
+        if (isToday) Box(Modifier.size(4.dp).background(if (bin >= 2) Color.White else DonColors.Ink))
     }
 }
 
@@ -386,10 +386,10 @@ private fun DayCell(d: LocalDate, amount: Long, max: Long, isToday: Boolean, isS
 @Composable
 fun StatTile(label: String, value: String, sub: String? = null, modifier: Modifier = Modifier) {
     Column(
-        modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).padding(12.dp),
+        modifier.pixelPanel(DonColors.PaperLight, depth = 2.dp).padding(horizontal = 10.dp, vertical = 10.dp),
     ) {
-        Text(label, fontSize = 12.sp, color = ChartColors.InkSecondary)
-        Text(value, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ChartColors.InkPrimary, maxLines = 1)
+        Text(label, fontSize = 11.sp, color = ChartColors.InkSecondary, maxLines = 1)
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ChartColors.InkPrimary, maxLines = 1)
         sub?.let { Text(it, fontSize = 11.sp, color = ChartColors.InkMuted) }
     }
 }

@@ -1,53 +1,44 @@
-# 그림 교체 가이드 (도트)
+# 도트 그림과 UI
 
-지금 앱의 캐릭터·방은 코드로 그린 임시 도트 그림이고, 물건은 이모지예요.
-아래 이름으로 PNG를 `app/src/main/res/drawable-nodpi/`에 넣으면 앱이 자동으로 그 그림을 써요 (코드 수정 없음).
+## 구성
 
-## 공통 규칙
+- **그림 생성기** `tools/pixelart/` — 모든 도트 그림을 같은 팔레트로 만든다.
+  - `palette.py`: 색 (글자 하나 = 색 하나, 외곽선은 검정 대신 짙은 자두색 `#2b2234`)
+  - `sprites.py`: 캐릭터·물건·카테고리·UI 아이콘 격자 (글자 하나 = 픽셀 하나)
+  - `make_art.py`: 방 배경을 그리고 전부 PNG로 저장, 방 칸 좌표 `RoomLayout.kt` 생성
+- **결과물** `app/src/main/res/drawable-nodpi/px_*.png` — 원본 픽셀 크기. 앱이 정수배로 확대해 픽셀이 뭉개지지 않게 그린다.
+- **글꼴** 갈무리11 (Galmuri, SIL OFL 1.1) — `res/font/`, 라이선스는 `assets/licenses/galmuri_OFL.txt`
+- **UI 키트** `app/.../ui/kit/PixelKit.kt` — 도트 패널(모서리 깎기 + 단단한 그림자), 버튼(누르면 내려앉음), 칩, 하단 탭, 도트 그림 표시
 
-- **PNG, 투명 배경**, 도트 그대로(안티에일리어싱 없이). 앱이 확대할 때 픽셀을 뭉개지 않아요.
-- 크기는 아래 "원본 픽셀" 그대로 만들면 돼요. 더 크게 만들 거면 **정수배**(×2, ×4)로.
-- 스타일: WEB-5 도트 가문 키우기와 같은 톤 — 굵은 외곽선, 3~4단계 음영, 따뜻한 색.
+## 다시 만들기
 
-## 캐릭터 (12 × 17 원본 픽셀)
+```sh
+python3 tools/pixelart/make_art.py /tmp/preview   # 미리보기: /tmp/preview/sheet.png, scene.png
+```
 
-| 파일 이름 | 언제 | 표정 |
+격자나 방 그리는 코드를 고친 뒤 다시 돌리면 PNG와 `RoomLayout.kt`가 함께 바뀐다.
+방 칸 좌표를 바꿨다면 `RoomLayoutTest`가 수납 칸 수와 맞는지 확인한다.
+
+## 손으로 그린 그림으로 바꾸기
+
+같은 이름·같은 크기의 PNG로 `drawable-nodpi/`의 파일을 덮어쓰면 된다 (투명 배경, 안티에일리어싱 없이).
+덮어쓴 뒤 생성기를 다시 돌리면 덮어쓴 그림이 지워지니 주의.
+
+| 그림 | 이름 | 원본 크기 |
 | :--- | :--- | :--- |
-| `sprite_character_happy.png` | 이번 주 예산보다 천천히 씀 | 활짝 웃음 |
-| `sprite_character_calm.png` | 예산 속도대로 | 잔잔한 미소 |
-| `sprite_character_worried.png` | 예산보다 빨리 씀 | 땀 한 방울, 걱정 |
-| `sprite_character_cheer.png` | 예산을 넘김 | 주먹 쥐고 "다시 해보자" (혼나는 느낌 X) |
+| 캐릭터 (표정 4 × 프레임 2: 0 = 눈 뜸, 1 = 깜빡/반짝) | `px_char_{happy,calm,worried,cheer}_{0,1}` | 16 × 24 |
+| 물건 | `px_item_{clothes,bag,shoes,electronics,book,beauty,living,toy,meal,drink,etc}` | 12 × 12 |
+| 먹고 남은 쓰레기 | `px_item_meal_trash`, `px_item_drink_trash` | 12 × 12 |
+| 가계부 카테고리 | `px_cat_{food,cafe,delivery,transport,shopping,living,health,culture,event,education,etc}` | 12 × 12 |
+| UI 아이콘 | `px_ui_{home,list,house,chart,gear,coin,warn,box,star}` | 12 × 12 |
+| 캐릭터 그림자 | `px_shadow` | 14 × 4 |
+| 원룸 배경 | `px_room_one_room` | 160 × 136 |
 
-프롬프트 예시:
-> 12x17 pixel art character sprite, front view, full body, cute chibi young adult, brown hair, blue t-shirt, navy pants, bold dark outline, transparent background, no anti-aliasing, {표정} expression
+원룸 배경을 새로 그릴 때는 가구 칸 위치가 `RoomLayout.kt`의 좌표와 맞아야 한다 (옷장 x 6–47, 책장 x 62–101, 책상 x 112–155, 신발장 x 6–33).
 
-## 물건 (16 × 16 원본 픽셀)
+## 이미지 생성 AI로 그릴 때 프롬프트 예시
 
-| 파일 이름 | 종류 |
-| :--- | :--- |
-| `sprite_item_clothes.png` | 옷 |
-| `sprite_item_bag.png` | 가방·잡화 |
-| `sprite_item_shoes.png` | 신발 |
-| `sprite_item_electronics.png` | 전자기기 |
-| `sprite_item_book.png` | 책·문구 |
-| `sprite_item_beauty.png` | 화장품 |
-| `sprite_item_living.png` | 생활용품 |
-| `sprite_item_toy.png` | 취미·장난감 |
-| `sprite_item_etc.png` | 기타 (선물 상자) |
-| `sprite_item_meal.png` / `sprite_item_meal_trash.png` | 음식 / 먹고 남은 배달 상자 |
-| `sprite_item_drink.png` / `sprite_item_drink_trash.png` | 커피·음료 / 빈 컵 |
+> 16x24 pixel art character sprite, front view, full body, cute chibi young adult, brown hair, blue t-shirt, navy pants,
+> dark plum outline (#2b2234), warm cozy palette, transparent background, no anti-aliasing, {표정} expression
 
-프롬프트 예시:
-> 16x16 pixel art icon of {물건}, game inventory item, bold dark outline, transparent background, no anti-aliasing
-
-## 방 (M2에서 배경 교체 지원 예정)
-
-방은 지금 코드로 그려요. 칸 위치(방 너비·높이 비율)는 `HouseScreen.kt`의 `AREAS`에 있고,
-배경 그림을 만들 때는 이 위치에 옷장·신발장·선반·책상이 오도록 맞추면 돼요.
-
-| 칸 | x | y | 너비 | 높이 |
-| :--- | :--- | :--- | :--- | :--- |
-| 옷장 | 0.03 | 0.10 | 0.26 | 0.50 |
-| 신발장 | 0.03 | 0.66 | 0.26 | 0.16 |
-| 선반 | 0.34 | 0.28 | 0.32 | 0.16 |
-| 책상 | 0.68 | 0.52 | 0.29 | 0.18 |
+> 12x12 pixel art icon of {물건}, game inventory item, dark plum outline, warm cozy palette, transparent background, no anti-aliasing

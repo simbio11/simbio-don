@@ -16,16 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,21 +29,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.HomeState
 import com.simbio.don.app.data.toRule
 import com.simbio.don.app.ui.AppState
-import com.simbio.don.app.ui.ChartIcon
+import com.simbio.don.app.ui.DonColors
 import com.simbio.don.app.ui.DonTheme
+import com.simbio.don.app.ui.kit.PixelFab
+import com.simbio.don.app.ui.kit.PixelTabBar
+import com.simbio.don.app.ui.kit.TabItem
+import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.EntryEditScreen
 import com.simbio.don.app.ui.HistoryScreen
 import com.simbio.don.app.ui.HomeScreen
 import com.simbio.don.app.ui.HouseScreen
 import com.simbio.don.app.ui.MockShopScreen
-import com.simbio.don.app.ui.ListIcon
 import com.simbio.don.app.ui.MainViewModel
 import com.simbio.don.app.ui.OnboardingScreen
 import com.simbio.don.app.ui.ReviewScreen
@@ -68,7 +61,13 @@ import com.simbio.don.game.SharedTextParser
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-private enum class Tab(val label: String) { Home("홈"), History("내역"), House("내 집"), Stats("통계"), Settings("설정") }
+private enum class Tab(val label: String, val icon: UiIcon) {
+    Home("홈", UiIcon.HOME),
+    History("내역", UiIcon.LIST),
+    House("내 집", UiIcon.HOUSE),
+    Stats("통계", UiIcon.CHART),
+    Settings("설정", UiIcon.GEAR),
+}
 
 /** 탭 위에 덮어 여는 화면 */
 private sealed interface Overlay {
@@ -165,28 +164,22 @@ class MainActivity : ComponentActivity() {
         }
 
         Scaffold(
+            containerColor = DonColors.Paper,
             bottomBar = {
-                NavigationBar {
-                    Tab.entries.forEach { t ->
-                        NavigationBarItem(
-                            selected = tab == t,
-                            onClick = {
-                                if (t == Tab.History || t == Tab.Stats) {
-                                    if (tab != Tab.History && tab != Tab.Stats) vm.resetMonth()
-                                }
-                                tab = t
-                            },
-                            icon = { Icon(t.icon(), contentDescription = t.label) },
-                            label = { Text(t.label) },
-                        )
+                PixelTabBar(
+                    items = Tab.entries.map { TabItem(it.label, it.icon) },
+                    selected = tab.ordinal,
+                ) { i ->
+                    val t = Tab.entries[i]
+                    if (t == Tab.History || t == Tab.Stats) {
+                        if (tab != Tab.History && tab != Tab.Stats) vm.resetMonth()
                     }
+                    tab = t
                 }
             },
             floatingActionButton = {
                 if (tab == Tab.Home || tab == Tab.History) {
-                    FloatingActionButton(onClick = { overlay = Overlay.Edit(null) }) {
-                        Icon(Icons.Filled.Add, contentDescription = "지출 입력")
-                    }
+                    PixelFab(onClick = { overlay = Overlay.Edit(null) }, contentDescription = "지출 입력")
                 }
             },
         ) { padding ->
@@ -336,12 +329,4 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-}
-
-private fun Tab.icon(): ImageVector = when (this) {
-    Tab.Home -> Icons.Filled.Home
-    Tab.House -> Icons.Filled.Face
-    Tab.History -> ListIcon
-    Tab.Stats -> ChartIcon
-    Tab.Settings -> Icons.Filled.Settings
 }

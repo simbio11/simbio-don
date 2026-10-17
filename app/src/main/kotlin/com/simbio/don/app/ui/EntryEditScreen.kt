@@ -11,16 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import com.simbio.don.app.ui.kit.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.simbio.don.app.ui.kit.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -106,7 +106,7 @@ fun EntryEditScreen(
         Text("카테고리", fontWeight = FontWeight.Bold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Category.entries.forEach { c ->
-                FilterChip(selected = c == category, onClick = { picked = c }, label = { Text("${c.emoji} ${c.label}") })
+                FilterChip(selected = c == category, onClick = { picked = c }, label = { CategoryLabel(c) })
             }
         }
         if (existing != null && picked != null && picked!!.name != existing.category) {
@@ -121,7 +121,7 @@ fun EntryEditScreen(
             (if (date in recent) recent else listOf(date) + recent).forEach { d ->
                 FilterChip(selected = d == date, onClick = { date = d }, label = { Text(shortDate(d)) })
             }
-            FilterChip(selected = false, onClick = { showPicker = true }, label = { Text("📅 다른 날") })
+            FilterChip(selected = false, onClick = { showPicker = true }, label = { Text("달력에서 고르기") })
         }
 
         Text("종류", fontWeight = FontWeight.Bold)
