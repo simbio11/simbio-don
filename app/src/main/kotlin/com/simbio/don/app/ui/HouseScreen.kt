@@ -39,7 +39,10 @@ import com.simbio.don.app.ui.kit.TextButton
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.kit.WarnLine
 import com.simbio.don.app.ui.kit.card
+import com.simbio.don.app.ui.kit.Divider
 import com.simbio.don.game.MockItem
+import com.simbio.don.game.MockWallet
+import com.simbio.don.game.Wishlist
 
 @Composable
 fun HouseScreen(
@@ -47,6 +50,8 @@ fun HouseScreen(
     onShop: () -> Unit,
     onRecycle: () -> Unit,
     onDiscard: (Set<Long>) -> Unit,
+    onBuyWish: (MockItem) -> Unit = {},
+    onGiveUpWish: (MockItem) -> Unit = {},
 ) {
     val house = home.house
     var picking by remember { mutableStateOf<Pair<String, List<MockItem>>?>(null) }
@@ -71,6 +76,7 @@ fun HouseScreen(
                 house,
                 home.mood,
                 modifier = Modifier.clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                phase = DayPhase.of(home.now.toLocalTime()),
                 onTap = { hit ->
                     when (hit) {
                         is RoomHit.OfSlot -> picking = hit.slot.label to house.slots[hit.slot].orEmpty()
@@ -114,6 +120,10 @@ fun HouseScreen(
             Text("아직 빈 방이에요. 사고 싶은 게 생기면 여기서 모의로 사보세요.", fontSize = 13.sp, color = DonColors.InkSoft, modifier = Modifier.padding(horizontal = 4.dp))
         }
 
+        if (home.wishes.isNotEmpty() || home.gaveUpTotal > 0) {
+            WishlistCard(home, onBuyWish, onGiveUpWish)
+        }
+
         GameCard("모의 지갑", icon = { Icon(UiIcon.WALLET, 18.dp, DonColors.Game) }) {
             Text(won(home.wallet), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
             Text("이번 달 쓸 수 있는 돈에서 실제 지출과 아직 돌려받지 않은 모의 구매를 뺀 금액이에요.", fontSize = 12.sp, color = DonColors.InkSoft)
@@ -143,6 +153,55 @@ fun HouseScreen(
 
     picking?.let { (title, items) ->
         DiscardDialog(title, items, onDismiss = { picking = null }, onDiscard = { onDiscard(it); picking = null })
+    }
+}
+
+/** 찜 목록: 하루가 지나면 "아직도 사고 싶어요?" */
+@Composable
+private fun WishlistCard(home: HomeState, onBuy: (MockItem) -> Unit, onGiveUp: (MockItem) -> Unit) {
+    SectionCard(
+        "찜 목록 ${home.wishes.size}개",
+        trailing = if (home.gaveUpTotal > 0) ({ Badge("안 산 돈 ${won(home.gaveUpTotal)}", DonColors.Good) }) else null,
+    ) {
+        if (home.wishes.isEmpty()) {
+            Text("찜한 물건을 하루 고민하고 안 샀어요. 그 돈은 그대로 남아 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
+        }
+        home.wishes.forEachIndexed { i, w ->
+            if (i > 0) Divider(Modifier.padding(vertical = 8.dp))
+            val ready = w.createdAt?.let { Wishlist.isReady(it, home.now) } ?: true
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ItemThumb(w.kind, 52.dp)
+                Spacer(Modifier.size(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(w.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DonColors.Ink, maxLines = 1)
+                    Text(won(w.price), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                    if (ready) {
+                        Text("하루 지났어요. 아직도 사고 싶어요?", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Warn)
+                    } else {
+                        val left = w.createdAt?.let { Wishlist.hoursLeft(it, home.now) } ?: 0
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(UiIcon.HOURGLASS, 14.dp, DonColors.InkMuted)
+                            Text("${left}시간 뒤에 다시 물어볼게요", fontSize = 12.sp, color = DonColors.InkMuted)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            val affordable = MockWallet.canAfford(home.wallet, w.price)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SubButton(onClick = { onGiveUp(w) }, modifier = Modifier.weight(1f), containerColor = DonColors.GoodSurface, contentColor = DonColors.Good) {
+                    Text("안 살래요")
+                }
+                SubButton(
+                    onClick = { onBuy(w) },
+                    enabled = affordable,
+                    modifier = Modifier.weight(1f),
+                    containerColor = if (ready) DonColors.GameSurface else DonColors.SurfaceAlt,
+                    contentColor = if (ready) DonColors.GameDeep else DonColors.InkSoft,
+                ) { Text(if (ready) "모의로 사기" else "지금 사기") }
+            }
+            if (!affordable) Text("모의 지갑 잔고가 부족해요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
     }
 }
 
@@ -185,7 +244,7 @@ fun HomeGameCard(home: HomeState, onHouse: () -> Unit, onShop: () -> Unit) {
             }
             MoreButton("내 집 보기", onHouse)
         }
-        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)))
+        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)), DayPhase.of(home.now.toLocalTime()))
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -197,6 +256,7 @@ fun HomeGameCard(home: HomeState, onHouse: () -> Unit, onShop: () -> Unit) {
                         append("물건 ${home.house.itemCount}개")
                         if (home.shipping.isNotEmpty()) append(" · 배송 중 ${home.shipping.size}")
                         if (home.house.trash.isNotEmpty()) append(" · 쓰레기 ${home.house.trash.size}")
+                        if (home.wishes.isNotEmpty()) append(" · 찜 ${home.wishes.size}")
                     },
                     fontSize = 12.sp,
                     color = DonColors.InkSoft,

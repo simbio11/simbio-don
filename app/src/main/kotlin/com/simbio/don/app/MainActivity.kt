@@ -1,6 +1,12 @@
 package com.simbio.don.app
 
+import android.Manifest
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
+import android.os.Build
+import com.simbio.don.app.notify.DailyReminder
+import com.simbio.don.app.widget.WeekWidget
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
@@ -17,7 +23,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +47,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.HomeState
+import com.simbio.don.app.data.QuickPick
 import com.simbio.don.app.data.toRule
 import com.simbio.don.app.ui.AppState
 import com.simbio.don.app.ui.DonColors
@@ -80,13 +95,22 @@ private sealed interface Overlay {
 }
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        /** 위젯 + 버튼 → 지출 입력 */
+        const val ACTION_ADD = "com.simbio.don.action.ADD"
+    }
+
     private val vm: MainViewModel by viewModels()
     private var listenerEnabled by mutableStateOf(false)
 
     /** 쇼핑 앱에서 "공유"로 받은 글 — 모의 쇼핑 화면을 연다 */
     private var shared by mutableStateOf<SharedProduct?>(null)
 
+    /** 위젯의 + 버튼 — 지출 입력을 바로 연다 */
+    private var addRequested by mutableStateOf(false)
+
     private fun readShare(intent: Intent?) {
+        if (intent?.action == ACTION_ADD) addRequested = true
         if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
             val text = listOfNotNull(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getStringExtra(Intent.EXTRA_TEXT)).joinToString("\n")
             if (text.isNotBlank()) shared = SharedTextParser.parse(text)
@@ -102,6 +126,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         readShare(intent)
+        if (DailyReminder.isOn(this)) DailyReminder.schedule(this)
         setContent {
             DonTheme {
                 Surface(Modifier.fillMaxSize(), color = DonColors.Bg) {
@@ -109,6 +134,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        WeekWidget.refresh(this)
     }
 
     override fun onResume() {
@@ -149,6 +179,20 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(shared) {
             shared?.let { overlay = Overlay.Shop(it); shared = null }
         }
+        LaunchedEffect(addRequested) {
+            if (addRequested) {
+                overlay = Overlay.Edit(null)
+                addRequested = false
+            }
+        }
+        // 지운 기록 되돌리기
+        val snackbar = remember { SnackbarHostState() }
+        val deleted by vm.deleted.collectAsStateWithLifecycle()
+        LaunchedEffect(deleted) {
+            val e = deleted ?: return@LaunchedEffect
+            val r = snackbar.showSnackbar("'${e.label.ifBlank { "지출" }}' 기록을 지웠어요", actionLabel = "되돌리기", duration = SnackbarDuration.Short)
+            if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted()
+        }
 
         BackHandler(enabled = overlay != null || tab != Tab.Home) {
             when {
@@ -165,6 +209,17 @@ class MainActivity : ComponentActivity() {
 
         Scaffold(
             containerColor = DonColors.Bg,
+            snackbarHost = {
+                SnackbarHost(snackbar) { data ->
+                    Snackbar(
+                        data,
+                        shape = RoundedCornerShape(14.dp),
+                        containerColor = DonColors.Ink,
+                        contentColor = Color.White,
+                        actionColor = Color(0xFF8FB0FF),
+                    )
+                }
+            },
             bottomBar = {
                 TabBar(
                     items = Tab.entries.map { TabItem(it.label, it.icon, it.selectedIcon) },
@@ -203,6 +258,8 @@ class MainActivity : ComponentActivity() {
                         onShop = { overlay = Overlay.Shop(null) },
                         onRecycle = { vm.recycle() },
                         onDiscard = { vm.discard(it) },
+                        onBuyWish = { vm.buyWished(it.id) },
+                        onGiveUpWish = { vm.giveUpWished(it.id) },
                     )
                     Tab.History, Tab.Stats -> {
                         val view by vm.month.collectAsStateWithLifecycle()
@@ -250,6 +307,16 @@ class MainActivity : ComponentActivity() {
         val rules by vm.appRules.collectAsStateWithLifecycle()
         val seen by vm.seenApps.collectAsStateWithLifecycle()
         val learned by vm.learned.collectAsStateWithLifecycle()
+        var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
+        val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                DailyReminder.setOn(this, true)
+                reminderOn = true
+            } else {
+                Toast.makeText(this, "알림 권한을 허용해야 켤 수 있어요", Toast.LENGTH_SHORT).show()
+            }
+        }
+        val widgets = AppWidgetManager.getInstance(this)
         val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
             if (uri != null) {
                 vm.exportCsv(uri)
@@ -272,6 +339,21 @@ class MainActivity : ComponentActivity() {
                 learnedCount = learned,
                 onResetLearned = { vm.resetLearned() },
                 onExport = { export.launch("돈아끼는게임_내역_${LocalDate.now()}.csv") },
+                reminderOn = reminderOn,
+                onReminder = { on ->
+                    if (on && !DailyReminder.canNotify(this) && Build.VERSION.SDK_INT >= 33) {
+                        askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        DailyReminder.setOn(this, on)
+                        reminderOn = on
+                    }
+                },
+                onPinWidget = if (widgets.isRequestPinAppWidgetSupported) {
+                    { widgets.requestPinAppWidget(ComponentName(this, WeekWidget::class.java), null, null) }
+                } else {
+                    null
+                },
+                version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty(),
             )
         }
     }
@@ -281,6 +363,7 @@ class MainActivity : ComponentActivity() {
         when (o) {
             is Overlay.Edit -> {
                 val learned by produceState<Map<String, Category>?>(null) { value = vm.learnedMap() }
+                val picks by produceState(emptyList<QuickPick>()) { value = vm.quickPicks() }
                 val month by vm.month.collectAsStateWithLifecycle()
                 // 지난달 기록을 고칠 때는 그 달 기준으로
                 val existingDay = o.existing?.epochDay?.let { LocalDate.ofEpochDay(it) }
@@ -295,6 +378,7 @@ class MainActivity : ComponentActivity() {
                         canAddException = exceptions < 2,
                         learned = l,
                         existing = o.existing,
+                        picks = picks,
                         onSave = { d -> vm.save(d, o.existing) },
                         onDelete = o.existing?.let { e -> { vm.deleteEntry(e) } },
                         onBack = close,
@@ -318,6 +402,7 @@ class MainActivity : ComponentActivity() {
                 wallet = home.wallet,
                 prefill = o.prefill,
                 onBuy = { n, p, k, st -> vm.buyMock(n, p, k, st) },
+                onWish = { n, p, k, st -> vm.wishMock(n, p, k, st) },
                 onHouse = goHouse,
                 onBack = close,
             )

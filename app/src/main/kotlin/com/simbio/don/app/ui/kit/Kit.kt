@@ -1,7 +1,12 @@
 package com.simbio.don.app.ui.kit
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -53,6 +58,17 @@ import com.simbio.don.budget.Category
 /** 둥근 카드 바탕 */
 fun Modifier.card(color: Color = DonColors.Surface, radius: Dp = 16.dp): Modifier =
     this.clip(RoundedCornerShape(radius)).background(color)
+
+/** 처음 나타날 때 톡 튀어나오는 효과 */
+@Composable
+fun Modifier.popIn(): Modifier {
+    val s = remember { Animatable(0.6f) }
+    LaunchedEffect(Unit) { s.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)) }
+    return this.graphicsLayer {
+        scaleX = s.value
+        scaleY = s.value
+    }
+}
 
 // ── 버튼 ───────────────────────────────────────────────────
 
@@ -268,6 +284,13 @@ enum class UiIcon(@DrawableRes val res: Int) {
     WALLET(R.drawable.ic_account_balance_wallet_fill),
     TROPHY(R.drawable.ic_emoji_events_fill),
     CLOCK(R.drawable.ic_schedule_fill),
+    SEARCH(R.drawable.ic_search),
+    HEART(R.drawable.ic_favorite),
+    HEART_ON(R.drawable.ic_favorite_fill),
+    HOURGLASS(R.drawable.ic_hourglass_top_fill),
+    NOTIFY(R.drawable.ic_notifications),
+    WIDGET(R.drawable.ic_widgets_fill),
+    BOLT(R.drawable.ic_bolt_fill),
 }
 
 @Composable

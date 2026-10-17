@@ -4,6 +4,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.simbio.don.app.data.DonDatabase
 import com.simbio.don.app.data.DonRepository
+import com.simbio.don.app.notify.DailyReminder
+import com.simbio.don.app.widget.WeekWidget
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntryType
 import com.simbio.don.budget.FixedExpense
@@ -141,6 +143,56 @@ class DonRepositoryTest {
 
         repo.recycle()
         assertTrue(home(at(11, 2, 14)).house.trash.isEmpty())
+    }
+
+    @Test
+    fun `찜은 지갑에서 빠지지 않고, 사면 그날 산 것으로, 안 사면 참은 돈으로`() = runTest {
+        repo.wishMock("아이패드", 900_000, ItemKind.ELECTRONICS, null, at(10, 27, 21))
+        repo.wishMock("가디건", 49_000, ItemKind.CLOTHES, null, at(10, 27, 22))
+        val h = home(at(10, 28, 20))
+        assertEquals(1_980_000L, h.wallet)
+        assertEquals(listOf("아이패드", "가디건"), h.wishes.map { it.name })
+        assertTrue(h.readyWishes.isEmpty())
+        assertEquals(2, home(at(10, 28, 22)).readyWishes.size)
+
+        repo.buyWished(h.wishes[1].id, at(10, 29, 9))
+        repo.giveUpWished(h.wishes[0].id)
+        val after = home(at(10, 29, 10))
+        assertTrue(after.wishes.isEmpty())
+        assertEquals(LocalDate.of(2026, 10, 29), after.shipping.single().date)
+        assertEquals(1_980_000L - 49_000, after.wallet)
+        assertEquals(900_000L, after.gaveUpTotal)
+    }
+
+    @Test
+    fun `지운 기록은 되살릴 수 있고, 자주 쓰는 곳은 횟수 순`() = runTest {
+        repo.addManual(LocalDate.of(2026, 10, 24), 4_500, "스타벅스", EntryType.SPEND)
+        repo.addManual(LocalDate.of(2026, 10, 25), 5_000, "스타벅스", EntryType.SPEND)
+        repo.addManual(LocalDate.of(2026, 10, 25), 9_000, "김밥천국", EntryType.SPEND)
+        val picks = repo.quickPicks(LocalDate.of(2026, 10, 26))
+        assertEquals(listOf("스타벅스", "김밥천국"), picks.map { it.label })
+        assertEquals(5_000, picks.first().amount)
+        assertEquals(Category.CAFE, picks.first().category)
+
+        val e = home(at(10, 26)).entries.first { it.label == "김밥천국" }
+        repo.deleteEntry(e)
+        assertEquals(2, home(at(10, 26)).entries.size)
+        repo.restoreEntry(e)
+        assertEquals(3, home(at(10, 26)).entries.size)
+    }
+
+    @Test
+    fun `위젯과 밤 알림은 이번 주 남은 돈을 보여준다`() = runTest {
+        repo.addManual(LocalDate.of(2026, 10, 24), 12_000, "국밥", EntryType.SPEND)
+        val h = home(at(10, 24, 21))
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val view = WeekWidget.render(context, h).apply(context, android.widget.FrameLayout(context))
+        assertEquals("588,000원", view.findViewById<android.widget.TextView>(R.id.widget_amount).text.toString())
+        assertTrue(view.findViewById<android.widget.TextView>(R.id.widget_today).text.startsWith("오늘은"))
+
+        val (title, body) = DailyReminder.message(h)
+        assertEquals("오늘 12,000원 썼어요", title)
+        assertTrue(body, body.startsWith("이번 주 남은 돈 588,000원"))
     }
 
     @Test

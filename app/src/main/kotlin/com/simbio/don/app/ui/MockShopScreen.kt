@@ -33,6 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.simbio.don.app.ui.kit.popIn
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -54,7 +57,7 @@ import com.simbio.don.game.MockWallet
 import com.simbio.don.game.SharedProduct
 import kotlinx.coroutines.delay
 
-private enum class ShopStep { FORM, CHECKOUT, PAYING, DONE }
+private enum class ShopStep { FORM, CHECKOUT, PAYING, DONE, WISHED }
 
 /**
  * 모의 쇼핑: 상품 정보 → 쇼핑몰 같은 주문/결제 화면 → 주문 완료.
@@ -66,6 +69,7 @@ fun MockShopScreen(
     wallet: Long,
     prefill: SharedProduct?,
     onBuy: (name: String, price: Long, kind: ItemKind, store: String?) -> Unit,
+    onWish: (name: String, price: Long, kind: ItemKind, store: String?) -> Unit,
     onHouse: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -79,11 +83,13 @@ fun MockShopScreen(
     val affordable = MockWallet.canAfford(wallet, amount)
     val title = name.ifBlank { kind.label }
 
+    val haptic = LocalHapticFeedback.current
     LaunchedEffect(step) {
         if (step == ShopStep.PAYING) {
             delay(1_200)
             onBuy(name.trim(), amount, kind, store.ifBlank { null })
             step = ShopStep.DONE
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
 
@@ -125,6 +131,7 @@ fun MockShopScreen(
                     Section("상품 정보") {
                         OutlinedTextField(name, { name = it.take(40) }, label = { Text("물건 이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         MoneyField("가격", price, { price = it })
+                        AmountQuickAdd(price, listOf(10_000, 50_000, 100_000)) { price = it }
                         OutlinedTextField(store, { store = it.take(20) }, label = { Text("쇼핑몰 (선택)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                     Section("종류 · 집에서 놓일 자리") {
@@ -203,13 +210,40 @@ fun MockShopScreen(
                     }
                 }
 
+                ShopStep.WISHED -> Column(
+                    Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(Modifier.popIn().size(64.dp).clip(CircleShape).background(DonColors.WarnSurface), contentAlignment = Alignment.Center) {
+                        Icon(UiIcon.HEART_ON, 36.dp, DonColors.Warn)
+                    }
+                    Text("찜했어요!", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                    Text(
+                        "하루만 고민해 봐요. 24시간 뒤에 '아직도 사고 싶어요?' 하고 물어볼게요.\n그때 안 사면 ${won(amount)}은 참은 돈이 돼요.",
+                        fontSize = 14.sp,
+                        color = DonColors.InkSoft,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth().card().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ItemThumb(kind, 56.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(title, fontSize = 15.sp, color = DonColors.Ink, maxLines = 2)
+                            Text(won(amount), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DonColors.Ink)
+                        }
+                        Badge("찜 목록", DonColors.Warn)
+                    }
+                }
+
                 ShopStep.DONE -> {
                     Column(
                         Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Box(Modifier.size(64.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
+                        Box(Modifier.popIn().size(64.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
                             Icon(UiIcon.CHECK, 40.dp, DonColors.Game)
                         }
                         Text("결제 완료!", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
@@ -238,8 +272,21 @@ fun MockShopScreen(
         // 아래 고정 버튼 (쇼핑몰 결제 화면처럼)
         when (step) {
             ShopStep.FORM -> BottomBar {
-                Button(onClick = { step = ShopStep.CHECKOUT }, enabled = amount > 0, containerColor = DonColors.Game, modifier = Modifier.fillMaxWidth()) {
-                    Text("결제하러 가기")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SubButton(
+                        onClick = {
+                            onWish(name.trim(), amount, kind, store.ifBlank { null })
+                            step = ShopStep.WISHED
+                        },
+                        enabled = amount > 0,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(UiIcon.HEART, 18.dp, if (amount > 0) DonColors.Warn else DonColors.InkFaint)
+                        Text("찜하기")
+                    }
+                    Button(onClick = { step = ShopStep.CHECKOUT }, enabled = amount > 0, containerColor = DonColors.Game, modifier = Modifier.weight(2f)) {
+                        Text("결제하러 가기")
+                    }
                 }
             }
             ShopStep.CHECKOUT -> BottomBar {
@@ -247,7 +294,7 @@ fun MockShopScreen(
                     Text("${won(amount)} 결제하기", fontSize = 17.sp)
                 }
             }
-            ShopStep.DONE -> BottomBar {
+            ShopStep.DONE, ShopStep.WISHED -> BottomBar {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SubButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text("닫기") }
                     Button(onClick = onHouse, containerColor = DonColors.Game, modifier = Modifier.weight(2f)) { Text("내 집 보기") }

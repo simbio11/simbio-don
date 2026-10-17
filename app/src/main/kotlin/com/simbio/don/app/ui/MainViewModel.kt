@@ -138,7 +138,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateSettings(fixed: List<FixedExpense>, savings: Long, settlementDay: DayOfWeek, applyNow: Boolean) =
         viewModelScope.launch { repo.updateSettings(fixed, savings, settlementDay, applyNow) }
 
-    fun deleteEntry(e: EntryEntity) = viewModelScope.launch { repo.deleteEntry(e) }
+    private val _deleted = MutableStateFlow<EntryEntity?>(null)
+
+    /** 방금 지운 기록 (되돌리기 안내용) */
+    val deleted: StateFlow<EntryEntity?> = _deleted
+
+    fun deleteEntry(e: EntryEntity) = viewModelScope.launch {
+        repo.deleteEntry(e)
+        _deleted.value = e
+    }
+
+    fun undoDelete() {
+        val e = _deleted.value ?: return
+        _deleted.value = null
+        viewModelScope.launch { repo.restoreEntry(e) }
+    }
+
+    fun clearDeleted() {
+        _deleted.value = null
+    }
+
+    suspend fun quickPicks() = repo.quickPicks(clock.value.toLocalDate())
 
     fun resolve(item: ReviewItemEntity, r: ReviewResolution) = viewModelScope.launch { repo.resolveReview(item, r) }
 
@@ -147,6 +167,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun buyMock(name: String, price: Long, kind: ItemKind, store: String?) =
         viewModelScope.launch { repo.buyMock(name, price, kind, store, LocalDate.now(), LocalDateTime.now()) }
+
+    fun wishMock(name: String, price: Long, kind: ItemKind, store: String?) =
+        viewModelScope.launch { repo.wishMock(name, price, kind, store, LocalDateTime.now()) }
+
+    fun buyWished(id: Long) = viewModelScope.launch { repo.buyWished(id, LocalDateTime.now()) }
+
+    fun giveUpWished(id: Long) = viewModelScope.launch { repo.giveUpWished(id) }
 
     fun recycle() = viewModelScope.launch { repo.recycle() }
     fun discard(ids: Set<Long>) = viewModelScope.launch { repo.discard(ids) }

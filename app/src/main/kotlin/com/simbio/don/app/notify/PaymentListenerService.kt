@@ -11,6 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import com.simbio.don.app.widget.WeekWidget
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -63,7 +64,10 @@ class PaymentListenerService : NotificationListenerService() {
             if (processed.containsKey(key)) return
             processed[key] = Unit
         }
-        scope.launch { repo.handleNotification(RawNotification(pkg, title, text, postedAt)) }
+        scope.launch {
+            repo.handleNotification(RawNotification(pkg, title, text, postedAt))
+            WeekWidget.refresh(this@PaymentListenerService)
+        }
     }
 
     private fun recordSeen(pkg: String, postTime: Long, at: LocalDateTime) {

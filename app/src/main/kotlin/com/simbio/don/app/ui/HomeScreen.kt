@@ -2,6 +2,7 @@ package com.simbio.don.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -84,6 +85,17 @@ fun HomeScreen(
         } else if (home.waitingForInbox) {
             Banner("확인함을 정리하면 결산해요", "오늘 정오가 지나면 자동으로 결산해요.", "확인함", onReview, UiIcon.BELL, DonColors.Real)
         }
+        if (home.readyWishes.isNotEmpty()) {
+            val w = home.readyWishes.first()
+            Banner(
+                "찜한 물건, 아직도 사고 싶어요?",
+                "${w.name} · ${won(w.price)}" + if (home.readyWishes.size > 1) " 외 ${home.readyWishes.size - 1}개" else "",
+                "보러 가기",
+                onHouse,
+                UiIcon.HEART_ON,
+                DonColors.Warn,
+            )
+        }
         if (home.reviewCount > 0 && !home.waitingForInbox) {
             SubButton(onClick = onReview, modifier = Modifier.fillMaxWidth(), containerColor = DonColors.Surface) {
                 Text("확인할 결제 알림 ${home.reviewCount}건")
@@ -120,7 +132,7 @@ fun HomeScreen(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("이번 달 쓴 돈", won(home.monthSpent), null, Modifier.weight(1f))
             StatTile("아낀 돈", won(home.savedSoFar), "지난 주들 합계", Modifier.weight(1f))
             StatTile("모은 돈", won(home.plan.savings), "먼저 뗀 저축", Modifier.weight(1f))

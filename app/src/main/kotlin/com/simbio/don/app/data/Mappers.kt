@@ -58,4 +58,5 @@ fun MockPurchaseEntity.toItem() = com.simbio.don.game.MockItem(
     kind = com.simbio.don.game.ItemKind.of(kind),
     date = LocalDate.ofEpochDay(epochDay),
     status = com.simbio.don.game.PurchaseStatus.valueOf(status),
+    createdAt = createdAtEpochSecond.toLocalDateTime(),
 )

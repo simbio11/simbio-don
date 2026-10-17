@@ -1,6 +1,7 @@
 package com.simbio.don.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,7 +49,7 @@ fun StatsScreen(
     ) {
         MonthSwitcher(view, hasPrev, hasNext, onPrev, onNext)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile(
                 "쓴 돈",
                 won(spent),
@@ -57,7 +58,7 @@ fun StatsScreen(
             )
             StatTile("하루 평균", won(dailyAvg), "${pace.elapsedDays}일 기준", Modifier.weight(1f))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("생활비 예산", won(view.plan.disposable), null, Modifier.weight(1f))
             StatTile("남은 생활비", won(view.plan.disposable - spent), null, Modifier.weight(1f))
         }

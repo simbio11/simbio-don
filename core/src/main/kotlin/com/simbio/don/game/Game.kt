@@ -2,6 +2,7 @@ package com.simbio.don.game
 
 import com.simbio.don.budget.WeekResult
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 enum class PurchaseStatus {
     /** 주중: 결제했고 주말 결산을 기다림 */
@@ -18,6 +19,12 @@ enum class PurchaseStatus {
 
     /** 먹고 남은 쓰레기를 분리수거함 */
     RECYCLED,
+
+    /** 찜: 아직 안 삼. 하루 고민한 뒤 사거나 그만둔다 (모의 지갑에서 빠지지 않음) */
+    WISHED,
+
+    /** 찜했다가 안 사기로 함 = 참은 돈 */
+    GAVE_UP,
 }
 
 /** 모의로 산 물건 하나 (게임 계산용). */
@@ -28,7 +35,28 @@ data class MockItem(
     val kind: ItemKind,
     val date: LocalDate,
     val status: PurchaseStatus,
+    /** 담은(찜한·산) 시각 */
+    val createdAt: LocalDateTime? = null,
 )
+
+/**
+ * 찜하기 = 바로 사지 않고 하루 고민하기 (충동구매를 줄이는 24시간 규칙).
+ * 하루가 지나면 "아직도 사고 싶어요?"라고 묻고, 안 사면 그 돈은 참은 돈으로 쌓인다.
+ */
+object Wishlist {
+    const val COOL_DOWN_HOURS = 24L
+
+    fun isReady(wishedAt: LocalDateTime, now: LocalDateTime): Boolean = !now.isBefore(wishedAt.plusHours(COOL_DOWN_HOURS))
+
+    /** 다시 물어볼 때까지 남은 시간 (올림, 0 이상) */
+    fun hoursLeft(wishedAt: LocalDateTime, now: LocalDateTime): Long {
+        val minutes = java.time.Duration.between(now, wishedAt.plusHours(COOL_DOWN_HOURS)).toMinutes()
+        return if (minutes <= 0) 0 else (minutes + 59) / 60
+    }
+
+    /** 찜했다가 안 산 돈 합계 */
+    fun gaveUpTotal(items: List<MockItem>): Long = items.filter { it.status == PurchaseStatus.GAVE_UP }.sumOf { it.price }
+}
 
 /** 모의 지갑 = 이번 달 가용액 − 실제로 쓴 돈 − 이번 주 아직 돌려받지 않은 모의 구매. */
 object MockWallet {

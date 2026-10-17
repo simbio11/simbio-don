@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -402,7 +403,7 @@ private fun DayCell(d: LocalDate, amount: Long, max: Long, isToday: Boolean, isS
 @Composable
 fun StatTile(label: String, value: String, sub: String? = null, modifier: Modifier = Modifier) {
     Column(
-        modifier.card().padding(horizontal = 14.dp, vertical = 14.dp),
+        modifier.fillMaxHeight().card().padding(horizontal = 14.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(label, fontSize = 12.sp, color = ChartColors.InkMuted, maxLines = 1)

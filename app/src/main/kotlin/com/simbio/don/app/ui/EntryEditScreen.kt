@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.EntryEntity
+import com.simbio.don.app.data.QuickPick
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.CategoryGuesser
 import com.simbio.don.budget.EntrySource
@@ -75,6 +76,7 @@ fun EntryEditScreen(
     canAddException: Boolean,
     learned: Map<String, Category>,
     existing: EntryEntity?,
+    picks: List<QuickPick> = emptyList(),
     onSave: (EntryDraft) -> Unit,
     onDelete: (() -> Unit)?,
     onBack: () -> Unit,
@@ -105,6 +107,7 @@ fun EntryEditScreen(
                     Text("결제 알림에서 자동으로 기록됐어요.", fontSize = 12.sp, color = DonColors.InkMuted)
                 }
                 MoneyField("금액", amount, { amount = it })
+                AmountQuickAdd(amount) { amount = it }
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it.take(40) },
@@ -112,6 +115,26 @@ fun EntryEditScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // 자주 쓰는 곳: 누르면 이름·금액·카테고리를 한 번에
+                val shown = if (existing != null) emptyList() else picks.filter { p ->
+                    label.isBlank() || (p.label.contains(label.trim(), ignoreCase = true) && !p.label.equals(label.trim(), ignoreCase = true))
+                }.take(6)
+                if (shown.isNotEmpty()) {
+                    Text("자주 쓰는 곳", fontSize = 12.sp, color = DonColors.InkMuted)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        shown.forEach { p ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    label = p.label
+                                    if (amount.isBlank()) amount = p.amount.toString()
+                                    picked = p.category
+                                },
+                                label = { Text("${p.label} · ${won(p.amount)}") },
+                            )
+                        }
+                    }
+                }
             }
 
             FormCard("카테고리") {

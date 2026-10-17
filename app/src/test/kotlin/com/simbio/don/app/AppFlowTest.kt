@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import com.simbio.don.app.data.DonRepository
 import com.simbio.don.budget.Category
@@ -192,5 +193,49 @@ class AppFlowTest {
         waitText("배송 중 2개")
         rule.onNodeWithText("배송 중 2개").performScrollTo()
         shot("24_house_shipping")
+    }
+
+    /** 찜하기 · 내역 검색 · 자주 쓰는 곳 */
+    @Test
+    fun 찜하기와_검색() {
+        val today = LocalDate.now()
+        val repo = DonRepository.get(rule.activity)
+        runBlocking {
+            repo.completeOnboarding(3_300_000, today.minusDays(5).dayOfMonth, listOf(FixedExpense("월세", 700_000)), 400_000, DayOfWeek.MONDAY, today.minusDays(5), null)
+            listOf(4_500L to "스타벅스", 9_000L to "김밥천국", 5_000L to "스타벅스", 3_200L to "CU").forEachIndexed { i, (a, l) ->
+                repo.addManual(today.minusDays(i.toLong() % 3), a, l, EntryType.SPEND)
+            }
+            repo.wishMock("아이패드 에어", 899_000, com.simbio.don.game.ItemKind.ELECTRONICS, "쿠팡", java.time.LocalDateTime.now().minusHours(25))
+            repo.wishMock("니트 가디건", 59_000, com.simbio.don.game.ItemKind.CLOTHES, null, java.time.LocalDateTime.now().minusHours(3))
+        }
+        waitText("찜한 물건, 아직도 사고 싶어요?")
+        shot("30_home_wish")
+        rule.onNodeWithText("보러 가기").performClick()
+        waitText("찜 목록 2개")
+        rule.onNodeWithText("찜 목록 2개").performScrollTo()
+        shot("31_wishlist")
+        rule.onAllNodesWithText("안 살래요").onFirst().performClick()
+        waitText("안 산 돈 899,000원")
+
+        rule.onNodeWithText("내역").performClick()
+        waitText("가게 이름·메모 검색")
+        rule.onNodeWithContentDescription("가게 이름·메모 검색").performTextInput("스타")
+        waitText("'스타' 2건 · 9,500원")
+        shot("32_history_search")
+
+        rule.onNodeWithContentDescription("지출 입력").performClick()
+        waitText("자주 쓰는 곳")
+        rule.onNodeWithText("스타벅스 · 4,500원").performClick()
+        rule.onNode(hasText("카페·간식") and isSelected()).assertExists()
+        shot("33_add_quick")
+        rule.onNodeWithContentDescription("뒤로").performClick()
+
+        rule.onNodeWithText("내 집").performClick()
+        rule.onAllNodesWithText("모의 쇼핑").onFirst().performScrollTo().performClick()
+        rule.onNodeWithText("물건 이름").performTextReplacement("에어팟 맥스")
+        rule.onNode(hasSetTextAction() and hasText("가격")).performTextReplacement("769000")
+        rule.onNodeWithText("찜하기").performClick()
+        waitText("찜했어요!")
+        shot("34_wished")
     }
 }

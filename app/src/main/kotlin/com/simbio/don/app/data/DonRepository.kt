@@ -22,6 +22,7 @@ import com.simbio.don.game.MockWallet
 import com.simbio.don.game.Mood
 import com.simbio.don.game.Moods
 import com.simbio.don.game.PurchaseStatus
+import com.simbio.don.game.Wishlist
 import com.simbio.don.game.WeeklySettlement
 import com.simbio.don.notify.AppRule
 import com.simbio.don.notify.Decision
@@ -46,6 +47,8 @@ import java.time.YearMonth
 /** 첫 화면에 필요한 것 전부. */
 data class HomeState(
     val today: LocalDate,
+    /** 지금 (1분마다 갱신) — 방 창밖 시간대, 찜 24시간 */
+    val now: LocalDateTime,
     val payDay: Int,
     val cycle: PayCycle,
     val plan: CyclePlan,
@@ -77,6 +80,16 @@ data class HomeState(
     val mood: Mood,
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
+
+    /** 찜 목록 (오래된 것부터) */
+    val wishes: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.WISHED }.sortedBy { it.createdAt }
+
+    /** 하루가 지나 다시 물어볼 찜 */
+    val readyWishes: List<MockItem>
+        get() = wishes.filter { w -> w.createdAt?.let { Wishlist.isReady(it, now) } ?: true }
+
+    /** 찜했다가 안 산 돈 */
+    val gaveUpTotal: Long get() = Wishlist.gaveUpTotal(mockItems)
 }
 
 /** 내역·통계 화면용 한 달 묶음. */
@@ -137,6 +150,7 @@ class DonRepository(private val dao: DonDao) {
         val current = plan.weekIndexOf(today)?.let { results[it] }
         return HomeState(
             today = today,
+            now = now,
             payDay = s.payDay,
             cycle = cycle,
             plan = plan,
@@ -179,6 +193,35 @@ class DonRepository(private val dao: DonDao) {
                 createdAtEpochSecond = now.epochSecond(),
             ),
         )
+    }
+
+    /** 찜하기: 지갑에서 빠지지 않고, 하루 뒤에 다시 묻는다 */
+    suspend fun wishMock(name: String, price: Long, kind: ItemKind, store: String?, now: LocalDateTime) {
+        dao.insertMock(
+            MockPurchaseEntity(
+                name = name.ifBlank { kind.label }.take(40),
+                price = price,
+                kind = kind.name,
+                store = store,
+                epochDay = now.toLocalDate().toEpochDay(),
+                status = PurchaseStatus.WISHED.name,
+                createdAtEpochSecond = now.epochSecond(),
+            ),
+        )
+    }
+
+    /** 찜한 물건을 모의로 산다 (오늘 산 것으로 이번 주 결산에 들어간다) */
+    suspend fun buyWished(id: Long, now: LocalDateTime) {
+        val w = dao.mockPurchasesNow().firstOrNull { it.id == id && it.status == PurchaseStatus.WISHED.name } ?: return
+        dao.updateMocks(
+            listOf(w.copy(status = PurchaseStatus.SHIPPING.name, epochDay = now.toLocalDate().toEpochDay(), createdAtEpochSecond = now.epochSecond())),
+        )
+    }
+
+    /** 찜했다가 안 산다 = 참은 돈 */
+    suspend fun giveUpWished(id: Long) {
+        val w = dao.mockPurchasesNow().firstOrNull { it.id == id && it.status == PurchaseStatus.WISHED.name } ?: return
+        dao.updateMocks(listOf(w.copy(status = PurchaseStatus.GAVE_UP.name)))
     }
 
     /** 먹고 남은 쓰레기 치우기 */
@@ -426,6 +469,15 @@ class DonRepository(private val dao: DonDao) {
     val learnedCount: Flow<Int> = dao.categoryRules().map { it.size }
 
     suspend fun deleteEntry(e: EntryEntity) = dao.deleteEntry(e)
+
+    /** 지운 기록 되살리기 (같은 id로) */
+    suspend fun restoreEntry(e: EntryEntity) {
+        dao.insertEntry(e)
+    }
+
+    /** 최근 90일에서 자주 쓴 곳 */
+    suspend fun quickPicks(today: LocalDate): List<QuickPick> =
+        QuickPicks.from(dao.entriesBetweenNow(today.minusDays(90).toEpochDay(), today.toEpochDay()))
 
     fun entries(cycle: PayCycle): Flow<List<EntryEntity>> =
         dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay())

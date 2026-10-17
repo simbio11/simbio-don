@@ -21,6 +21,8 @@
 - `app/` — Android 앱 (Kotlin · Jetpack Compose · Room), 쇼핑앱식 UI (`ui/kit`) + 게임 속 도트 그림 (`tools/pixelart`)
 - `tools/pixelart/` — 도트 그림 생성기 (`python3 tools/pixelart/make_art.py`) — [docs/art-spec.md](docs/art-spec.md)
   - `notify/PaymentListenerService` — 고른 앱의 결제 알림만 읽어 기기 안에서 기록
+  - `notify/DailyReminder` — 매일 밤 9시 지출 요약·결산 알림 (설정에서 켤 때만)
+  - `widget/WeekWidget` — 홈 화면 위젯 (이번 주 남은 돈 + 지출 입력)
   - `data/` — Room 저장소, `ui/` — 화면
 
 ```sh

@@ -79,4 +79,24 @@ class GameTest {
         assertEquals(Mood.WORRIED, mood(50_000, 4))
         assertEquals(Mood.CHEER, mood(80_000, 6))
     }
+
+    @Test
+    fun `찜은 하루가 지나야 다시 묻고, 지갑·집·결산에 들어가지 않는다`() {
+        val at = java.time.LocalDateTime.of(2026, 11, 3, 21, 30)
+        assertFalse(Wishlist.isReady(at, at.plusHours(23).plusMinutes(59)))
+        assertTrue(Wishlist.isReady(at, at.plusHours(24)))
+        assertEquals(24, Wishlist.hoursLeft(at, at))
+        assertEquals(1, Wishlist.hoursLeft(at, at.plusHours(23).plusMinutes(1)))
+        assertEquals(0, Wishlist.hoursLeft(at, at.plusDays(2)))
+
+        val items = listOf(
+            item(1, 100_000, ItemKind.SHOES, status = PurchaseStatus.WISHED),
+            item(2, 30_000, ItemKind.CLOTHES, status = PurchaseStatus.GAVE_UP),
+            item(3, 20_000, ItemKind.BAG),
+        )
+        assertEquals(1_000_000 - 20_000, MockWallet.balance(1_000_000, 0, items))
+        assertEquals(listOf(3L), WeeklySettlement.shippingIn(items, d(1), d(7)).map { it.id })
+        assertEquals(0, HouseLayout.of(HouseLevel.ONE_ROOM, items).itemCount)
+        assertEquals(30_000, Wishlist.gaveUpTotal(items))
+    }
 }

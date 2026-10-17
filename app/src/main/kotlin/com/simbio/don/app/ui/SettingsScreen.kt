@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Badge
+import com.simbio.don.app.ui.kit.Divider
 import com.simbio.don.app.ui.kit.Icon
 import com.simbio.don.app.ui.kit.UiIcon
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +65,10 @@ fun SettingsScreen(
     learnedCount: Int,
     onResetLearned: () -> Unit,
     onExport: () -> Unit,
+    reminderOn: Boolean = false,
+    onReminder: (Boolean) -> Unit = {},
+    onPinWidget: (() -> Unit)? = null,
+    version: String = "",
 ) {
     val rows = remember(fixed) { mutableStateListOf<FixedRow>().apply { addAll(fixed.map { FixedRow(it.name, it.amount.toString()) }); if (isEmpty()) add(FixedRow()) } }
     var savings by remember(settings) { mutableStateOf(settings.savings.toString()) }
@@ -90,6 +95,27 @@ fun SettingsScreen(
             SubButton(onClick = onOpenListenerSettings, modifier = Modifier.fillMaxWidth()) { Text("알림 접근 설정 열기") }
             Text("갤럭시는 배터리 최적화 때문에 알림 수신이 끊길 수 있어요. '제한 없음'으로 바꿔 주세요.", fontSize = 13.sp, color = DonColors.InkSoft)
             SubButton(onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth()) { Text("배터리 설정 열기") }
+        }
+
+        RealCard("알림·위젯") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("매일 밤 9시 지출 알림", fontSize = 15.sp, color = DonColors.Ink)
+                    Text("오늘 쓴 돈과 이번 주 남은 돈, 결산이 준비되면 알려줘요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                }
+                Switch(checked = reminderOn, onCheckedChange = onReminder)
+            }
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("홈 화면 위젯", fontSize = 15.sp, color = DonColors.Ink)
+            Text("이번 주 남은 돈이 홈 화면에 보이고, + 버튼으로 바로 지출을 적어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            if (onPinWidget != null) {
+                SubButton(onClick = onPinWidget, modifier = Modifier.fillMaxWidth()) {
+                    Icon(UiIcon.WIDGET, 18.dp, DonColors.InkSoft)
+                    Text("홈 화면에 위젯 추가")
+                }
+            } else {
+                Text("홈 화면을 길게 눌러 위젯 → '돈 아끼는 게임'을 고르세요.", fontSize = 12.sp, color = DonColors.InkSoft)
+            }
         }
 
         RealCard("알림 읽을 앱") {
@@ -171,7 +197,7 @@ fun SettingsScreen(
         }
 
         Text(
-            "아이콘: Material Symbols (Google, Apache License 2.0)",
+            "돈 아끼는 게임 $version · 아이콘: Material Symbols (Google, Apache License 2.0)",
             fontSize = 11.sp,
             color = DonColors.InkMuted,
             modifier = Modifier.padding(horizontal = 4.dp),

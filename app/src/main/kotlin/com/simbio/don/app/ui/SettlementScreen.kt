@@ -40,6 +40,9 @@ import com.simbio.don.app.ui.kit.ItemThumb
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.kit.WarnLine
 import com.simbio.don.app.ui.kit.card
+import com.simbio.don.app.ui.kit.popIn
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.simbio.don.budget.WeekResult
 import com.simbio.don.budget.headline
 import com.simbio.don.game.MockItem
@@ -77,7 +80,7 @@ fun SettlementScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(Modifier.size(88.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
+                Box(Modifier.popIn().size(88.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
                     CharacterSprite(if (over) Mood.CHEER else Mood.HAPPY, 60.dp)
                 }
                 Badge(if (over) "예산 초과" else "예산 지킴", if (over) DonColors.Warn else DonColors.Good)
@@ -143,8 +146,12 @@ fun SettlementScreen(
             }
         }
         BottomBar {
+            val haptic = LocalHapticFeedback.current
             Button(
-                onClick = { onDone(selected) },
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDone(selected)
+                },
                 enabled = !mustReturn || enough,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (mustReturn) "반품하고 결산 완료" else "결산 완료") }

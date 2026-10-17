@@ -27,6 +27,13 @@ import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.MonthView
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -57,6 +64,36 @@ fun MonthSwitcher(view: MonthView, hasPrev: Boolean, hasNext: Boolean, onPrev: (
     }
 }
 
+/** 둥근 검색칸 */
+@Composable
+fun SearchBox(value: String, onChange: (String) -> Unit, placeholder: String) {
+    Row(
+        Modifier.fillMaxWidth().card(radius = 12.dp).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(UiIcon.SEARCH, 20.dp, DonColors.InkMuted)
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f)) {
+            if (value.isEmpty()) Text(placeholder, fontSize = 15.sp, color = DonColors.InkFaint)
+            BasicTextField(
+                value = value,
+                onValueChange = { onChange(it.take(30)) },
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 15.sp, color = DonColors.Ink),
+                cursorBrush = SolidColor(DonColors.Real),
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = placeholder },
+            )
+        }
+        if (value.isNotEmpty()) {
+            Box(
+                Modifier.size(24.dp).clip(CircleShape).clickable(role = Role.Button) { onChange("") }
+                    .semantics { contentDescription = "검색 지우기" },
+                contentAlignment = Alignment.Center,
+            ) { Icon(UiIcon.CLOSE, 18.dp, DonColors.InkMuted) }
+        }
+    }
+}
+
 @Composable
 fun RoundIconButton(icon: UiIcon, description: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
@@ -82,9 +119,12 @@ fun HistoryScreen(
     onOpen: (EntryEntity) -> Unit,
 ) {
     val daily = Stats.daily(view.entries)
+    var query by rememberSaveable { mutableStateOf("") }
+    val q = query.trim()
     val filtered = view.entities.filter { e ->
         (selectedDate == null || e.epochDay == selectedDate.toEpochDay()) &&
-            (category == null || e.category == category.name)
+            (category == null || e.category == category.name) &&
+            (q.isEmpty() || e.label.contains(q, ignoreCase = true) || e.memo.contains(q, ignoreCase = true))
     }
     val present = view.entries.map { it.category }.toSet()
     val groups = filtered.groupBy { it.epochDay }.toSortedMap(compareByDescending { it })
@@ -92,6 +132,19 @@ fun HistoryScreen(
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item { MonthSwitcher(view, hasPrev, hasNext, onPrev, onNext) }
         item {
+            SearchBox(query, { query = it }, "가게 이름·메모 검색")
+            Spacer(Modifier.height(12.dp))
+        }
+        if (q.isNotEmpty()) item {
+            val sum = filtered.sumOf { if (it.type == EntryType.REFUND.name) -it.amount else it.amount }
+            Text(
+                "'$q' ${filtered.size}건 · ${won(sum)}",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = DonColors.Ink,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            )
+        } else item {
             RealCard("이번 달 ${won(Stats.total(view.entries))} 썼어요") {
                 Spacer(Modifier.height(4.dp))
                 MonthCalendar(view.cycle.start, view.cycle.end, weekStart, daily, view.today, selectedDate) { d ->
