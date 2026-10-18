@@ -504,17 +504,16 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         today: LocalDate = LocalDate.now(),
     ) = writeLock.withLock {
         val s = dao.settingsNow() ?: return@withLock
-        // 이미 적은 달은 그대로 두고, 새로 넣은 고정비는 이번 달 나가는 날이 지났으면 이번 달은 건너뛴다 (이미 낸 것)
+        // 이미 처리한 납부일은 그대로 두고, 새로 넣은 고정비는 이번 달 이미 지난 납부일을 건너뛴다 (이미 낸 것)
         val before = dao.fixedExpensesNow().associateBy { it.id }
-        val c0 = dao.latestCycleNow()
-        val cycle0 = c0?.toPayCycle(s.payDay)
+        val cycle0 = dao.latestCycleNow()?.toPayCycle(s.payDay)
         dao.syncFixedExpenses(
             fixed.map { f ->
                 val old = before[f.id]
                 when {
-                    old != null -> f.copy(doneNominal = old.doneNominal)
-                    c0 != null && cycle0 != null && f.day != null &&
-                        Payday.dueDate(cycle0, f.day)?.let { !it.isAfter(today) } == true -> f.copy(doneNominal = c0.nominal)
+                    old != null -> f.copy(lastDueEpochDay = old.lastDueEpochDay)
+                    cycle0 != null && f.day != null ->
+                        f.copy(lastDueEpochDay = Payday.dueDates(cycle0, f.day).lastOrNull { !it.isAfter(today) }?.toEpochDay())
                     else -> f
                 }
             },
@@ -573,7 +572,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             // 다음 월급날 즈음 들어온 월급 (예상보다 며칠 일찍 ~ 며칠 늦게)
             val from = maxOf(expected.minusDays(Payday.EARLY_DAYS), lastStart.plusDays(1))
             val to = minOf(today, expected.plusDays(Payday.LATE_DAYS))
-            val deposit = if (from.isAfter(to)) null else dao.salaryIncomeBetween(from.toEpochDay(), to.toEpochDay()).firstOrNull()
+            // 상여·용돈처럼 적은 입금은 월급으로 보지 않는다 (지난 월급의 70% 이상만, 가장 큰 것)
+            val deposit = if (from.isAfter(to)) {
+                null
+            } else {
+                dao.salaryIncomeBetween(from.toEpochDay(), to.toEpochDay()).firstOrNull { it.amount * 10 >= c.salary * 7 }
+            }
             val start = Payday.nextStart(expected, today, deposit?.let { LocalDate.ofEpochDay(it.epochDay) }) ?: return
             startCycleLocked(c, s, nominal.plusMonths(1), start, deposit?.amount, now)
         }
@@ -590,9 +594,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
         val prevCycle = prev.toPayCycle(s.payDay).let { it.copy(end = start.minusDays(1).coerceAtLeast(it.start)) }
         settleAllRemaining(prev, prevCycle, now, keepLast = true)
-        // 지난달 마지막 주 전에 산 모의 구매가 영영 "배송 중"으로 남지 않게
-        val lastWeekStart = planFor(prev, prevCycle).weeks.lastOrNull()?.start ?: start
-        val stale = dao.mockPurchasesNow().filter { it.status == PurchaseStatus.SHIPPING.name && it.epochDay < lastWeekStart.toEpochDay() }
+        // 결산 화면으로 남는 지난달 마지막 주 전에 산 모의 구매가 영영 "배송 중"으로 남지 않게.
+        // 월급이 일찍 들어와 짧아진 마지막 날들이 이미 결산한 주에 합쳐졌으면 새 달 시작 전 것 모두
+        val lastWeek = planFor(prev, prevCycle).weeks.lastOrNull()
+        val lastSettled = lastWeek != null && dao.settledWeeksNow(prev.nominal).any { it.weekIndex == lastWeek.index }
+        val until = if (lastWeek == null || lastSettled) start else lastWeek.start
+        val stale = dao.mockPurchasesNow().filter { it.status == PurchaseStatus.SHIPPING.name && it.epochDay < until.toEpochDay() }
         if (stale.isNotEmpty()) dao.updateMocks(stale.map { it.copy(status = PurchaseStatus.DELIVERED.name) })
         val settlementDay = s.pendingSettlementDay ?: s.settlementDay
         dao.saveCycle(
@@ -610,13 +617,17 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         dao.saveSettings(s.copy(settlementDay = settlementDay, pendingSettlementDay = null))
     }
 
-    /** 이번 달 월급을 아직 못 봤는데(지난달 월급으로 둠) 월급이 들어왔으면 그 금액으로 다시 짠다 */
+    /**
+     * 새 달 즈음 월급이 들어오면 이번 달 월급을 맞춘다: 아직 못 봤으면(지난달 월급으로 둠) 그 금액으로,
+     * 이미 입금으로 맞췄는데 더 큰 입금이 오면(먼저 온 건 상여 등) 큰 쪽으로. 직접 고친 월급은 그대로.
+     */
     private suspend fun adjustSalaryLocked(amount: Long, date: LocalDate) {
         val c = dao.latestCycleNow() ?: return
-        if (enumOr(c.salarySource, SalarySource.MANUAL) != SalarySource.ESTIMATED) return
+        val source = enumOr(c.salarySource, SalarySource.MANUAL)
         val start = LocalDate.ofEpochDay(c.startEpochDay)
         if (date.isBefore(start.minusDays(Payday.EARLY_DAYS)) || date.isAfter(start.plusDays(Payday.LATE_DAYS))) return
-        dao.saveCycle(c.copy(salary = amount, salarySource = SalarySource.NOTIFICATION.name, noticeShown = false))
+        val apply = source == SalarySource.ESTIMATED || (source == SalarySource.NOTIFICATION && amount > c.salary)
+        if (apply) dao.saveCycle(c.copy(salary = amount, salarySource = SalarySource.NOTIFICATION.name, noticeShown = false))
     }
 
     /** 이번 달 월급 고치기 */
@@ -627,8 +638,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 새 달 안내 닫기 */
-    suspend fun dismissSalaryNotice() {
-        val c = dao.latestCycleNow() ?: return
+    suspend fun dismissSalaryNotice() = writeLock.withLock {
+        val c = dao.latestCycleNow() ?: return@withLock
         if (!c.noticeShown) dao.saveCycle(c.copy(noticeShown = true))
     }
 
@@ -646,50 +657,84 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     // ── 고정 지출 자동 기록 ───────────────────────────────────
 
-    /** 이번 달 나가는 날이 오늘까지인 고정 지출 중 아직 안 적은 것을 적는다 */
+    /** 고정 지출과 그 기록을 같은 것으로 보는 날짜 차이 (알림이 며칠 일찍·늦게 와도) */
+    private val FIXED_MATCH_DAYS = 10L
+
+    /** [date]가 들어 있는 주기 (다음 주기가 있으면 그 시작 전날까지) */
+    private suspend fun cycleAt(date: LocalDate): Pair<CycleEntity, PayCycle>? {
+        val s = dao.settingsNow() ?: return null
+        val cycles = dao.cyclesNow()
+        cycles.forEachIndexed { i, c ->
+            val cycle = cycleOf(c, cycles.getOrNull(i - 1), s.payDay)
+            if (date in cycle) return c to cycle
+        }
+        return null
+    }
+
+    /**
+     * 이번 달 납부일이 오늘까지인 고정 지출 중 아직 처리하지 않은 납부일을 적는다 (한 달에 두 번 올 수도 있다).
+     * 그 납부일 근처에 이미 알림·직접 기록한 고정 지출이 있으면 새로 적지 않는다.
+     */
     private suspend fun recordDueFixedLocked(today: LocalDate) {
         val s = dao.settingsNow() ?: return
         val c = dao.latestCycleNow() ?: return
         val cycle = c.toPayCycle(s.payDay)
         val inCycle = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay())
+            .filter { it.type == EntryType.FIXED.name }
         dao.fixedExpensesNow().forEach { f ->
             val day = f.day ?: return@forEach
-            if (f.doneNominal == c.nominal) return@forEach
-            val due = Payday.dueDate(cycle, day) ?: return@forEach
-            if (due.isAfter(today)) return@forEach
-            dao.upsertFixedExpense(f.copy(doneNominal = c.nominal))
-            if (inCycle.any { it.fixedId == f.id }) return@forEach
-            dao.insertEntry(
-                EntryEntity(
-                    epochDay = due.toEpochDay(),
-                    amount = f.amount,
-                    label = f.name,
-                    type = EntryType.FIXED.name,
-                    source = EntrySource.RECURRING.name,
-                    category = f.category,
-                    accountId = f.accountId,
-                    fixedId = f.id,
-                ),
-            )
+            val due = Payday.dueDates(cycle, day).filter { !it.isAfter(today) && it.toEpochDay() > (f.lastDueEpochDay ?: Long.MIN_VALUE) }
+            if (due.isEmpty()) return@forEach
+            due.forEach { d ->
+                val near = inCycle.any { e ->
+                    kotlin.math.abs(e.epochDay - d.toEpochDay()) <= FIXED_MATCH_DAYS &&
+                        (e.fixedId == f.id || (e.fixedId == null && (e.label == f.name || e.amount == f.amount)))
+                }
+                if (!near) {
+                    dao.insertEntry(
+                        EntryEntity(
+                            epochDay = d.toEpochDay(),
+                            amount = f.amount,
+                            label = f.name,
+                            type = EntryType.FIXED.name,
+                            source = EntrySource.RECURRING.name,
+                            category = f.category,
+                            accountId = f.accountId,
+                            fixedId = f.id,
+                        ),
+                    )
+                }
+            }
+            dao.upsertFixedExpense(f.copy(lastDueEpochDay = due.last().toEpochDay()))
         }
     }
 
     /**
-     * 결제 알림이 고정 지출이면 고정 지출로 적는다. 그날 자동으로 적어 둔 것이 있으면 실제 금액·날짜로 고친다.
-     * 이미 알림으로 적은 고정 지출이면 false (확인함으로).
+     * 결제 알림이 고정 지출이면 고정 지출로 적는다 (결제한 날이 든 달 기준).
+     * 그 납부일에 자동으로 적어 둔 것이 있으면 실제 금액·날짜로 고친다. 이미 알림으로 적은 고정 지출이면 false (확인함으로).
      */
     private suspend fun recordFixedFromPayment(p: ParsedPayment): Boolean {
-        val s = dao.settingsNow() ?: return false
-        val c = dao.latestCycleNow() ?: return false
-        val cycle = c.toPayCycle(s.payDay)
         val date = p.postedAt.toLocalDate()
+        val (_, cycle) = cycleAt(date) ?: return false
         val f = dao.fixedExpensesNow().firstOrNull {
             Payday.matchesFixed(p.rawText, p.amount, date, it.toFixed(), cycle)
         } ?: return false
-        val existing = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).firstOrNull { it.fixedId == f.id }
-        if (existing != null && existing.source != EntrySource.RECURRING.name) return false
+        return applyFixedPayment(f, cycle, p, strict = true)
+    }
+
+    /**
+     * 고정 지출 [f]의 결제 [p]를 적는다. 가까운 날짜의 자동 기록(아직 결제 확인 안 됨)이 있으면 그것을 고치고,
+     * 이미 확인된 기록이 있으면 [strict]일 때 false (중복일 수 있어 확인함으로), 아니면 하나 더 적는다.
+     */
+    private suspend fun applyFixedPayment(f: FixedExpenseEntity, cycle: PayCycle, p: ParsedPayment, strict: Boolean): Boolean {
+        val date = p.postedAt.toLocalDate()
+        val existing = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay())
+            .filter { it.fixedId == f.id && kotlin.math.abs(it.epochDay - date.toEpochDay()) <= FIXED_MATCH_DAYS }
+            .minByOrNull { kotlin.math.abs(it.epochDay - date.toEpochDay()) }
+        val replace = existing?.takeIf { it.source == EntrySource.RECURRING.name }
+        if (existing != null && replace == null && strict) return false
         val entry = EntryEntity(
-            id = existing?.id ?: 0,
+            id = replace?.id ?: 0,
             epochDay = date.toEpochDay(),
             amount = p.amount,
             label = f.name,
@@ -702,8 +747,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
             fixedId = f.id,
         )
-        if (existing != null) dao.updateEntry(entry) else dao.insertEntry(entry)
-        dao.upsertFixedExpense(f.copy(doneNominal = c.nominal))
+        if (replace != null) dao.updateEntry(entry) else dao.insertEntry(entry)
+        // 납부일 전에 먼저 빠져나갔으면 그 납부일에 또 적지 않게
+        val due = f.day?.let { d -> Payday.dueDates(cycle, d).minByOrNull { kotlin.math.abs(it.toEpochDay() - date.toEpochDay()) } }
+        if (due != null && due.toEpochDay() > (f.lastDueEpochDay ?: Long.MIN_VALUE)) {
+            dao.upsertFixedExpense(f.copy(lastDueEpochDay = due.toEpochDay()))
+        }
         return true
     }
 
@@ -809,6 +858,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun markSeen(pkg: String, at: LocalDateTime) = dao.markSeen(SeenAppEntity(pkg, at.epochSecond()))
 
     suspend fun handleNotification(n: RawNotification) = writeLock.withLock {
+        // 월급날 새벽에 온 알림이 지난달에 적히지 않게, 새 달이 됐으면 먼저 시작한다
+        rollOverLocked(n.postedAt)
         val rules = dao.appRulesNow().map { it.toRule() }
         val result = NotificationParser.parse(n, rules)
         val parsed = when (result) {
@@ -894,10 +945,16 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 고정 지출과 이름·날짜로 짝을 못 찾았지만 사용자가 고정 지출이라고 한 것: 금액이 가장 가까운 고정 지출로 */
     private suspend fun insertFixedPlain(p: ParsedPayment) {
+        val date = p.postedAt.toLocalDate()
         val f = dao.fixedExpensesNow().minByOrNull { kotlin.math.abs(it.amount - p.amount) }
+        val cycle = cycleAt(date)?.second
+        if (f != null && cycle != null) {
+            applyFixedPayment(f, cycle, p, strict = false)
+            return
+        }
         dao.insertEntry(
             EntryEntity(
-                epochDay = p.postedAt.toLocalDate().toEpochDay(),
+                epochDay = date.toEpochDay(),
                 amount = p.amount,
                 label = f?.name ?: p.label,
                 type = EntryType.FIXED.name,
@@ -982,20 +1039,20 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 // 짝이 되는 지출이 이미 반영돼 있다
                 ReviewReason.POSSIBLE_DUPLICATE.name -> ReviewResolution.DISMISS
                 ReviewReason.LOOKS_LIKE_FIXED_EXPENSE.name ->
-                    if (fixedAlreadyRecorded(item.amount)) ReviewResolution.APPLY_SPEND else ReviewResolution.APPLY_FIXED
+                    if (fixedAlreadyPaid(item.amount, item.postedAtEpochSecond.toLocalDateTime().toLocalDate())) ReviewResolution.APPLY_SPEND else ReviewResolution.APPLY_FIXED
                 else -> if (item.action == RuleAction.REFUND.name) ReviewResolution.APPLY_REFUND else ReviewResolution.APPLY_SPEND
             }
             resolveReviewLocked(item, resolution)
         }
     }
 
-    /** 이 금액에 가장 가까운 고정 지출을 이번 달에 이미 적었는지 */
-    private suspend fun fixedAlreadyRecorded(amount: Long): Boolean {
-        val s = dao.settingsNow() ?: return false
-        val c = dao.latestCycleNow() ?: return false
+    /** 이 금액에 가장 가까운 고정 지출이 그날 근처에 이미 결제 확인됐는지 (자동으로만 적어 둔 건 아직 아님) */
+    private suspend fun fixedAlreadyPaid(amount: Long, date: LocalDate): Boolean {
         val f = dao.fixedExpensesNow().minByOrNull { kotlin.math.abs(it.amount - amount) } ?: return true
-        val cycle = c.toPayCycle(s.payDay)
-        return dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).any { it.fixedId == f.id }
+        val cycle = cycleAt(date)?.second ?: return true
+        return dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).any {
+            it.fixedId == f.id && it.source != EntrySource.RECURRING.name && kotlin.math.abs(it.epochDay - date.toEpochDay()) <= FIXED_MATCH_DAYS
+        }
     }
 
     // ── 카테고리 예산·저축 목표 ───────────────────────────────

@@ -6,7 +6,7 @@ import java.time.LocalDateTime
 
 /**
  * 백업 파일 (JSON). 이 폰 안에서 사용자가 고른 곳에 저장하고, 어디로도 보내지 않는다.
- * 알림 원문(확인함)과 입금 기록, 알림 보낸 앱 목록은 담지 않는다.
+ * 확인함(정리 안 한 결제 알림)도 담아 복원해도 잃지 않게 한다. 입금 기록·알림 보낸 앱 목록은 담지 않는다.
  */
 object Backup {
     const val FORMAT = "dont-backup"
@@ -40,7 +40,7 @@ object Backup {
         })
         put("fixed", arr(d.fixed) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("amount", x.amount); o.putOpt("day", x.day)
-            o.putOpt("accountId", x.accountId); o.put("category", x.category); o.putOpt("doneNominal", x.doneNominal)
+            o.putOpt("accountId", x.accountId); o.put("category", x.category); o.putOpt("lastDueEpochDay", x.lastDueEpochDay)
         })
         put("cycles", arr(d.cycles) { o, x ->
             o.put("nominal", x.nominal); o.put("salary", x.salary); o.put("startEpochDay", x.startEpochDay)
@@ -53,6 +53,11 @@ object Backup {
             o.putOpt("postedAtEpochSecond", x.postedAtEpochSecond); o.put("category", x.category); o.put("memo", x.memo)
             o.putOpt("accountId", x.accountId); o.putOpt("toAccountId", x.toAccountId); o.putOpt("minuteOfDay", x.minuteOfDay)
             o.putOpt("fixedId", x.fixedId)
+        })
+        put("reviews", arr(d.reviews) { o, x ->
+            o.put("id", x.id); o.put("packageName", x.packageName); o.put("action", x.action); o.put("amount", x.amount)
+            o.put("label", x.label); o.put("postedAtEpochSecond", x.postedAtEpochSecond); o.put("rawText", x.rawText)
+            o.put("reason", x.reason); o.putOpt("relatedEntryId", x.relatedEntryId)
         })
         put("rules", arr(d.rules) { o, x ->
             o.put("packageName", x.packageName); o.put("displayName", x.displayName); o.put("enabled", x.enabled)
@@ -97,7 +102,7 @@ object Backup {
                 },
                 fixed = list(root, "fixed") { o ->
                     FixedExpenseEntity(o.getLong("id"), o.getString("name"), o.getLong("amount"), o.intOrNull("day"),
-                        o.longOrNull("accountId"), o.optString("category", "BILLS"), o.strOrNull("doneNominal"))
+                        o.longOrNull("accountId"), o.optString("category", "BILLS"), o.longOrNull("lastDueEpochDay"))
                 },
                 cycles = list(root, "cycles") { o ->
                     CycleEntity(o.getString("nominal"), o.getLong("salary"), o.getLong("startEpochDay"), o.getInt("settlementDay"),
@@ -109,6 +114,11 @@ object Backup {
                         o.getString("source"), o.strOrNull("packageName"), o.longOrNull("postedAtEpochSecond"),
                         o.optString("category", "ETC"), o.optString("memo", ""), o.longOrNull("accountId"), o.longOrNull("toAccountId"),
                         o.intOrNull("minuteOfDay"), o.longOrNull("fixedId"))
+                },
+                reviews = list(root, "reviews") { o ->
+                    ReviewItemEntity(o.getLong("id"), o.getString("packageName"), o.getString("action"), o.getLong("amount"),
+                        o.getString("label"), o.getLong("postedAtEpochSecond"), o.getString("rawText"), o.getString("reason"),
+                        o.longOrNull("relatedEntryId"))
                 },
                 rules = list(root, "rules") { o ->
                     AppRuleEntity(o.getString("packageName"), o.getString("displayName"), o.getBoolean("enabled"), o.getString("keywordRules"))

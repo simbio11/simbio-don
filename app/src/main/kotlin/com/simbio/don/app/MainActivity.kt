@@ -194,10 +194,11 @@ class MainActivity : ComponentActivity() {
         var ledgerMode by rememberSaveable { mutableStateOf(LedgerMode.DAILY) }
         val close = { overlay = overlayBack; overlayBack = null }
         LaunchedEffect(shared) {
-            shared?.let { overlay = Overlay.Shop(it); shared = null }
+            shared?.let { overlayBack = null; overlay = Overlay.Shop(it); shared = null }
         }
         LaunchedEffect(addRequested) {
             if (addRequested) {
+                overlayBack = null
                 overlay = Overlay.Edit(null)
                 addRequested = false
             }
@@ -220,7 +221,7 @@ class MainActivity : ComponentActivity() {
         }
 
         overlay?.let { o ->
-            Overlay(o, home, close, open = { next -> overlayBack = o.takeIf { it !is Overlay.Edit }; overlay = next }, goHouse = { overlay = null; tab = Tab.House })
+            Overlay(o, home, close, open = { next -> overlayBack = o.takeIf { it !is Overlay.Edit }; overlay = next }, goHouse = { overlayBack = null; overlay = null; tab = Tab.House })
             return
         }
 

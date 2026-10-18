@@ -553,4 +553,85 @@ class DonRepositoryTest {
         assertTrue(bad.exceptionOrNull() is Backup.BadBackup)
         assertEquals(before, db.dao().allEntriesNow())
     }
+
+    // ── 검수 반영 ──
+
+    @Test
+    fun `월급날을 바꿔도 지난 달들 계산이 죽지 않는다`() = runTest {
+        db.clearAllTables()
+        repo.completeOnboarding(3_300_000, 25, emptyList(), 0, DayOfWeek.MONDAY, LocalDate.of(2026, 11, 10)) // "2026-10"이 11/10 시작
+        repo.dailyUpkeep(at(11, 25, 9)) // "2026-11" 시작
+        repo.updateSettings(emptyList(), 0, DayOfWeek.MONDAY, applyNow = false, payDay = 5, today = LocalDate.of(2026, 12, 1))
+        val h = home(at(12, 1))
+        assertEquals(5, h.payDay)
+        assertEquals(2, repo.summaries(flowOf(at(12, 1))).first().size)
+        repo.month("2026-10", LocalDate.of(2026, 12, 1)).first()!!
+    }
+
+    @Test
+    fun `자동으로 적어 둔 고정 지출은 늦게 온 결제를 고정으로 고르면 고쳐지고, 두 번 적히지 않는다`() = runTest {
+        repo.updateSettings(listOf(FixedExpenseEntity(name = "통신비", amount = 55_000, day = 1)), 320_000, DayOfWeek.MONDAY, applyNow = true, today = LocalDate.of(2026, 10, 24))
+        repo.dailyUpkeep(at(11, 1, 0, 1))
+        // 납부일 6일 뒤 같은 금액 결제 → 확인함 (날짜가 멀어서)
+        repo.handleNotification(RawNotification("card.app", "", "OO카드 승인 55,000원 SKT", at(11, 7, 9)))
+        val item = db.dao().reviewItemsNow().single()
+        repo.resolveReview(item, com.simbio.don.app.data.ReviewResolution.APPLY_FIXED)
+        val fixed = db.dao().allEntriesNow().filter { it.type == EntryType.FIXED.name }
+        assertEquals(1, fixed.size)
+        assertEquals(EntrySource.NOTIFICATION.name, fixed.single().source)
+        assertEquals(LocalDate.of(2026, 11, 7).toEpochDay(), fixed.single().epochDay)
+    }
+
+    @Test
+    fun `직접 적은 고정 지출이 있으면 납부일에 또 적지 않는다`() = runTest {
+        repo.updateSettings(listOf(FixedExpenseEntity(name = "월세", amount = 600_000, day = 1)), 320_000, DayOfWeek.MONDAY, applyNow = true, today = LocalDate.of(2026, 10, 24))
+        repo.addManual(LocalDate.of(2026, 10, 30), 600_000, "월세", EntryType.FIXED, Category.BILLS)
+        repo.dailyUpkeep(at(11, 1, 9))
+        assertEquals(1, db.dao().allEntriesNow().size)
+    }
+
+    @Test
+    fun `한 달 안에 납부일이 두 번 오면 둘 다 적는다`() = runTest {
+        // 10/23 ~ 11/24 주기: 24일은 10/24와 11/24
+        repo.updateSettings(listOf(FixedExpenseEntity(name = "구독", amount = 10_000, day = 24)), 320_000, DayOfWeek.MONDAY, applyNow = true, today = LocalDate.of(2026, 10, 23))
+        repo.dailyUpkeep(at(10, 24, 9))
+        repo.dailyUpkeep(at(11, 24, 9))
+        assertEquals(
+            listOf(LocalDate.of(2026, 10, 24), LocalDate.of(2026, 11, 24)).map { it.toEpochDay() },
+            db.dao().allEntriesNow().filter { it.type == EntryType.FIXED.name }.map { it.epochDay }.sorted(),
+        )
+    }
+
+    @Test
+    fun `월급날 새벽 고정 지출 알림은 새 달에 적힌다`() = runTest {
+        repo.updateSettings(listOf(FixedExpenseEntity(name = "월세", amount = 600_000, day = 25)), 320_000, DayOfWeek.MONDAY, applyNow = true, today = LocalDate.of(2026, 10, 26))
+        // 앱을 안 켠 채 월급날 새벽에 월세가 빠져나감
+        repo.handleNotification(RawNotification("card.app", "", "월세 출금 600,000원", at(11, 25, 0, 30)))
+        assertEquals("2026-11", repo.cycles.first().first().nominal)
+        val e = db.dao().allEntriesNow().single()
+        assertEquals(EntryType.FIXED.name, e.type)
+        assertEquals(LocalDate.of(2026, 11, 25).toEpochDay(), e.epochDay)
+    }
+
+    @Test
+    fun `월급날 전 상여는 월급으로 보지 않고, 뒤에 온 진짜 월급으로 맞춘다`() = runTest {
+        repo.handleNotification(RawNotification("card.app", "", "상여 입금 500,000원", at(11, 22, 9)))
+        assertEquals(1, repo.cycles.first().size) // 일찍 시작하지 않음
+        repo.dailyUpkeep(at(11, 25, 0, 1))
+        assertEquals(SalarySource.ESTIMATED, home(at(11, 25, 1)).salarySource)
+        repo.handleNotification(RawNotification("card.app", "", "급여 입금 3,400,000원", at(11, 25, 9)))
+        val h = home(at(11, 25, 10))
+        assertEquals(3_400_000, h.salary)
+        assertEquals(SalarySource.NOTIFICATION, h.salarySource)
+    }
+
+    @Test
+    fun `백업은 확인함도 담는다`() = runTest {
+        repo.handleNotification(RawNotification("card.app", "", "OO마트 12,000원", at(10, 30))) // 미분류 → 확인함
+        val json = repo.exportBackup(at(10, 30))
+        db.clearAllTables()
+        repo.completeOnboarding(2_000_000, 10, emptyList(), 0, DayOfWeek.FRIDAY, LocalDate.of(2026, 10, 24))
+        repo.restoreBackup(json)
+        assertEquals(12_000, db.dao().reviewItemsNow().single().amount)
+    }
 }

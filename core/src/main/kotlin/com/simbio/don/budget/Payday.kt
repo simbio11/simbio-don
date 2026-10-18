@@ -65,6 +65,19 @@ object Payday {
         return null
     }
 
+    /** [cycle] 안에서 [day]일이 오는 날 모두 (주기가 한 달보다 길면 두 번일 수 있다) */
+    fun dueDates(cycle: PayCycle, day: Int): List<LocalDate> {
+        require(day in 1..31) { "날짜는 1~31일이어야 합니다: $day" }
+        val out = mutableListOf<LocalDate>()
+        var ym = YearMonth.from(cycle.start)
+        while (!ym.atDay(1).isAfter(cycle.end)) {
+            val d = ym.atDay(minOf(day, ym.lengthOfMonth()))
+            if (d in cycle) out += d
+            ym = ym.plusMonths(1)
+        }
+        return out
+    }
+
     /** 결제 알림이 고정 지출과 금액만 같을 때, 나가는 날 앞뒤 이 날짜 안이면 고정 지출로 본다 */
     const val FIXED_DAY_TOLERANCE = 3L
 
@@ -76,7 +89,6 @@ object Payday {
         if (f.name.isNotBlank() && f.name.length >= 2 && f.name in text) return true
         if (f.amount <= 0 || f.day == null || cycle == null) return false
         val close = abs(amount - f.amount) * 10_000 <= f.amount * 300
-        val due = dueDate(cycle, f.day) ?: return false
-        return close && abs(due.toEpochDay() - date.toEpochDay()) <= FIXED_DAY_TOLERANCE
+        return close && dueDates(cycle, f.day).any { abs(it.toEpochDay() - date.toEpochDay()) <= FIXED_DAY_TOLERANCE }
     }
 }

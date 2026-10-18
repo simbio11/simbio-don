@@ -40,9 +40,15 @@ fun AppRuleEntity.toRule() = AppRule(packageName, displayName, enabled, KeywordR
 
 fun AppRule.toEntity() = AppRuleEntity(packageName, displayName, enabled, KeywordRuleCodec.encode(keywordRules))
 
+/**
+ * 저장된 주기 → 기간. 끝은 다음 달 예상 월급날 전날 (다음 주기가 있으면 부르는 쪽이 그 시작 전날로 줄인다).
+ * 월급날을 바꾸면 옛 주기는 끝이 시작보다 앞설 수 있어 시작일로 맞춘다 (앱이 죽지 않게).
+ */
 fun CycleEntity.toPayCycle(payDay: Int): PayCycle {
     val ym = YearMonth.parse(nominal)
-    return PayCycle.cycleFor(ym, payDay, actualStart = LocalDate.ofEpochDay(startEpochDay))
+    val start = LocalDate.ofEpochDay(startEpochDay)
+    val end = PayCycle.expectedPayday(ym.plusMonths(1), payDay).minusDays(1)
+    return PayCycle(ym, start, if (end.isBefore(start)) start else end)
 }
 
 fun EntryEntity.toParsedOrNull(): ParsedPayment? {

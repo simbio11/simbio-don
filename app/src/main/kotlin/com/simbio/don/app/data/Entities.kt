@@ -27,8 +27,8 @@ data class FixedExpenseEntity(
     /** 빠져나가는 자산 */
     val accountId: Long? = null,
     @ColumnInfo(defaultValue = "BILLS") val category: String = "BILLS",
-    /** 이미 적은 달 (그 달 기록을 지워도 다시 적지 않게) */
-    val doneNominal: String? = null,
+    /** 마지막으로 처리한 납부일 (epochDay). 그 기록을 지워도 다시 적지 않게 */
+    val lastDueEpochDay: Long? = null,
 )
 
 /** 월급이 어디서 왔는지 */
