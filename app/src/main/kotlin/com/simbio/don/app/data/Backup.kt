@@ -10,8 +10,8 @@ import java.time.LocalDateTime
  */
 object Backup {
     const val FORMAT = "dont-backup"
-    /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10) */
-    const val VERSION = 2
+    /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11) */
+    const val VERSION = 3
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -31,6 +31,7 @@ object Backup {
         val subcategories: List<SubcategoryEntity> = emptyList(),
         val installments: List<InstallmentEntity> = emptyList(),
         val recurringIncomes: List<RecurringIncomeEntity> = emptyList(),
+        val mileTx: List<MileTxEntity> = emptyList(),
     )
 
     class BadBackup(message: String) : Exception(message)
@@ -42,6 +43,7 @@ object Backup {
         put("settings", arr(d.settings) { o, x ->
             o.put("payDay", x.payDay); o.put("settlementDay", x.settlementDay); o.put("savings", x.savings)
             o.putOpt("pendingSettlementDay", x.pendingSettlementDay); o.put("subSeeded", x.subSeeded)
+            o.put("milesSeeded", x.milesSeeded); o.putOpt("growEpochDay", x.growEpochDay)
         })
         put("fixed", arr(d.fixed) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("amount", x.amount); o.putOpt("day", x.day)
@@ -78,8 +80,12 @@ object Backup {
         put("mocks", arr(d.mocks) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("price", x.price); o.put("kind", x.kind); o.putOpt("store", x.store)
             o.put("epochDay", x.epochDay); o.put("status", x.status); o.put("createdAtEpochSecond", x.createdAtEpochSecond)
+            o.putOpt("payload", x.payload); o.putOpt("grade", x.grade)
         })
-        put("houses", arr(d.houses) { o, x -> o.put("level", x.level); o.put("characterName", x.characterName); o.put("look", x.look) })
+        put("houses", arr(d.houses) { o, x ->
+            o.put("level", x.level); o.put("characterName", x.characterName); o.put("look", x.look)
+            o.put("setup", x.setup); o.put("owned", x.owned); o.put("freeMakeover", x.freeMakeover)
+        })
         put("categoryBudgets", arr(d.categoryBudgets) { o, x -> o.put("category", x.category); o.put("amount", x.amount) })
         put("goals", arr(d.goals) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("target", x.target); o.put("icon", x.icon)
@@ -105,6 +111,10 @@ object Backup {
             o.put("id", x.id); o.put("name", x.name); o.put("amount", x.amount); o.put("day", x.day)
             o.putOpt("accountId", x.accountId); o.put("category", x.category); o.putOpt("lastDueEpochDay", x.lastDueEpochDay)
         })
+        put("mileTx", arr(d.mileTx) { o, x ->
+            o.put("id", x.id); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("kind", x.kind)
+            o.put("account", x.account); o.put("memo", x.memo); o.putOpt("refKey", x.refKey)
+        })
     }.toString()
 
     fun decode(json: String): Data {
@@ -119,7 +129,8 @@ object Backup {
             Data(
                 settings = list(root, "settings") { o ->
                     SettingsEntity(payDay = o.getInt("payDay"), settlementDay = o.getInt("settlementDay"), savings = o.getLong("savings"),
-                        pendingSettlementDay = o.intOrNull("pendingSettlementDay"), subSeeded = o.optBoolean("subSeeded", false))
+                        pendingSettlementDay = o.intOrNull("pendingSettlementDay"), subSeeded = o.optBoolean("subSeeded", false),
+                        milesSeeded = o.optBoolean("milesSeeded", false), growEpochDay = o.longOrNull("growEpochDay"))
                 },
                 fixed = list(root, "fixed") { o ->
                     FixedExpenseEntity(o.getLong("id"), o.getString("name"), o.getLong("amount"), o.intOrNull("day"),
@@ -152,9 +163,12 @@ object Backup {
                 categoryRules = list(root, "categoryRules") { o -> CategoryRuleEntity(o.getString("labelKey"), o.getString("category")) },
                 mocks = list(root, "mocks") { o ->
                     MockPurchaseEntity(o.getLong("id"), o.getString("name"), o.getLong("price"), o.getString("kind"), o.strOrNull("store"),
-                        o.getLong("epochDay"), o.getString("status"), o.getLong("createdAtEpochSecond"))
+                        o.getLong("epochDay"), o.getString("status"), o.getLong("createdAtEpochSecond"), o.strOrNull("payload"), o.strOrNull("grade"))
                 },
-                houses = list(root, "houses") { o -> HouseEntity(level = o.getString("level"), characterName = o.getString("characterName"), look = o.optString("look", "")) },
+                houses = list(root, "houses") { o ->
+                    HouseEntity(level = o.getString("level"), characterName = o.getString("characterName"), look = o.optString("look", ""),
+                        setup = o.optString("setup", ""), owned = o.optString("owned", ""), freeMakeover = o.optBoolean("freeMakeover", true))
+                },
                 categoryBudgets = list(root, "categoryBudgets") { o -> CategoryBudgetEntity(o.getString("category"), o.getLong("amount")) },
                 goals = list(root, "goals") { o ->
                     SavingsGoalEntity(o.getLong("id"), o.getString("name"), o.getLong("target"), o.getString("icon"),
@@ -178,6 +192,10 @@ object Backup {
                 recurringIncomes = list(root, "recurringIncomes") { o ->
                     RecurringIncomeEntity(o.getLong("id"), o.getString("name"), o.getLong("amount"), o.getInt("day"),
                         o.longOrNull("accountId"), o.optString("category", "SIDE_INCOME"), o.longOrNull("lastDueEpochDay"))
+                },
+                mileTx = list(root, "mileTx") { o ->
+                    MileTxEntity(o.getLong("id"), o.getLong("epochDay"), o.getLong("amount"), o.getString("kind"), o.optString("account", "WALLET"),
+                        o.optString("memo", ""), o.strOrNull("refKey"))
                 },
             ).also {
                 if (it.settings.isEmpty() || it.cycles.isEmpty()) throw BadBackup("백업에 설정이 없어요")

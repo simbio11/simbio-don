@@ -1,5 +1,11 @@
 package com.simbio.don.app.data
 
+import com.simbio.don.game.Slot
+import com.simbio.don.game.Shop
+import com.simbio.don.game.Miles
+import com.simbio.don.game.MileGrowth
+import com.simbio.don.game.HouseSetup
+import com.simbio.don.game.CardGrade
 import com.simbio.don.budget.Subcategories
 import com.simbio.don.budget.RecurringIncomes
 import com.simbio.don.budget.Installments
@@ -113,6 +119,14 @@ data class HomeState(
     val accounts: List<AccountBalance> = emptyList(),
     /** 내 캐릭터 모습 */
     val look: CharacterLook = CharacterLook.MALE,
+    // ── M2 ──
+    val miles: MileState = MileState(),
+    /** 수납 가구·인테리어 */
+    val setup: HouseSetup = HouseSetup(),
+    /** 옷장에서 산 것 */
+    val owned: Set<String> = emptySet(),
+    /** 첫 꾸미기(얼굴·머리)는 공짜 */
+    val freeMakeover: Boolean = true,
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
 
@@ -140,6 +154,38 @@ data class MonthView(
     val today: LocalDate,
     val isCurrent: Boolean,
 )
+
+/** 마일 지갑과 키우기 */
+data class MileState(
+    val wallet: Long = 0,
+    val grow: Long = 0,
+    /** 최근 기록 (새 것 먼저) */
+    val history: List<MileTxEntity> = emptyList(),
+) {
+    val total: Long get() = wallet + grow
+
+    companion object {
+        fun of(tx: List<MileTxEntity>) = MileState(
+            wallet = tx.filter { it.account == "WALLET" }.sumOf { it.amount },
+            grow = tx.filter { it.account == "GROW" }.sumOf { it.amount },
+            history = tx.take(100),
+        )
+    }
+}
+
+/** 뷰티샵·옷장에서 모습을 바꾼 결과 */
+enum class LookResult {
+    /** 바로 바뀜 (옷만 바꿨거나 마일로 냄) */
+    SAVED,
+
+    /** 첫 꾸미기라 공짜로 바뀜 */
+    SAVED_FREE,
+
+    /** 모의 지갑으로 예약 — 이번 주 결산 때 예산을 지키면 바뀐다 */
+    BOOKED,
+    NOT_ENOUGH_MILES,
+    NOT_ENOUGH_WALLET,
+}
 
 /** 연간 통계: 그 해에 시작한 달(월급 주기)들 */
 data class YearView(
@@ -204,10 +250,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun home(now: Flow<LocalDateTime>): Flow<HomeState?> =
-        combine(homeBase(now), extras, summaries(now), accountBalances) { h, x, sums, accounts ->
+        combine(homeBase(now), extras, summaries(now), accountBalances, dao.mileTx()) { h, x, sums, accounts, miles ->
             h?.let {
                 val total = sums.sumOf { s -> s.saved }
                 it.copy(
+                    miles = MileState.of(miles),
                     categoryBudgets = x.budgets,
                     savedTotal = total,
                     savedThisMonth = sums.firstOrNull()?.saved ?: 0,
@@ -303,8 +350,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             mockEntities = mocks,
             mockItems = items,
             wallet = wallet,
-            house = HouseLayout.of(enumOr(house?.level, HouseLevel.ONE_ROOM), items),
+            house = HouseLayout.of(enumOr(house?.level, HouseLevel.ONE_ROOM), items, HouseSetup.decode(house?.setup).bonus()),
             look = CharacterLook.decode(house?.look),
+            setup = HouseSetup.decode(house?.setup),
+            owned = house?.owned.orEmpty().split(',').filter { it.isNotBlank() }.toSet(),
+            freeMakeover = house?.freeMakeover ?: true,
             mood = Moods.of(current, today, wallet, plan.disposable, cycle),
         )
     }
@@ -369,17 +419,28 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 그 주 모의 구매를 배송 또는 반품으로 정리 */
-    private suspend fun settleMocks(start: LocalDate, end: LocalDate, overspent: Long, returnIds: Set<Long>?) {
+    /**
+     * 그 주 모의 구매 결산: 넘긴 만큼 반품, 나머지는 도착 (카드 반짝이는 그 주 아낀 비율로).
+     * 도착한 뷰티샵 예약은 얼굴·머리를 바꾼다 (옷은 지금 입은 그대로).
+     */
+    private suspend fun settleMocks(start: LocalDate, end: LocalDate, overspent: Long, returnIds: Set<Long>?, savedBps: Int? = null) {
         val all = dao.mockPurchasesNow()
         val week = WeeklySettlement.shippingIn(all.map { it.toItem() }, start, end)
         val picked = returnIds?.takeIf { WeeklySettlement.isEnough(week, it, overspent) }
             ?: WeeklySettlement.autoPick(week, overspent)
         val ids = week.map { it.id }.toSet()
-        dao.updateMocks(
-            all.filter { it.id in ids }.map {
-                it.copy(status = if (it.id in picked) PurchaseStatus.RETURNED.name else PurchaseStatus.DELIVERED.name)
-            },
-        )
+        val grade = CardGrade.of(savedBps?.takeIf { it >= 0 }).name
+        val settled = all.filter { it.id in ids }.map {
+            if (it.id in picked) it.copy(status = PurchaseStatus.RETURNED.name) else it.copy(status = PurchaseStatus.DELIVERED.name, grade = grade)
+        }
+        dao.updateMocks(settled)
+        settled.filter { it.status == PurchaseStatus.DELIVERED.name && it.payload?.startsWith(LOOK_PAYLOAD) == true }
+            .sortedBy { it.id }
+            .forEach { m ->
+                val h = dao.houseNow() ?: HouseEntity()
+                val face = CharacterLook.decode(m.payload!!.removePrefix(LOOK_PAYLOAD))
+                dao.saveHouse(h.copy(look = Shop.withClothes(face, CharacterLook.decode(h.look)).encode()))
+            }
     }
 
     // ── 내역·통계 ─────────────────────────────────────────────
@@ -741,6 +802,204 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         return true
     }
 
+    // ── 마일리지 ─────────────────────────────────────────────
+
+    /** 이번 주를 포함해 예산을 연속으로 지킨 주 수 (결산 순서대로) */
+    private suspend fun streakAt(nominal: String, index: Int): Int {
+        val all = dao.allSettledWeeksNow().sortedWith(compareBy({ it.nominal }, { it.weekIndex }))
+        val upto = all.filter { it.nominal < nominal || (it.nominal == nominal && it.weekIndex <= index) }
+        var n = 0
+        for (w in upto.asReversed()) if (w.kept == true) n++ else break
+        return n
+    }
+
+    private fun weekName(nominal: String, index: Int) = "${YearMonth.parse(nominal).monthValue}월 ${index + 1}주"
+
+    /** 결산한 주의 마일을 지갑에 (같은 주는 한 번만) */
+    private suspend fun earnMilesLocked(nominal: String, index: Int, r: WeekResult?, today: LocalDate) {
+        r ?: return
+        insertEarned(nominal, index, Miles.forWeek(r.savedBps, r.overspent, r.week.days, streakAt(nominal, index)), r.savedBps, today)
+    }
+
+    private suspend fun insertEarned(nominal: String, index: Int, e: Miles.Earned, savedBps: Int, today: LocalDate) {
+        val name = weekName(nominal, index)
+        if (e.base > 0) {
+            dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = e.base, kind = "EARN", memo = "$name ${savedBps / 100}% 아낌", refKey = "$nominal#$index:EARN"))
+        }
+        if (e.bonus > 0) {
+            dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = e.bonus, kind = "BONUS", memo = "$name 연속 보너스 +${e.bonusBps / 100}%", refKey = "$nominal#$index:BONUS"))
+        }
+    }
+
+    /** 마일이 생기기 전에 결산한 주도 한 번 적립해 준다 (일수는 7일로 봄) */
+    private suspend fun seedMilesLocked(today: LocalDate) {
+        val s = dao.settingsNow() ?: return
+        if (s.milesSeeded) return
+        var streak = 0
+        dao.allSettledWeeksNow().sortedWith(compareBy({ it.nominal }, { it.weekIndex })).forEach { w ->
+            streak = if (w.kept == true) streak + 1 else 0
+            insertEarned(w.nominal, w.weekIndex, Miles.forWeek(w.savedBps, w.overspent, 7, streak), w.savedBps, today)
+        }
+        dao.saveSettings(s.copy(milesSeeded = true))
+    }
+
+    /** 마일 키우기: 맡긴 지 한 주가 지날 때마다 0.5%씩 (복리) */
+    private suspend fun growMilesLocked(today: LocalDate) {
+        val s = dao.settingsNow() ?: return
+        val since = s.growEpochDay
+        if (since == null) {
+            dao.saveSettings(s.copy(growEpochDay = today.toEpochDay()))
+            return
+        }
+        val weeks = ((today.toEpochDay() - since) / 7).toInt()
+        if (weeks <= 0) return
+        val balance = dao.mileBalance("GROW")
+        val interest = MileGrowth.grow(balance, weeks) - balance
+        if (interest > 0) {
+            dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = interest, kind = "INTEREST", account = "GROW", memo = "${weeks}주 키움"))
+        }
+        dao.saveSettings(s.copy(growEpochDay = since + weeks * 7L))
+    }
+
+    /** 지갑 → 키우기 */
+    suspend fun depositMiles(amount: Long, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
+        if (amount <= 0 || dao.mileBalance("WALLET") < amount) return@withLock false
+        transaction {
+            dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = -amount, kind = "DEPOSIT", memo = "키우기에 넣음"))
+            dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = amount, kind = "DEPOSIT", account = "GROW", memo = "지갑에서"))
+        }
+        true
+    }
+
+    /** 키우기 → 지갑 */
+    suspend fun withdrawMiles(amount: Long, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
+        if (amount <= 0 || dao.mileBalance("GROW") < amount) return@withLock false
+        transaction {
+            dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = -amount, kind = "WITHDRAW", account = "GROW", memo = "지갑으로 뺌"))
+            dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = amount, kind = "WITHDRAW", memo = "키우기에서"))
+        }
+        true
+    }
+
+    /** 지갑에서 마일 쓰기. 모자라면 false */
+    private suspend fun spendMilesLocked(miles: Long, memo: String, today: LocalDate): Boolean {
+        if (miles <= 0) return true
+        if (dao.mileBalance("WALLET") < miles) return false
+        dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = -miles, kind = "BUY", memo = memo))
+        return true
+    }
+
+    // ── 가구점·이사·옷장·뷰티샵 ─────────────────────────────────
+
+    private suspend fun houseLocked(): HouseEntity = dao.houseNow() ?: HouseEntity()
+
+    /** 이사 (더 큰 집으로만) */
+    suspend fun moveHouse(level: HouseLevel, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
+        val h = houseLocked()
+        if (level.ordinal <= enumOr(h.level, HouseLevel.ONE_ROOM).ordinal) return@withLock false
+        if (!spendMilesLocked(Shop.moveCost(level), "${level.label}로 이사", today)) return@withLock false
+        dao.saveHouse(h.copy(level = level.name))
+        true
+    }
+
+    /** 수납 가구 한 단계 올리기 */
+    suspend fun buyStorage(slot: Slot, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
+        val h = houseLocked()
+        val setup = HouseSetup.decode(h.setup)
+        val next = (setup.storage[slot] ?: 0) + 1
+        if (next > Shop.MAX_STORAGE_LEVEL) return@withLock false
+        if (!spendMilesLocked(Shop.storageCost(next), "${slot.label} ${next}단계", today)) return@withLock false
+        dao.saveHouse(h.copy(setup = setup.copy(storage = setup.storage + (slot to next)).encode()))
+        true
+    }
+
+    /** 인테리어 색 고르기. 처음 고르는 색이면 마일로 산다 ([isDefault]면 공짜) */
+    suspend fun chooseInterior(part: Shop.Interior, theme: String, isDefault: Boolean, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
+        val h = houseLocked()
+        val setup = HouseSetup.decode(h.setup)
+        val key = "${part.name}:$theme"
+        val owned = isDefault || key in setup.ownedInterior
+        if (!owned && !spendMilesLocked(part.cost, "${part.label} $theme", today)) return@withLock false
+        dao.saveHouse(
+            h.copy(setup = setup.copy(ownedInterior = if (owned) setup.ownedInterior else setup.ownedInterior + key, interior = setup.interior + (part to theme)).encode()),
+        )
+        true
+    }
+
+    /** 옷장에서 사기 ("top:knit") */
+    suspend fun buyWardrobe(keys: List<String>, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock { buyWardrobeLocked(keys, today) }
+
+    private suspend fun buyWardrobeLocked(keys: List<String>, today: LocalDate): Boolean {
+        val h = houseLocked()
+        val owned = h.owned.split(',').filter { it.isNotBlank() }.toSet()
+        val need = keys.filter { it !in owned && Shop.wardrobeCost(it) > 0 }.distinct()
+        if (need.isEmpty()) return true
+        if (!spendMilesLocked(need.sumOf { Shop.wardrobeCost(it) }, "옷장 ${need.size}개", today)) return false
+        dao.saveHouse(h.copy(owned = (owned + need).joinToString(",")))
+        return true
+    }
+
+    /**
+     * 새 모습 저장. 옷·모자·소품은 옷장에 있어야 하고 (없으면 마일로 산다), 얼굴·머리가 바뀌면 뷰티샵 값이 든다:
+     * 첫 꾸미기는 공짜, [payWithMiles]면 마일로 바로, 아니면 모의 지갑으로 예약해 이번 주 결산 때 바뀐다.
+     */
+    suspend fun applyLook(next: CharacterLook, payWithMiles: Boolean, now: LocalDateTime = LocalDateTime.now()): LookResult = writeLock.withLock {
+        val today = now.toLocalDate()
+        val h = houseLocked()
+        val current = CharacterLook.decode(h.look)
+        val owned = h.owned.split(',').filter { it.isNotBlank() }.toSet()
+        val procedures = Shop.procedures(current, next)
+        val won = procedures.sumOf { it.won }
+        val clothesMiles = Shop.wardrobeNeeded(next, owned).sumOf { Shop.wardrobeCost(it) }
+        val beautyMiles = if (procedures.isEmpty() || h.freeMakeover || !payWithMiles) 0 else Miles.ofWon(won)
+        if (dao.mileBalance("WALLET") < clothesMiles + beautyMiles) return@withLock LookResult.NOT_ENOUGH_MILES
+        if (procedures.isNotEmpty() && !h.freeMakeover && !payWithMiles && walletNowLocked(today) < won) return@withLock LookResult.NOT_ENOUGH_WALLET
+        buyWardrobeLocked(Shop.wardrobeNeeded(next, owned), today)
+        val h2 = houseLocked()
+        when {
+            procedures.isEmpty() -> {
+                dao.saveHouse(h2.copy(look = next.encode()))
+                LookResult.SAVED
+            }
+            h.freeMakeover -> {
+                dao.saveHouse(h2.copy(look = next.encode(), freeMakeover = false))
+                LookResult.SAVED_FREE
+            }
+            payWithMiles -> {
+                spendMilesLocked(beautyMiles, "뷰티샵 " + procedures.joinToString("·") { it.label }, today)
+                dao.saveHouse(h2.copy(look = next.encode()))
+                LookResult.SAVED
+            }
+            else -> {
+                // 옷은 바로 갈아입고, 얼굴·머리는 결산 때
+                dao.saveHouse(h2.copy(look = Shop.withClothes(current, next).encode()))
+                dao.insertMock(
+                    MockPurchaseEntity(
+                        name = "뷰티샵 · " + procedures.joinToString("·") { it.label },
+                        price = won,
+                        kind = ItemKind.BEAUTY.name,
+                        store = "뷰티샵",
+                        epochDay = today.toEpochDay(),
+                        status = PurchaseStatus.SHIPPING.name,
+                        createdAtEpochSecond = now.epochSecond(),
+                        payload = LOOK_PAYLOAD + next.encode(),
+                    ),
+                )
+                LookResult.BOOKED
+            }
+        }
+    }
+
+    /** 지금 모의 지갑 (홈과 같은 계산) */
+    private suspend fun walletNowLocked(today: LocalDate): Long {
+        val s = dao.settingsNow() ?: return 0
+        val c = dao.latestCycleNow() ?: return 0
+        val cycle = c.toPayCycle(s.payDay)
+        val plan = planFor(c, cycle)
+        val living = Stats.livingTotal(dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).map { it.toEntry() })
+        return MockWallet.balance(plan.disposable, living, dao.mockPurchasesNow().map { it.toItem() })
+    }
+
     // ── 캐릭터 ─────────────────────────────────────────────────
 
     /** 캐릭터 모습 저장 (집 단계·이름은 그대로) */
@@ -875,6 +1134,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         recordDueFixedLocked(now.toLocalDate())
         recordDueIncomeLocked(now.toLocalDate())
         seedSubcategoriesLocked()
+        seedMilesLocked(now.toLocalDate())
+        growMilesLocked(now.toLocalDate())
     }
 
     /** 월급날이 지났으면 새 달을 시작한다. 여러 달 안 켰으면 그 달들도 차례로. */
@@ -967,8 +1228,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         plan.weeks.filter { it.index !in done && !(keepLast && it.index == last) }.forEach { w ->
             resolveLeftoverReviews(w.end)
             val r = weekResultNow(c, cycle, w.index)
-            settleMocks(w.start, w.end, r?.overspent ?: 0, null)
+            settleMocks(w.start, w.end, r?.overspent ?: 0, null, r?.savedBps)
             dao.markSettled(settledOf(c.nominal, w.index, now, true, r))
+            earnMilesLocked(c.nominal, w.index, r, now.toLocalDate())
         }
     }
 
@@ -1343,8 +1605,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val auto = Settlement.mustAutoSettle(week.week.end, now)
         if (auto) resolveLeftoverReviews(week.week.end)
         val result = weekResultNow(c, cycleOf(c, cycles.getOrNull(i - 1), s.payDay), week.week.index) ?: week
-        settleMocks(result.week.start, result.week.end, result.overspent, returnIds)
+        settleMocks(result.week.start, result.week.end, result.overspent, returnIds, result.savedBps)
         dao.markSettled(settledOf(c.nominal, week.week.index, now, auto, result))
+        earnMilesLocked(c.nominal, week.week.index, result, now.toLocalDate())
     }
 
     private fun settledOf(nominal: String, index: Int, now: LocalDateTime, auto: Boolean, r: WeekResult?) = SettledWeekEntity(
@@ -1462,6 +1725,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             subcategories = dao.subcategoriesNow(),
             installments = dao.allInstallments(),
             recurringIncomes = dao.recurringIncomesNow(),
+            mileTx = dao.mileTxNow(),
         ),
         now,
     )
@@ -1474,13 +1738,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.wipeSettings(); dao.wipeFixed(); dao.wipeCycles(); dao.wipeEntries(); dao.wipeReviews(); dao.wipeIncome()
                 dao.wipeRules(); dao.wipeSeen(); dao.wipeSettled(); dao.wipeCategoryRules(); dao.wipeMocks(); dao.wipeHouses()
                 dao.wipeCategoryBudgets(); dao.wipeGoals(); dao.wipeAccounts()
-                dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes()
+                dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes(); dao.wipeMileTx()
                 dao.putSettings(d.settings); dao.putFixed(d.fixed); dao.putCycles(d.cycles); dao.putEntries(d.entries)
                 dao.putReviews(d.reviews); dao.putRules(d.rules); dao.putSettled(d.settled); dao.putCategoryRules(d.categoryRules)
                 dao.putMocks(d.mocks); dao.putHouses(d.houses); dao.putCategoryBudgets(d.categoryBudgets); dao.putGoals(d.goals)
                 dao.putAccounts(d.accounts)
                 dao.putCategoryDefs(d.categoryDefs); dao.putSubcategories(d.subcategories); dao.putInstallments(d.installments)
-                dao.putRecurringIncomes(d.recurringIncomes)
+                dao.putRecurringIncomes(d.recurringIncomes); dao.putMileTx(d.mileTx)
             }
             Category.register(dao.categoryDefsNow().map { it.toCategory() })
         }
@@ -1497,6 +1761,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun deleteRule(pkg: String) = dao.deleteAppRule(pkg)
 
     companion object {
+        /** 뷰티샵 예약 내용 앞에 붙는 글자 */
+        const val LOOK_PAYLOAD = "look:"
+
         fun typeLabel(t: EntryType): String = when (t) {
             EntryType.SPEND -> "지출"
             EntryType.REFUND -> "환불"

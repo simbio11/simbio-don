@@ -16,6 +16,10 @@ data class SettingsEntity(
     val pendingSettlementDay: Int? = null,
     /** 기본 소분류를 넣었는지 (한 번만, 지운 것을 되살리지 않게) */
     @ColumnInfo(defaultValue = "0") val subSeeded: Boolean = false,
+    /** 지난 결산 마일을 한 번 소급해 줬는지 (0.11) */
+    @ColumnInfo(defaultValue = "0") val milesSeeded: Boolean = false,
+    /** 마일 키우기: 마지막으로 이자를 붙인 날 (epochDay) */
+    val growEpochDay: Long? = null,
 )
 
 /** 고정 지출. [day]를 정하면 그날 가계부에 자동으로 적는다 (그 전에 결제 알림이 오면 알림으로). */
@@ -230,6 +234,10 @@ data class MockPurchaseEntity(
     /** com.simbio.don.game.PurchaseStatus 이름 */
     val status: String,
     val createdAtEpochSecond: Long,
+    /** 서비스면 내용 ("look:…" = 뷰티샵 시술, 도착하면 얼굴·머리가 바뀐다) */
+    val payload: String? = null,
+    /** 도착할 때 정한 카드 반짝이 (com.simbio.don.game.CardGrade 이름) */
+    val grade: String? = null,
 )
 
 /** 내 집과 캐릭터. 한 줄만 쓴다 (id = 0). */
@@ -241,6 +249,12 @@ data class HouseEntity(
     val characterName: String = "나",
     /** 캐릭터 모습 (com.simbio.don.game.CharacterLook.encode). 비면 기본 */
     val look: String = "",
+    /** 수납 가구·인테리어 (com.simbio.don.game.HouseSetup.encode) */
+    @ColumnInfo(defaultValue = "") val setup: String = "",
+    /** 옷장에서 산 것 ("top:knit,hat:cap") */
+    @ColumnInfo(defaultValue = "") val owned: String = "",
+    /** 첫 꾸미기는 공짜 (얼굴·머리 바꾸기 한 번) */
+    @ColumnInfo(defaultValue = "1") val freeMakeover: Boolean = true,
 )
 
 /** 직접 만든 카테고리. [name]은 "U" + 번호 (기록에는 이 이름이 저장된다) */
@@ -289,4 +303,20 @@ data class RecurringIncomeEntity(
     val accountId: Long? = null,
     @ColumnInfo(defaultValue = "SIDE_INCOME") val category: String = "SIDE_INCOME",
     val lastDueEpochDay: Long? = null,
+)
+
+/** 마일이 오간 기록. 지갑([account] = WALLET)과 키우기(GROW)의 잔액은 이 기록의 합 */
+@Entity(tableName = "mile_tx", indices = [androidx.room.Index(value = ["refKey"], unique = true)])
+data class MileTxEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val epochDay: Long,
+    /** 들어오면 +, 나가면 − */
+    val amount: Long,
+    /** EARN · BONUS · BUY · DEPOSIT · WITHDRAW · INTEREST */
+    val kind: String,
+    /** WALLET · GROW */
+    val account: String = "WALLET",
+    val memo: String = "",
+    /** 같은 결산을 두 번 적립하지 않게 ("2026-10#2:EARN"), 그 밖엔 null */
+    val refKey: String? = null,
 )

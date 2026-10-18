@@ -23,9 +23,9 @@ class MigrationTest {
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
         val db = helper.runMigrationsAndValidate(
-            "m.db", 7, true,
+            "m.db", 8, true,
             DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3, DonDatabase.MIGRATION_3_4, DonDatabase.MIGRATION_4_5,
-            DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7,
+            DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7, DonDatabase.MIGRATION_7_8,
         )
         db.query("SELECT id, amount, category, memo, accountId, minuteOfDay FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
@@ -73,5 +73,21 @@ class MigrationTest {
         }
         db.query("SELECT subSeeded FROM settings").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
         db.query("SELECT COUNT(*) FROM subcategory").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
+    }
+
+    @Test
+    fun v7에서_v8로_집과_모의_구매는_그대로고_첫_꾸미기는_공짜다() {
+        helper.createDatabase("m7.db", 7).use { db ->
+            db.execSQL("INSERT INTO settings (id, payDay, settlementDay, savings, subSeeded) VALUES (0, 25, 1, 0, 1)")
+            db.execSQL("INSERT INTO house (id, level, characterName, look) VALUES (0, 'TWO_ROOM', '나', '')")
+            db.execSQL("INSERT INTO mock_purchase (id, name, price, kind, epochDay, status, createdAtEpochSecond) VALUES (1, '모자', 30000, 'CLOTHES', 20000, 'DELIVERED', 0)")
+        }
+        val db = helper.runMigrationsAndValidate("m7.db", 8, true, DonDatabase.MIGRATION_7_8)
+        db.query("SELECT level, setup, owned, freeMakeover FROM house").use { c ->
+            c.moveToNext(); assertEquals("TWO_ROOM", c.getString(0)); assertEquals("", c.getString(1)); assertEquals("", c.getString(2)); assertEquals(1, c.getInt(3))
+        }
+        db.query("SELECT payload, grade FROM mock_purchase").use { c -> c.moveToNext(); assertTrue(c.isNull(0)); assertTrue(c.isNull(1)) }
+        db.query("SELECT milesSeeded, growEpochDay FROM settings").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)); assertTrue(c.isNull(1)) }
+        db.query("SELECT COUNT(*) FROM mile_tx").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
     }
 }

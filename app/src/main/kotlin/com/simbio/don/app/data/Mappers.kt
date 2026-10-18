@@ -78,4 +78,6 @@ fun MockPurchaseEntity.toItem() = com.simbio.don.game.MockItem(
     date = LocalDate.ofEpochDay(epochDay),
     status = enumOr(status, com.simbio.don.game.PurchaseStatus.DISCARDED),
     createdAt = createdAtEpochSecond.toLocalDateTime(),
+    payload = payload,
+    grade = grade?.let { enumOr(it, com.simbio.don.game.CardGrade.NORMAL) },
 )

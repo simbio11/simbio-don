@@ -38,6 +38,10 @@ data class MockItem(
     val status: PurchaseStatus,
     /** 담은(찜한·산) 시각 */
     val createdAt: LocalDateTime? = null,
+    /** 물건이 아니라 서비스(뷰티샵 시술 등)면 내용 — 집에 놓이지 않는다 */
+    val payload: String? = null,
+    /** 도착할 때 정한 카드 반짝이 (그 주 아낀 비율) */
+    val grade: CardGrade? = null,
 )
 
 /**
@@ -100,7 +104,7 @@ object WeeklySettlement {
     fun resisted(week: List<MockItem>): Long = week.sumOf { it.price }
 }
 
-/** 집 단계. 단계가 오를수록 칸이 커진다 (이사는 M2). */
+/** 집 단계. 단계가 오를수록 칸이 커진다 (마일로 이사, 0.11). */
 enum class HouseLevel(val label: String, val capacity: Map<Slot, Int>) {
     ONE_ROOM("원룸", mapOf(Slot.WARDROBE to 6, Slot.SHOE_RACK to 4, Slot.DESK to 4, Slot.SHELF to 6)),
     TWO_ROOM("투룸", mapOf(Slot.WARDROBE to 12, Slot.SHOE_RACK to 8, Slot.DESK to 8, Slot.SHELF to 12)),
@@ -113,9 +117,13 @@ data class HouseLayout(
     val slots: Map<Slot, List<MockItem>>,
     val floor: List<MockItem>,
     val trash: List<MockItem>,
+    /** 수납 가구로 늘린 칸 */
+    val bonus: Map<Slot, Int> = emptyMap(),
 ) {
     val itemCount: Int get() = slots.values.sumOf { it.size } + floor.size
-    val capacity: Int get() = level.capacity.values.sum()
+    val capacity: Int get() = level.capacity.values.sum() + bonus.values.sum()
+
+    fun capacityOf(slot: Slot): Int = (level.capacity[slot] ?: 0) + (bonus[slot] ?: 0)
     val isCluttered: Boolean get() = floor.isNotEmpty()
 
     /** 집에 있는 물건을 실제로 샀다면 든 돈 (쓰레기 포함) */
@@ -123,16 +131,17 @@ data class HouseLayout(
 
     companion object {
         /** 도착한 물건을 오래된 것부터 칸에 넣고, 넘치면 바닥으로. */
-        fun of(level: HouseLevel, items: List<MockItem>): HouseLayout {
-            val home = items.filter { it.status == PurchaseStatus.DELIVERED }.sortedWith(compareBy({ it.date }, { it.id }))
+        fun of(level: HouseLevel, items: List<MockItem>, bonus: Map<Slot, Int> = emptyMap()): HouseLayout {
+            // 시술 같은 서비스는 집에 놓이지 않는다
+            val home = items.filter { it.status == PurchaseStatus.DELIVERED && it.payload == null }.sortedWith(compareBy({ it.date }, { it.id }))
             val (food, goods) = home.partition { it.kind.isFood }
             val slots = mutableMapOf<Slot, MutableList<MockItem>>()
             val floor = mutableListOf<MockItem>()
             goods.forEach { item ->
                 val list = slots.getOrPut(item.kind.slot) { mutableListOf() }
-                if (list.size < (level.capacity[item.kind.slot] ?: 0)) list += item else floor += item
+                if (list.size < (level.capacity[item.kind.slot] ?: 0) + (bonus[item.kind.slot] ?: 0)) list += item else floor += item
             }
-            return HouseLayout(level, slots, floor, food)
+            return HouseLayout(level, slots, floor, food, bonus)
         }
     }
 }

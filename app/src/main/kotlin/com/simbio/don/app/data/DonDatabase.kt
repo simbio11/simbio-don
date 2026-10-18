@@ -30,8 +30,9 @@ import com.simbio.don.budget.CategoryGuesser
         SubcategoryEntity::class,
         InstallmentEntity::class,
         RecurringIncomeEntity::class,
+        MileTxEntity::class,
     ],
-    version = 7,
+    version = 8,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -49,7 +50,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 }
                 ).build().also { instance = it }
         }
@@ -58,6 +59,24 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v8: 마일리지·마일 키우기, 집 꾸밈(수납·인테리어·옷장), 뷰티샵 예약, 카드 반짝이 */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS mile_tx (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, epochDay INTEGER NOT NULL, amount INTEGER NOT NULL, " +
+                        "kind TEXT NOT NULL, account TEXT NOT NULL, memo TEXT NOT NULL, refKey TEXT)",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_mile_tx_refKey ON mile_tx (refKey)")
+                db.execSQL("ALTER TABLE mock_purchase ADD COLUMN payload TEXT")
+                db.execSQL("ALTER TABLE mock_purchase ADD COLUMN grade TEXT")
+                db.execSQL("ALTER TABLE house ADD COLUMN setup TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE house ADD COLUMN owned TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE house ADD COLUMN freeMakeover INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE settings ADD COLUMN milesSeeded INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE settings ADD COLUMN growEpochDay INTEGER")
+            }
         }
 
         /** v7: 직접 만든 카테고리·소분류, 할부, 반복 수입 */

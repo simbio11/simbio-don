@@ -347,6 +347,20 @@ interface DonDao {
     @Query("SELECT * FROM entry WHERE epochDay BETWEEN :from AND :to ORDER BY epochDay")
     fun entriesBetweenFlow(from: Long, to: Long): Flow<List<EntryEntity>>
 
+    // ── 마일 ──
+    @Query("SELECT * FROM mile_tx ORDER BY epochDay DESC, id DESC")
+    fun mileTx(): Flow<List<MileTxEntity>>
+
+    @Query("SELECT * FROM mile_tx")
+    suspend fun mileTxNow(): List<MileTxEntity>
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM mile_tx WHERE account = :account")
+    suspend fun mileBalance(account: String): Long
+
+    /** 같은 결산의 적립(refKey)은 한 번만 */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertMileTx(x: MileTxEntity): Long
+
     // ── 백업·복원 ──
     @Query("SELECT * FROM fixed_expense") suspend fun allFixed(): List<FixedExpenseEntity>
     @Query("SELECT * FROM cycle") suspend fun allCycles(): List<CycleEntity>
@@ -374,6 +388,7 @@ interface DonDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSubcategories(x: List<SubcategoryEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putInstallments(x: List<InstallmentEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putRecurringIncomes(x: List<RecurringIncomeEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putMileTx(x: List<MileTxEntity>)
 
     @Query("DELETE FROM settings") suspend fun wipeSettings()
     @Query("DELETE FROM fixed_expense") suspend fun wipeFixed()
@@ -394,4 +409,5 @@ interface DonDao {
     @Query("DELETE FROM subcategory") suspend fun wipeSubcategories()
     @Query("DELETE FROM installment") suspend fun wipeInstallments()
     @Query("DELETE FROM recurring_income") suspend fun wipeRecurringIncomes()
+    @Query("DELETE FROM mile_tx") suspend fun wipeMileTx()
 }
