@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 5,
-    "identityHash": "eefc734737a8eed173efcc454472f70f",
+    "identityHash": "7f029eee6157faa8933522882e78d989",
     "entities": [
       {
         "tableName": "settings",
@@ -50,7 +50,7 @@
       },
       {
         "tableName": "fixed_expense",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `amount` INTEGER NOT NULL, `day` INTEGER, `accountId` INTEGER, `category` TEXT NOT NULL DEFAULT 'LIVING')",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `amount` INTEGER NOT NULL, `day` INTEGER, `accountId` INTEGER, `category` TEXT NOT NULL DEFAULT 'BILLS', `doneNominal` TEXT)",
         "fields": [
           {
             "fieldPath": "id",
@@ -87,7 +87,13 @@
             "columnName": "category",
             "affinity": "TEXT",
             "notNull": true,
-            "defaultValue": "'LIVING'"
+            "defaultValue": "'BILLS'"
+          },
+          {
+            "fieldPath": "doneNominal",
+            "columnName": "doneNominal",
+            "affinity": "TEXT",
+            "notNull": false
           }
         ],
         "primaryKey": {
@@ -768,7 +774,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'eefc734737a8eed173efcc454472f70f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7f029eee6157faa8933522882e78d989')"
     ]
   }
 }

@@ -170,7 +170,8 @@ fun HomeScreen(
 
         HomeGameCard(home, onHouse, onShop, weather)
 
-        val categories = Stats.byCategory(home.entries.map { it.toEntry() })
+        // 홈은 생활비에 집중: 고정 지출은 빼고 본다 (가계부·통계 탭에는 들어감)
+        val categories = Stats.byCategory(home.entries.map { it.toEntry() }.filter { it.type != com.simbio.don.budget.EntryType.FIXED })
         // 카테고리 예산: 80% 넘게 쓴 것만 미리 알려준다
         val spentBy = categories.associate { it.category to it.amount }
         val tight = home.categoryBudgets.filter { (c, b) -> b > 0 && (spentBy[c] ?: 0) * 10 >= b * 8 }

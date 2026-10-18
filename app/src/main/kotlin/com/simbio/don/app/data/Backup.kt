@@ -97,7 +97,7 @@ object Backup {
                 },
                 fixed = list(root, "fixed") { o ->
                     FixedExpenseEntity(o.getLong("id"), o.getString("name"), o.getLong("amount"), o.intOrNull("day"),
-                        o.longOrNull("accountId"), o.optString("category", "LIVING"), o.strOrNull("doneNominal"))
+                        o.longOrNull("accountId"), o.optString("category", "BILLS"), o.strOrNull("doneNominal"))
                 },
                 cycles = list(root, "cycles") { o ->
                     CycleEntity(o.getString("nominal"), o.getLong("salary"), o.getLong("startEpochDay"), o.getInt("settlementDay"),

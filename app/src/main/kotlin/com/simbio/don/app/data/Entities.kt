@@ -26,7 +26,7 @@ data class FixedExpenseEntity(
     val day: Int? = null,
     /** 빠져나가는 자산 */
     val accountId: Long? = null,
-    @ColumnInfo(defaultValue = "LIVING") val category: String = "LIVING",
+    @ColumnInfo(defaultValue = "BILLS") val category: String = "BILLS",
     /** 이미 적은 달 (그 달 기록을 지워도 다시 적지 않게) */
     val doneNominal: String? = null,
 )

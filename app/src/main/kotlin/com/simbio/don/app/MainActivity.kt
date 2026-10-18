@@ -464,7 +464,14 @@ class MainActivity : ComponentActivity() {
                         existing = o.existing,
                         accounts = home.accounts.map { it.account },
                         picks = picks,
-                        initial = o.initial,
+                        // 새로 적을 때 결제 수단은 마지막으로 직접 적은 기록과 같게
+                        initial = o.initial ?: if (o.existing == null) {
+                            home.entries.filter { it.source == com.simbio.don.budget.EntrySource.MANUAL.name && it.accountId != null && it.type != EntryType.TRANSFER.name }
+                                .maxByOrNull { it.id }?.accountId
+                                ?.let { EntryDraft(home.today, 0, "", EntryType.SPEND, Category.ETC, "", false, accountId = it) }
+                        } else {
+                            null
+                        },
                         onSave = { d -> vm.save(d, o.existing) },
                         onDelete = o.existing?.let { e -> { vm.deleteEntry(e) } },
                         onBack = close,

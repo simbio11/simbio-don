@@ -12,6 +12,9 @@ enum class Category(val label: String, val emoji: String, val income: Boolean = 
     CULTURE("문화·여가", "🎬"),
     EVENT("경조사·선물", "🎁"),
     EDUCATION("교육", "📚"),
+
+    /** 월세·관리비·통신비·보험 같은 고정 지출 (0.8) */
+    BILLS("주거·고정비", "🏠"),
     ETC("기타", "📌"),
 
     SALARY("월급", "💰", income = true),
@@ -24,7 +27,7 @@ enum class Category(val label: String, val emoji: String, val income: Boolean = 
     companion object {
         fun of(name: String?): Category = entries.firstOrNull { it.name == name } ?: ETC
 
-        /** 지출 카테고리 11개 */
+        /** 지출 카테고리 12개 */
         val spending: List<Category> get() = entries.filter { !it.income }
 
         /** 수입 카테고리 */
@@ -77,6 +80,7 @@ object CategoryGuesser {
             "알리", "테무", "네이버페이", "스마트스토어", "백화점", "아울렛", "유니클로", "자라", "h&m",
         ),
         Category.EVENT to listOf("축의", "조의", "부조", "선물", "꽃집", "플라워", "카카오톡 선물"),
+        Category.BILLS to listOf("월세", "통신비", "보험료", "전기요금", "가스요금", "수도요금", "도시가스", "아파트관리비"),
         Category.EDUCATION to listOf("학원", "강의", "클래스101", "인프런", "교재", "토익", "시험"),
         Category.FOOD to listOf(
             "식당", "김밥", "분식", "치킨", "피자", "버거", "맥도날드", "롯데리아", "버거킹", "맘스터치", "kfc", "서브웨이",

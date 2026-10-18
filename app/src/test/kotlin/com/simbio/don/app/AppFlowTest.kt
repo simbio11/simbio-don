@@ -200,6 +200,7 @@ class AppFlowTest {
         shot("19_assets")
         rule.onNodeWithText("생활비 통장").performClick()
         waitText("이체 적기")
+        waitText("ATM 출금")
         shot("19b_account")
         rule.onNodeWithContentDescription("뒤로").performClick()
         rule.onNodeWithText("홈").performClick()

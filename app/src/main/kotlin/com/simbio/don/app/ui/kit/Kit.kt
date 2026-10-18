@@ -352,6 +352,7 @@ private fun Category.look(): CategoryLook = when (this) {
     Category.CULTURE -> CategoryLook(R.drawable.ic_movie_fill, Color(0xFF8A5CF6))
     Category.EVENT -> CategoryLook(R.drawable.ic_redeem_fill, Color(0xFFF2A100))
     Category.EDUCATION -> CategoryLook(R.drawable.ic_school_fill, Color(0xFF4C6EF5))
+    Category.BILLS -> CategoryLook(R.drawable.ic_home_fill, Color(0xFF5B6B80))
     Category.ETC -> CategoryLook(R.drawable.ic_more_horiz_fill, Color(0xFF8B95A1))
     Category.SALARY -> CategoryLook(R.drawable.ic_payments_fill, Color(0xFF346AFF))
     Category.SIDE_INCOME -> CategoryLook(R.drawable.ic_bolt_fill, Color(0xFF14A06A))

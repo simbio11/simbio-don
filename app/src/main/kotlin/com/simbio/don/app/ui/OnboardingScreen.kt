@@ -62,7 +62,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 
 /** 고정비 편집용 한 줄 ([id]가 있으면 이미 있는 고정비) */
-class FixedRow(name: String = "", amount: String = "", day: String = "", val id: Long = 0, val category: String = "LIVING", val accountId: Long? = null) {
+class FixedRow(name: String = "", amount: String = "", day: String = "", val id: Long = 0, val category: String = "BILLS", val accountId: Long? = null) {
     var name by mutableStateOf(name)
     var amount by mutableStateOf(amount)
     var day by mutableStateOf(day)
@@ -255,7 +255,7 @@ fun OnboardingScreen(
                     Step.THIS_MONTH -> if (cycle != null) {
                         StepTitle(
                             "이번 달은 이미 시작됐어요",
-                            "지난 월급날(${shortDate(cycle.start)})부터 쓴 돈은 모르니까 오늘부터 ${shortDate(cycle.end)}까지 ${daysLeft}일만 기록해요. " +
+                            "지난 월급날 ${shortDate(cycle.start)}부터 쓴 돈은 모르니까 오늘부터 ${shortDate(cycle.end)}까지 ${daysLeft}일만 기록해요. " +
                                 "그동안 쓸 생활비를 정해 주세요. 다음 월급날부터는 저절로 한 달씩 돌아가요.",
                         )
                         SegmentedToggle(StartMode.entries.map { it.label }, mode.ordinal) { mode = StartMode.entries[it] }

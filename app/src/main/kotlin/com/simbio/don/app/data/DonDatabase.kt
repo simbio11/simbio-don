@@ -69,7 +69,7 @@ abstract class DonDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE entry ADD COLUMN fixedId INTEGER")
                 db.execSQL("ALTER TABLE fixed_expense ADD COLUMN day INTEGER")
                 db.execSQL("ALTER TABLE fixed_expense ADD COLUMN accountId INTEGER")
-                db.execSQL("ALTER TABLE fixed_expense ADD COLUMN category TEXT NOT NULL DEFAULT 'LIVING'")
+                db.execSQL("ALTER TABLE fixed_expense ADD COLUMN category TEXT NOT NULL DEFAULT 'BILLS'")
                 db.execSQL("ALTER TABLE fixed_expense ADD COLUMN doneNominal TEXT")
                 db.execSQL("ALTER TABLE cycle ADD COLUMN salarySource TEXT NOT NULL DEFAULT 'MANUAL'")
                 db.execSQL("ALTER TABLE cycle ADD COLUMN noticeShown INTEGER NOT NULL DEFAULT 1")

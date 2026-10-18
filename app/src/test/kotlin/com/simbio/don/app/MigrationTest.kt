@@ -44,7 +44,7 @@ class MigrationTest {
             c.moveToNext(); assertEquals("MANUAL", c.getString(0)); assertEquals(1, c.getInt(1))
         }
         db.query("SELECT day, category FROM fixed_expense").use { c ->
-            c.moveToNext(); assertTrue(c.isNull(0)); assertEquals("LIVING", c.getString(1))
+            c.moveToNext(); assertTrue(c.isNull(0)); assertEquals("BILLS", c.getString(1))
         }
         db.query("SELECT COUNT(*) FROM account").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
     }
