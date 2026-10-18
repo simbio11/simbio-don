@@ -49,12 +49,16 @@ import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.HomeState
 import com.simbio.don.app.data.QuickPick
 import com.simbio.don.app.data.toRule
+import com.simbio.don.app.lock.AppLock
+import com.simbio.don.app.lock.LockScreen
+import com.simbio.don.app.lock.SetPinScreen
 import com.simbio.don.app.notify.DailyReminder
 import com.simbio.don.app.ui.AccountDetailScreen
 import com.simbio.don.app.ui.AccountEditScreen
 import com.simbio.don.app.ui.AppState
 import com.simbio.don.app.ui.AssetsScreen
 import com.simbio.don.app.ui.BudgetsScreen
+import com.simbio.don.app.ui.CategoryManageScreen
 import com.simbio.don.app.ui.DonColors
 import com.simbio.don.app.ui.DonTheme
 import com.simbio.don.app.ui.DressScreen
@@ -68,6 +72,7 @@ import com.simbio.don.app.ui.LedgerScreen
 import com.simbio.don.app.ui.MainViewModel
 import com.simbio.don.app.ui.MockShopScreen
 import com.simbio.don.app.ui.OnboardingScreen
+import com.simbio.don.app.ui.RecurringIncomeScreen
 import com.simbio.don.app.ui.ReviewScreen
 import com.simbio.don.app.ui.RuleEditScreen
 import com.simbio.don.app.ui.SalaryScreen
@@ -112,6 +117,14 @@ private sealed interface Overlay {
     data class Account(val id: Long) : Overlay
     data class EditAccount(val id: Long?) : Overlay
     data object Dress : Overlay
+    data object Categories : Overlay
+    data object RecurringIncome : Overlay
+
+    /** 새 암호 정하기 (켜기·바꾸기) */
+    data object SetPin : Overlay
+
+    /** 잠금 끄기 전에 지금 암호 확인 */
+    data object UnlockToTurnOff : Overlay
 }
 
 class MainActivity : ComponentActivity() {
@@ -122,6 +135,10 @@ class MainActivity : ComponentActivity() {
 
     private val vm: MainViewModel by viewModels()
     private var listenerEnabled by mutableStateOf(false)
+
+    /** 앱 잠금: 잠겨 있으면 잠금 화면만 그린다 */
+    private var locked by mutableStateOf(false)
+    private var leftAt = 0L
 
     /** 쇼핑 앱에서 "공유"로 받은 글 — 모의 쇼핑 화면을 연다 */
     private var shared by mutableStateOf<SharedProduct?>(null)
@@ -147,17 +164,27 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         readShare(intent)
         if (DailyReminder.isOn(this)) DailyReminder.schedule(this)
+        locked = AppLock.isOn(this)
         setContent {
             DonTheme {
                 Surface(Modifier.fillMaxSize(), color = DonColors.Bg) {
-                    Box(Modifier.safeDrawingPadding()) { App() }
+                    Box(Modifier.safeDrawingPadding()) {
+                        if (locked) LockScreen { locked = false } else App()
+                    }
                 }
             }
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // 잠깐 다른 앱을 봤다 오는 건 봐주고, 오래 나갔다 오면 다시 잠근다
+        if (leftAt > 0 && AppLock.isOn(this) && System.currentTimeMillis() - leftAt > AppLock.RELOCK_AFTER_MS) locked = true
+    }
+
     override fun onStop() {
         super.onStop()
+        leftAt = System.currentTimeMillis()
         WeekWidget.refresh(this)
     }
 
@@ -308,6 +335,7 @@ class MainActivity : ComponentActivity() {
                         val view by vm.month.collectAsStateWithLifecycle()
                         val cycles by vm.cycles.collectAsStateWithLifecycle()
                         val summaries by vm.summaries.collectAsStateWithLifecycle()
+                        val yearView by vm.yearView.collectAsStateWithLifecycle()
                         val v = view ?: return@Box
                         val i = cycles.indexOfFirst { it.nominal == v.nominal }
                         val hasPrev = i in 0 until cycles.lastIndex
@@ -341,6 +369,8 @@ class MainActivity : ComponentActivity() {
                                 onCategory = { c -> ledgerCategory = c; ledgerDate = null; ledgerMode = LedgerMode.DAILY; tab = Tab.Ledger },
                                 summaries = summaries,
                                 onBudgets = { overlay = Overlay.Budgets },
+                                year = yearView,
+                                onPickYear = { vm.pickYear(it) },
                             )
                         }
                     }
@@ -369,6 +399,7 @@ class MainActivity : ComponentActivity() {
         val rules by vm.appRules.collectAsStateWithLifecycle()
         val seen by vm.seenApps.collectAsStateWithLifecycle()
         val learned by vm.learned.collectAsStateWithLifecycle()
+        val incomes by vm.recurringIncomes.collectAsStateWithLifecycle()
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
         var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
         val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -441,6 +472,12 @@ class MainActivity : ComponentActivity() {
                 onSalary = { open(Overlay.Salary) },
                 onBackup = { backup.launch("돈트_백업_${LocalDate.now()}.json") },
                 onRestore = { restore.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) },
+                onCategories = { open(Overlay.Categories) },
+                onRecurringIncome = { open(Overlay.RecurringIncome) },
+                recurringCount = incomes.size,
+                lockOn = AppLock.isOn(this),
+                onLock = { on -> open(if (on) Overlay.SetPin else Overlay.UnlockToTurnOff) },
+                onChangePin = { open(Overlay.SetPin) },
                 onBack = onBack,
             )
         }
@@ -452,6 +489,7 @@ class MainActivity : ComponentActivity() {
             is Overlay.Edit -> {
                 val learned by produceState<Map<String, Category>?>(null) { value = vm.learnedMap() }
                 val picks by produceState(emptyList<QuickPick>()) { value = vm.quickPicks() }
+                val subs by vm.subcategories.collectAsStateWithLifecycle()
                 val month by vm.month.collectAsStateWithLifecycle()
                 val cycles by vm.cycles.collectAsStateWithLifecycle()
                 // 지난달 기록을 고칠 때는 그 달 기준으로
@@ -478,6 +516,9 @@ class MainActivity : ComponentActivity() {
                         } else {
                             null
                         },
+                        subcategories = subs.mapValues { (_, l) -> l.map { it.name } },
+                        onAddSub = { c, n -> vm.addSubcategory(c, n) },
+                        onDeleteInstallment = o.existing?.installmentId?.let { id -> { vm.deleteInstallment(id) } },
                         onSave = { d -> vm.save(d, o.existing) },
                         onDelete = o.existing?.let { e -> { vm.deleteEntry(e) } },
                         onBack = close,
@@ -564,6 +605,38 @@ class MainActivity : ComponentActivity() {
                     onSave = { vm.saveCategoryBudgets(it) },
                     onBack = close,
                 )
+            }
+            Overlay.Categories -> {
+                val subs by vm.subcategories.collectAsStateWithLifecycle()
+                val customs by vm.customCategories.collectAsStateWithLifecycle()
+                CategoryManageScreen(
+                    subcategories = subs,
+                    customs = customs,
+                    onAddCategory = { l, inc, ic, col -> vm.addCategory(l, inc, ic, col) },
+                    onUpdateCategory = { n, l, ic, col -> vm.updateCategory(n, l, ic, col) },
+                    onDeleteCategory = { vm.deleteCategory(it) },
+                    onAddSub = { c, n -> vm.addSubcategory(c, n) },
+                    onRenameSub = { s, n -> vm.renameSubcategory(s, n) },
+                    onDeleteSub = { vm.deleteSubcategory(it) },
+                    onBack = close,
+                )
+            }
+            Overlay.RecurringIncome -> {
+                val items by vm.recurringIncomes.collectAsStateWithLifecycle()
+                RecurringIncomeScreen(items, onSave = { vm.saveRecurringIncomes(it) }, onBack = close)
+            }
+            Overlay.SetPin -> SetPinScreen(
+                onDone = { pin ->
+                    AppLock.setPin(this, pin)
+                    Toast.makeText(this, "앱 잠금을 켰어요", Toast.LENGTH_SHORT).show()
+                    close()
+                },
+                onCancel = close,
+            )
+            Overlay.UnlockToTurnOff -> LockScreen {
+                AppLock.turnOff(this)
+                Toast.makeText(this, "앱 잠금을 껐어요", Toast.LENGTH_SHORT).show()
+                close()
             }
             Overlay.Dress -> DressScreen(
                 current = home.look,

@@ -264,6 +264,89 @@ interface DonDao {
     @Query("SELECT * FROM entry WHERE type = 'INCOME' AND category = 'SALARY' AND epochDay BETWEEN :from AND :to ORDER BY amount DESC")
     suspend fun salaryIncomeBetween(from: Long, to: Long): List<EntryEntity>
 
+    // ── 직접 만든 카테고리·소분류 ──
+    @Query("SELECT * FROM category_def ORDER BY sortOrder, name")
+    fun categoryDefs(): Flow<List<CategoryDefEntity>>
+
+    @Query("SELECT * FROM category_def ORDER BY sortOrder, name")
+    suspend fun categoryDefsNow(): List<CategoryDefEntity>
+
+    @Upsert
+    suspend fun saveCategoryDef(c: CategoryDefEntity)
+
+    @Query("DELETE FROM category_def WHERE name = :name")
+    suspend fun deleteCategoryDef(name: String)
+
+    @Query("SELECT * FROM subcategory ORDER BY category, sortOrder, id")
+    fun subcategories(): Flow<List<SubcategoryEntity>>
+
+    @Query("SELECT * FROM subcategory ORDER BY category, sortOrder, id")
+    suspend fun subcategoriesNow(): List<SubcategoryEntity>
+
+    @Insert
+    suspend fun insertSubcategories(x: List<SubcategoryEntity>)
+
+    @Upsert
+    suspend fun saveSubcategory(x: SubcategoryEntity)
+
+    @Query("DELETE FROM subcategory WHERE id = :id")
+    suspend fun deleteSubcategory(id: Long)
+
+    @Query("DELETE FROM subcategory WHERE category = :category")
+    suspend fun deleteSubcategoriesOf(category: String)
+
+    /** 카테고리를 지우면 그 기록은 [to]로 옮기고 소분류는 비운다 */
+    @Query("UPDATE entry SET category = :to, sub = NULL WHERE category = :from")
+    suspend fun moveCategory(from: String, to: String)
+
+    @Query("UPDATE entry SET sub = :to WHERE category = :category AND sub = :from")
+    suspend fun renameSub(category: String, from: String, to: String?)
+
+    @Query("UPDATE fixed_expense SET category = :to WHERE category = :from")
+    suspend fun moveFixedCategory(from: String, to: String)
+
+    @Query("UPDATE recurring_income SET category = :to WHERE category = :from")
+    suspend fun moveIncomeCategory(from: String, to: String)
+
+    @Query("UPDATE category_rule SET category = :to WHERE category = :from")
+    suspend fun moveRuleCategory(from: String, to: String)
+
+    @Query("DELETE FROM category_budget WHERE category = :category")
+    suspend fun deleteCategoryBudget(category: String)
+
+    // ── 할부 ──
+    @Insert
+    suspend fun insertInstallment(x: InstallmentEntity): Long
+
+    @Query("SELECT * FROM installment WHERE id = :id")
+    suspend fun installment(id: Long): InstallmentEntity?
+
+    @Query("DELETE FROM installment WHERE id = :id")
+    suspend fun deleteInstallment(id: Long)
+
+    @Query("DELETE FROM entry WHERE installmentId = :id")
+    suspend fun deleteInstallmentEntries(id: Long)
+
+    @Query("SELECT * FROM entry WHERE installmentId = :id ORDER BY epochDay")
+    suspend fun installmentEntries(id: Long): List<EntryEntity>
+
+    // ── 반복 수입 ──
+    @Query("SELECT * FROM recurring_income ORDER BY id")
+    fun recurringIncomes(): Flow<List<RecurringIncomeEntity>>
+
+    @Query("SELECT * FROM recurring_income ORDER BY id")
+    suspend fun recurringIncomesNow(): List<RecurringIncomeEntity>
+
+    @Upsert
+    suspend fun upsertRecurringIncome(x: RecurringIncomeEntity): Long
+
+    @Query("DELETE FROM recurring_income WHERE id = :id")
+    suspend fun deleteRecurringIncome(id: Long)
+
+    // ── 연간 통계 ──
+    @Query("SELECT * FROM entry WHERE epochDay BETWEEN :from AND :to ORDER BY epochDay")
+    fun entriesBetweenFlow(from: Long, to: Long): Flow<List<EntryEntity>>
+
     // ── 백업·복원 ──
     @Query("SELECT * FROM fixed_expense") suspend fun allFixed(): List<FixedExpenseEntity>
     @Query("SELECT * FROM cycle") suspend fun allCycles(): List<CycleEntity>
@@ -272,6 +355,7 @@ interface DonDao {
     @Query("SELECT * FROM settled_week") suspend fun allSettled(): List<SettledWeekEntity>
     @Query("SELECT * FROM category_budget") suspend fun allCategoryBudgets(): List<CategoryBudgetEntity>
     @Query("SELECT * FROM house") suspend fun allHouses(): List<HouseEntity>
+    @Query("SELECT * FROM installment") suspend fun allInstallments(): List<InstallmentEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSettings(x: List<SettingsEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putFixed(x: List<FixedExpenseEntity>)
@@ -286,6 +370,10 @@ interface DonDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCategoryBudgets(x: List<CategoryBudgetEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putGoals(x: List<SavingsGoalEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putAccounts(x: List<AccountEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCategoryDefs(x: List<CategoryDefEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSubcategories(x: List<SubcategoryEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putInstallments(x: List<InstallmentEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putRecurringIncomes(x: List<RecurringIncomeEntity>)
 
     @Query("DELETE FROM settings") suspend fun wipeSettings()
     @Query("DELETE FROM fixed_expense") suspend fun wipeFixed()
@@ -302,4 +390,8 @@ interface DonDao {
     @Query("DELETE FROM category_budget") suspend fun wipeCategoryBudgets()
     @Query("DELETE FROM savings_goal") suspend fun wipeGoals()
     @Query("DELETE FROM account") suspend fun wipeAccounts()
+    @Query("DELETE FROM category_def") suspend fun wipeCategoryDefs()
+    @Query("DELETE FROM subcategory") suspend fun wipeSubcategories()
+    @Query("DELETE FROM installment") suspend fun wipeInstallments()
+    @Query("DELETE FROM recurring_income") suspend fun wipeRecurringIncomes()
 }

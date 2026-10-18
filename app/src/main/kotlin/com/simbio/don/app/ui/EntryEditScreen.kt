@@ -1,5 +1,7 @@
 package com.simbio.don.app.ui
 
+import com.simbio.don.app.ui.kit.Badge
+import com.simbio.don.budget.Installments
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -72,7 +74,14 @@ data class EntryDraft(
     val accountId: Long? = null,
     val toAccountId: Long? = null,
     val minuteOfDay: Int? = null,
+    /** 소분류 */
+    val sub: String? = null,
+    /** 할부 개월 (새 지출만, 1이면 일시불) */
+    val months: Int = 1,
 )
+
+/** 할부 고르기 칩 */
+private val INSTALLMENT_CHOICES = listOf(1, 2, 3, 6, 10, 12, 24)
 
 /** 입력 화면 맨 위 탭 */
 private enum class Kind(val label: String) { INCOME("수입"), SPEND("지출"), TRANSFER("이체") }
@@ -101,6 +110,11 @@ fun EntryEditScreen(
     accounts: List<AccountEntity> = emptyList(),
     picks: List<QuickPick> = emptyList(),
     initial: EntryDraft? = null,
+    /** 카테고리 이름 → 소분류 */
+    subcategories: Map<String, List<String>> = emptyMap(),
+    onAddSub: (Category, String) -> Unit = { _, _ -> },
+    /** 이 기록이 할부면: "n/N" 표시와 할부 전체 지우기 */
+    onDeleteInstallment: (() -> Unit)? = null,
     onSave: (EntryDraft) -> Unit,
     onDelete: (() -> Unit)?,
     onBack: () -> Unit,
@@ -122,6 +136,10 @@ fun EntryEditScreen(
     var showTime by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var savedCount by remember { mutableStateOf(0) }
+    var sub by remember { mutableStateOf(existing?.sub ?: initial?.sub) }
+    var months by remember { mutableStateOf(1) }
+    var addingSub by remember { mutableStateOf(false) }
+    var confirmDeleteAll by remember { mutableStateOf(false) }
 
     val kind = kindOf(type)
     val isIncome = kind == Kind.INCOME
@@ -133,9 +151,18 @@ fun EntryEditScreen(
     val recent = (0L..6L).map { today.minusDays(it) }.filter { it in minDate..maxDate }
     val shownAccounts = accounts.filter { !it.hidden || it.id == accountId || it.id == toAccountId }
     val transferOk = kind != Kind.TRANSFER || (accountId != null && toAccountId != null && accountId != toAccountId)
-    val canSave = (amount.toLongOrNull() ?: 0) > 0 && transferOk
+    val subs = subcategories[category.name].orEmpty()
+    // 카테고리를 바꾸면 그 카테고리에 없는 소분류는 비운다
+    val subNow = sub?.takeIf { it in subs || (existing?.sub == it && existing.category == category.name) }
+    // 할부는 새 생활비 지출만 (고정·예외·환불은 일시불)
+    val installmentOk = existing == null && type == EntryType.SPEND
+    val monthsNow = if (installmentOk) months else 1
+    val canSave = (amount.toLongOrNull() ?: 0) > 0 && transferOk && (amount.toLongOrNull() ?: 0) >= monthsNow
 
-    fun draft() = EntryDraft(date, amount.toLong(), label.trim(), type, category, memo.trim(), applySame, accountId, toAccountId, minute)
+    fun draft() = EntryDraft(
+        date, amount.toLong(), label.trim(), type, category, memo.trim(), applySame, accountId, toAccountId, minute,
+        subNow.takeIf { kind != Kind.TRANSFER }, monthsNow,
+    )
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
         BackBar(if (existing == null) "가계부 쓰기" else "기록 고치기", onBack)
@@ -155,7 +182,21 @@ fun EntryEditScreen(
             FormCard {
                 when (existing?.source) {
                     EntrySource.NOTIFICATION.name -> Text("결제 알림에서 자동으로 기록됐어요.", fontSize = 12.sp, color = DonColors.InkMuted)
-                    EntrySource.RECURRING.name -> Text("고정 지출이라 정한 날에 자동으로 적었어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    EntrySource.RECURRING.name -> Text(
+                        if (existing.incomeId != null) "반복 수입이라 정한 날에 자동으로 적었어요." else "고정 지출이라 정한 날에 자동으로 적었어요.",
+                        fontSize = 12.sp,
+                        color = DonColors.InkMuted,
+                    )
+                }
+                existing?.installmentNo?.let { no ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Badge("할부 $no", DonColors.Real)
+                        Spacer(Modifier.width(8.dp))
+                        Text("이 달 몫만 고쳐져요.", fontSize = 12.sp, color = DonColors.InkMuted, modifier = Modifier.weight(1f))
+                        if (onDeleteInstallment != null) {
+                            TextButton(onClick = { confirmDeleteAll = true }, color = DonColors.Warn) { Text("할부 전체 지우기") }
+                        }
+                    }
                 }
                 FormRow("날짜") {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -181,7 +222,12 @@ fun EntryEditScreen(
                 }
             } else {
                 FormCard("분류") {
-                    CategoryGrid(category, if (isIncome) Category.incomes else Category.spending) { picked = it }
+                    CategoryGrid(category, if (isIncome) Category.incomes else Category.spending) { picked = it; sub = null }
+                    // 소분류: 고르지 않아도 된다, 없으면 바로 더할 수 있다
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        subs.forEach { s -> FilterChip(selected = subNow == s, onClick = { sub = if (subNow == s) null else s }, label = { Text(s) }) }
+                        FilterChip(selected = false, onClick = { addingSub = true }, label = { Text("+ 소분류") })
+                    }
                     if (existing != null && picked != null && picked!!.name != existing.category && !isIncome) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = applySame, onCheckedChange = { applySame = it })
@@ -230,6 +276,29 @@ fun EntryEditScreen(
                 )
             }
 
+            if (installmentOk) {
+                FormCard("할부") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        INSTALLMENT_CHOICES.forEach { m ->
+                            FilterChip(
+                                selected = months == m,
+                                onClick = { months = m },
+                                label = { Text(if (m == 1) "일시불" else "${m}개월") },
+                            )
+                        }
+                    }
+                    if (months > 1) {
+                        val total = amount.toLongOrNull() ?: 0
+                        val each = if (total >= months) Installments.split(total, months) else emptyList()
+                        Text(
+                            if (each.isEmpty()) "금액이 너무 작아요" else "달마다 ${won(each.last())}씩 ${months}번, 오늘부터 매달 ${date.dayOfMonth}일에 적어요.",
+                            fontSize = 12.sp,
+                            color = if (each.isEmpty()) DonColors.Warn else DonColors.InkMuted,
+                        )
+                    }
+                }
+            }
+
             if (kind == Kind.SPEND) {
                 FormCard("지출 종류") {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -267,7 +336,7 @@ fun EntryEditScreen(
                         onClick = {
                             onSave(draft())
                             savedCount++
-                            amount = ""; label = ""; memo = ""; picked = null
+                            amount = ""; label = ""; memo = ""; picked = null; sub = null; months = 1
                         },
                         enabled = canSave,
                         modifier = Modifier.weight(1f),
@@ -280,6 +349,35 @@ fun EntryEditScreen(
                 ) { Text("저장") }
             }
         }
+    }
+
+    if (addingSub) {
+        var text by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { addingSub = false },
+            title = { Text("${category.label} 소분류 더하기") },
+            text = {
+                OutlinedTextField(value = text, onValueChange = { text = it.take(12) }, label = { Text("이름 (예: 점심)") }, singleLine = true)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val n = text.trim()
+                    if (n.isNotEmpty()) { onAddSub(category, n); sub = n }
+                    addingSub = false
+                }, color = DonColors.Real) { Text("더하기") }
+            },
+            dismissButton = { TextButton(onClick = { addingSub = false }) { Text("취소") } },
+        )
+    }
+
+    if (confirmDeleteAll && onDeleteInstallment != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteAll = false },
+            title = { Text("할부 전체를 지울까요?") },
+            text = { Text("달마다 나눠 적은 기록이 모두 지워져요.") },
+            confirmButton = { TextButton(onClick = { onDeleteInstallment(); onBack() }, color = DonColors.Warn) { Text("모두 지우기") } },
+            dismissButton = { TextButton(onClick = { confirmDeleteAll = false }) { Text("취소") } },
+        )
     }
 
     if (confirmDelete && onDelete != null) {

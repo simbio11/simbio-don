@@ -1,5 +1,7 @@
 package com.simbio.don.app
 
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -68,7 +70,7 @@ class AppFlowTest {
     }
 
     @OptIn(ExperimentalTestApi::class)
-    private fun waitText(text: String) = rule.waitUntilAtLeastOneExists(hasText(text), 5_000)
+    private fun waitText(text: String, substring: Boolean = false) = rule.waitUntilAtLeastOneExists(hasText(text, substring = substring), 5_000)
 
     /**
      * DB 읽기. 메인 스레드에서 runBlocking으로 기다리면 앱 쪽 코루틴(메인에서 이어지며 쓰기 잠금을 쥔 것)과
@@ -361,7 +363,7 @@ class AppFlowTest {
 
         rule.onNodeWithContentDescription("가계부 쓰기").performClick()
         waitText("자주 쓰는 곳")
-        rule.onNodeWithText("스타벅스 · 4,500원").performClick()
+        rule.onNodeWithText("스타벅스 · 4,500원").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         rule.onNode(hasText("카페·간식") and isSelected()).assertExists()
         shot("33_add_quick")
         rule.onNodeWithContentDescription("뒤로").performClick()
@@ -373,5 +375,87 @@ class AppFlowTest {
         rule.onNodeWithText("찜하기").performClick()
         waitText("찜했어요!")
         shot("34_wished")
+    }
+
+    /** 0.10 가계부 더: 할부·소분류 입력, 분류 관리, 반복 수입, 연간 통계, 앱 잠금 */
+    @Test
+    fun 가계부_더_채우기() {
+        val today = LocalDate.now()
+        val repo = DonRepository.get(appContext)
+        background {
+            repo.completeOnboarding(3_300_000, today.minusDays(9).dayOfMonth, listOf(FixedExpense("월세", 700_000)), 400_000, DayOfWeek.MONDAY, today.minusDays(9), null)
+        }
+        waitText("실제 내 돈 · 이번 주")
+
+        // 할부 + 소분류
+        rule.onNodeWithContentDescription("가계부 쓰기").performClick()
+        waitText("내용 (어디에 썼나요)")
+        rule.onNode(hasSetTextAction() and hasText("금액")).performTextReplacement("1200000")
+        rule.onNodeWithText("내용 (어디에 썼나요)").performTextReplacement("노트북")
+        rule.onNodeWithText("쇼핑").performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithText("전자기기").performSemanticsAction(SemanticsActions.OnClick)
+        // 칩이 아래 버튼 줄에 가려질 수 있어 누르기 동작을 바로 보낸다
+        rule.onNodeWithText("3개월").performSemanticsAction(SemanticsActions.OnClick)
+        waitText("달마다 400,000원씩 3번, 오늘부터 매달 ${today.dayOfMonth}일에 적어요.")
+        rule.onNodeWithText("달마다 400,000원씩 3번, 오늘부터 매달 ${today.dayOfMonth}일에 적어요.").performScrollTo()
+        shot("35_add_installment")
+        rule.onNodeWithText("저장").performClick()
+        rule.onNodeWithText("가계부").performClick()
+        waitText("일일")
+        waitText("쇼핑 > 전자기기 · 할부 1/3", substring = true)
+        shot("36_ledger_installment")
+        assertEquals(3, readDb { allEntriesNow() }.count { it.installmentId != null })
+
+        // 분류 관리: 소분류 보기 + 직접 만들기
+        rule.onNodeWithText("홈").performClick()
+        rule.onNodeWithContentDescription("설정").performClick()
+        waitText("알림 읽을 앱")
+        rule.onNodeWithText("분류 관리 (소분류 · 직접 만들기)").performScrollTo().performClick()
+        waitText("분류 관리")
+        rule.onNodeWithText("식비").performClick()
+        waitText("+ 소분류")
+        shot("37_categories")
+        // 분류 만들기·소분류 고치기는 대화상자라 화면 테스트 대신 LedgerExtrasRepoTest에서 본다
+        // (Robolectric에서 대화상자를 열면 Compose가 쉬지 않는다)
+        rule.onNodeWithContentDescription("뒤로").performClick()
+
+        // 반복 수입
+        waitText("알림 읽을 앱")
+        rule.onNodeWithText("반복 수입 (부수입·용돈 등)").performScrollTo().performClick()
+        waitText("+ 반복 수입 추가")
+        rule.onNodeWithText("이름").performTextReplacement("과외비")
+        rule.onNodeWithText("날").performTextReplacement("27")
+        rule.onNode(hasSetTextAction() and hasText("금액")).performTextReplacement("400000")
+        shot("38_recurring_income")
+        rule.onNodeWithText("저장").performClick()
+        waitText("반복 수입 1개")
+        assertEquals(listOf("과외비"), readDb { recurringIncomesNow() }.map { it.name })
+
+        // 앱 잠금 켜기: 암호 두 번
+        rule.onNodeWithContentDescription("앱 잠금").performScrollTo().performClick()
+        waitText("새 암호 4자리")
+        "1234".forEach { rule.onNodeWithText(it.toString()).performClick() }
+        waitText("한 번 더 넣어 주세요")
+        "1234".forEach { rule.onNodeWithText(it.toString()).performClick() }
+        waitText("암호 바꾸기")
+        rule.onNodeWithContentDescription("뒤로").performClick()
+
+        // 연간 통계 (홈에도 '통계' 글자가 있어 가계부 탭을 거쳐 간다)
+        rule.onNodeWithText("가계부").performClick()
+        waitText("일일")
+        rule.onNodeWithText("통계").performClick()
+        waitText("연간")
+        rule.onNodeWithText("연간").performClick()
+        waitText("달마다")
+        shot("39_year_stats")
+
+        // 다시 열면 잠겨 있다
+        rule.activityRule.scenario.recreate()
+        waitText("암호를 넣어 주세요")
+        "0000".forEach { rule.onNodeWithText(it.toString()).performClick() }
+        waitText("암호가 달라요 (4번 남음)")
+        shot("40_lock")
+        "1234".forEach { rule.onNodeWithText(it.toString()).performClick() }
+        waitText("실제 내 돈 · 이번 주")
     }
 }

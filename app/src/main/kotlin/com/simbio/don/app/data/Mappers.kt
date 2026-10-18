@@ -32,7 +32,12 @@ fun EntryEntity.toEntry() = Entry(
     type = enumOr(type, EntryType.SPEND),
     source = enumOr(source, EntrySource.MANUAL),
     category = Category.of(category),
+    sub = sub,
 )
+
+fun CategoryDefEntity.toCategory() = Category.custom(name, label, income, icon, color)
+
+fun RecurringIncomeEntity.toRecurring() = com.simbio.don.budget.RecurringIncome(name, amount, day)
 
 fun FixedExpenseEntity.toFixed() = FixedExpense(name, amount, day)
 

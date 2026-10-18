@@ -428,9 +428,15 @@ fun DonutChart(parts: List<DonutPart>, centerLabel: String, modifier: Modifier =
 
 /** 도넛 범례 겸 표: 색 · 아이콘 · 이름 · 비율 · 금액. 누르면 그 카테고리 내역 */
 @Composable
-fun DonutLegend(totals: List<CategoryTotal>, onClick: ((com.simbio.don.budget.Category) -> Unit)?) {
+fun DonutLegend(
+    totals: List<CategoryTotal>,
+    onClick: ((com.simbio.don.budget.Category) -> Unit)?,
+    /** 카테고리마다 소분류 합계 (있으면 그 줄 아래 작게) */
+    subs: (com.simbio.don.budget.Category) -> List<com.simbio.don.budget.SubTotal> = { emptyList() },
+) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         totals.forEachIndexed { i, t ->
+            val subTotals = subs(t.category).filter { it.sub != null }
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                     .let { if (onClick != null) it.clickable { onClick(t.category) } else it }
@@ -445,6 +451,18 @@ fun DonutLegend(totals: List<CategoryTotal>, onClick: ((com.simbio.don.budget.Ca
                 Text("${t.shareBps / 100}%", fontSize = 13.sp, color = ChartColors.InkMuted)
                 Spacer(Modifier.width(10.dp))
                 Text(won(t.amount), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+            }
+            if (subTotals.isNotEmpty()) {
+                // 소분류: 들여 쓴 작은 줄 (안 고른 것은 '그 밖')
+                val rest = t.amount - subTotals.sumOf { it.amount }
+                Column(Modifier.padding(start = 62.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    (subTotals.map { it.sub!! to it.amount } + listOfNotNull(("그 밖" to rest).takeIf { rest > 0 })).forEach { (name, amount) ->
+                        Row(Modifier.fillMaxWidth()) {
+                            Text(name, fontSize = 12.sp, color = ChartColors.InkSecondary, modifier = Modifier.weight(1f))
+                            Text(won(amount), fontSize = 12.sp, color = ChartColors.InkSecondary)
+                        }
+                    }
+                }
             }
         }
     }

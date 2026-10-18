@@ -341,6 +341,42 @@ fun IconBubble(icon: UiIcon, tint: Color, size: Dp = 40.dp, fill: Color = tint.c
 /** 카테고리 아이콘과 알아보기 쉬운 색 (아이콘 타일에만 쓴다 — 차트는 한 색) */
 private data class CategoryLook(@DrawableRes val res: Int, val tint: Color)
 
+/** 직접 만든 카테고리에 고를 수 있는 아이콘 (이름 → 그림) */
+val CategoryIcons: List<Pair<String, Int>> = listOf(
+    "restaurant_fill" to R.drawable.ic_restaurant_fill,
+    "local_cafe_fill" to R.drawable.ic_local_cafe_fill,
+    "shopping_bag_fill" to R.drawable.ic_shopping_bag_fill,
+    "shopping_basket_fill" to R.drawable.ic_shopping_basket_fill,
+    "directions_car_fill" to R.drawable.ic_directions_car_fill,
+    "directions_bus_fill" to R.drawable.ic_directions_bus_fill,
+    "flight_fill" to R.drawable.ic_flight_fill,
+    "home_fill" to R.drawable.ic_home_fill,
+    "weekend_fill" to R.drawable.ic_weekend_fill,
+    "pets_fill" to R.drawable.ic_pets_fill,
+    "checkroom_fill" to R.drawable.ic_checkroom_fill,
+    "computer_fill" to R.drawable.ic_computer_fill,
+    "medication_fill" to R.drawable.ic_medication_fill,
+    "school_fill" to R.drawable.ic_school_fill,
+    "movie_fill" to R.drawable.ic_movie_fill,
+    "redeem_fill" to R.drawable.ic_redeem_fill,
+    "favorite_fill" to R.drawable.ic_favorite_fill,
+    "diamond_fill" to R.drawable.ic_diamond_fill,
+    "savings_fill" to R.drawable.ic_savings_fill,
+    "payments_fill" to R.drawable.ic_payments_fill,
+    "sell_fill" to R.drawable.ic_sell_fill,
+    "storefront_fill" to R.drawable.ic_storefront_fill,
+    "bolt_fill" to R.drawable.ic_bolt_fill,
+    "celebration_fill" to R.drawable.ic_celebration_fill,
+)
+
+/** 직접 만든 카테고리에 고를 수 있는 색 (아이콘 칸에만 쓰는 색) */
+val CategoryColors: List<Long> = listOf(
+    0xFFFF8A3D, 0xFFF2554A, 0xFFE5508E, 0xFF8A5CF6, 0xFF4C6EF5, 0xFF3D8BFF, 0xFF14A3A3, 0xFF1FAF6B, 0xFFF2A100, 0xFFA0704B, 0xFF5B6B80,
+)
+
+@DrawableRes
+fun categoryIconRes(icon: String?): Int = CategoryIcons.firstOrNull { it.first == icon }?.second ?: R.drawable.ic_sell_fill
+
 private fun Category.look(): CategoryLook = when (this) {
     Category.FOOD -> CategoryLook(R.drawable.ic_restaurant_fill, Color(0xFFFF8A3D))
     Category.CAFE -> CategoryLook(R.drawable.ic_local_cafe_fill, Color(0xFFA0704B))
@@ -359,6 +395,8 @@ private fun Category.look(): CategoryLook = when (this) {
     Category.ALLOWANCE -> CategoryLook(R.drawable.ic_redeem_fill, Color(0xFFE5508E))
     Category.INTEREST -> CategoryLook(R.drawable.ic_savings_fill, Color(0xFF0FA3B1))
     Category.OTHER_INCOME -> CategoryLook(R.drawable.ic_add, Color(0xFF6B7684))
+    // 직접 만든 카테고리
+    else -> CategoryLook(categoryIconRes(icon), Color(color ?: 0xFF8B95A1))
 }
 
 /** 카테고리 동그라미 아이콘 */

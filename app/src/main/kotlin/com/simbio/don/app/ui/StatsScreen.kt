@@ -1,28 +1,39 @@
 package com.simbio.don.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.MonthView
+import com.simbio.don.app.ui.kit.TextButton
+import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.Stats
 
@@ -36,7 +47,14 @@ fun StatsScreen(
     onCategory: (Category) -> Unit,
     summaries: List<com.simbio.don.app.data.CycleSummary> = emptyList(),
     onBudgets: () -> Unit = {},
+    year: com.simbio.don.app.data.YearView? = null,
+    onPickYear: (Int) -> Unit = {},
 ) {
+    var yearly by rememberSaveable { mutableStateOf(false) }
+    if (yearly && year != null) {
+        YearStats(year, onPickYear, onMonthly = { yearly = false })
+        return
+    }
     val spent = Stats.total(view.entries)
     val living = Stats.livingTotal(view.entries)
     val income = Stats.income(view.entries)
@@ -54,6 +72,7 @@ fun StatsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         MonthSwitcher(view, hasPrev, hasNext, onPrev, onNext)
+        SegmentedToggle(listOf("월간", "연간"), 0) { if (it == 1) yearly = true }
 
         RealCard("이번 달 가계부") { MonthSummaryRow(income, spent) }
 
@@ -64,7 +83,7 @@ fun StatsScreen(
                 Text("아직 기록이 없어요.", color = ChartColors.InkSecondary, modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 DonutChart(donutParts(totals), if (showIncome) "수입" else "지출")
-                DonutLegend(totals, onClick = onCategory)
+                DonutLegend(totals, onClick = onCategory, subs = { c -> Stats.bySub(view.entries, c) })
                 Text("도넛을 누르면 그 조각 금액이, 목록을 누르면 그 카테고리 내역이 보여요.", fontSize = 11.sp, color = ChartColors.InkMuted)
             }
         }
@@ -144,5 +163,100 @@ fun StatsScreen(
             }
         }
         Spacer(Modifier.height(96.dp))
+    }
+}
+
+/** 연간 통계: 그 해의 달마다 수입·지출 막대, 한 해 합계·저축률, 카테고리 도넛 */
+@Composable
+private fun YearStats(year: com.simbio.don.app.data.YearView, onPickYear: (Int) -> Unit, onMonthly: () -> Unit) {
+    var showIncome by remember { mutableStateOf(false) }
+    val byCategory = if (showIncome) Stats.incomeByCategory(year.entries) else Stats.byCategory(year.entries)
+    val i = year.years.indexOf(year.year)
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            RoundIconButton(UiIcon.CHEVRON_LEFT, "지난해", enabled = i in 0 until year.years.lastIndex) { onPickYear(year.years[i + 1]) }
+            Text("${year.year}년", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            RoundIconButton(UiIcon.CHEVRON_RIGHT, "다음 해", enabled = i > 0) { onPickYear(year.years[i - 1]) }
+        }
+        SegmentedToggle(listOf("월간", "연간"), 1) { if (it == 0) onMonthly() }
+
+        RealCard("${year.year}년 가계부") {
+            MonthSummaryRow(year.income, year.expense)
+            if (year.income > 0) {
+                val rate = (year.income - year.expense) * 100 / year.income
+                Text(
+                    if (rate >= 0) "번 돈의 ${rate}%를 남겼어요" else "번 돈보다 ${won(year.expense - year.income)} 더 썼어요",
+                    fontSize = 13.sp,
+                    color = if (rate >= 0) DonColors.Good else DonColors.Warn,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+
+        SectionCard("달마다") {
+            if (year.months.isEmpty()) {
+                Text("이 해에는 기록이 없어요.", color = ChartColors.InkSecondary, modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                YearBars(year.months)
+                year.months.forEach { m ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text("${m.nominal.monthValue}월", fontSize = 14.sp, color = DonColors.Ink, modifier = Modifier.width(44.dp))
+                        Text("+${won(m.income)}", fontSize = 13.sp, color = DonColors.Income, modifier = Modifier.weight(1f))
+                        Text("−${won(m.expense)}", fontSize = 13.sp, color = DonColors.Expense, modifier = Modifier.weight(1f))
+                        Text(won(m.net), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        SectionCard("한 해 카테고리") {
+            SegmentedToggle(listOf("지출", "수입"), if (showIncome) 1 else 0) { showIncome = it == 1 }
+            if (byCategory.isEmpty()) {
+                Text("아직 기록이 없어요.", color = ChartColors.InkSecondary, modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                DonutChart(donutParts(byCategory), if (showIncome) "수입" else "지출")
+                DonutLegend(byCategory, onClick = null, subs = { c -> Stats.bySub(year.entries, c) })
+            }
+        }
+        Spacer(Modifier.height(96.dp))
+    }
+}
+
+/** 12달 막대: 달마다 수입(파랑)·지출(빨강) 두 줄. 가장 큰 값에 맞춘다 */
+@Composable
+private fun YearBars(months: List<com.simbio.don.budget.MonthTotal>) {
+    val max = months.maxOf { maxOf(it.income, it.expense) }.coerceAtLeast(1)
+    val byMonth = months.associateBy { it.nominal.monthValue }
+    Row(Modifier.fillMaxWidth().height(140.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+        (1..12).forEach { mo ->
+            val m = byMonth[mo]
+            Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                    listOf((m?.income ?: 0) to DonColors.Income, (m?.expense ?: 0) to DonColors.Expense).forEach { (v, color) ->
+                        Box(
+                            Modifier.width(6.dp).fillMaxHeight((v.toFloat() / max).coerceIn(0f, 1f)).clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                                .background(color),
+                        )
+                    }
+                }
+                Text("$mo", fontSize = 10.sp, color = ChartColors.InkMuted)
+            }
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Legend(DonColors.Income, "수입")
+        Legend(DonColors.Expense, "지출")
+    }
+}
+
+@Composable
+private fun Legend(color: androidx.compose.ui.graphics.Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Spacer(Modifier.width(6.dp))
+        Text(label, fontSize = 12.sp, color = ChartColors.InkSecondary)
     }
 }

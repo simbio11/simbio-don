@@ -23,9 +23,9 @@ class MigrationTest {
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
         val db = helper.runMigrationsAndValidate(
-            "m.db", 6, true,
+            "m.db", 7, true,
             DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3, DonDatabase.MIGRATION_3_4, DonDatabase.MIGRATION_4_5,
-            DonDatabase.MIGRATION_5_6,
+            DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7,
         )
         db.query("SELECT id, amount, category, memo, accountId, minuteOfDay FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
@@ -59,5 +59,19 @@ class MigrationTest {
         db.query("SELECT level, look FROM house").use { c ->
             c.moveToNext(); assertEquals("ONE_ROOM", c.getString(0)); assertEquals("", c.getString(1))
         }
+    }
+
+    @Test
+    fun v6에서_v7로_기록은_그대로고_소분류는_다음에_채운다() {
+        helper.createDatabase("m6.db", 6).use { db ->
+            db.execSQL("INSERT INTO settings (id, payDay, settlementDay, savings) VALUES (0, 25, 1, 0)")
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, category, memo) VALUES (1, 20000, 4500, '스타벅스', 'SPEND', 'MANUAL', 'CAFE', '')")
+        }
+        val db = helper.runMigrationsAndValidate("m6.db", 7, true, DonDatabase.MIGRATION_6_7)
+        db.query("SELECT category, sub, installmentId, incomeId FROM entry").use { c ->
+            c.moveToNext(); assertEquals("CAFE", c.getString(0)); assertTrue(c.isNull(1)); assertTrue(c.isNull(2)); assertTrue(c.isNull(3))
+        }
+        db.query("SELECT subSeeded FROM settings").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
+        db.query("SELECT COUNT(*) FROM subcategory").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
     }
 }

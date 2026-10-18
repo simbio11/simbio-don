@@ -14,6 +14,8 @@ data class SettingsEntity(
     val savings: Long,
     /** 결산 요일 변경은 다음 달부터 적용 — 다음 주기에 쓸 값 */
     val pendingSettlementDay: Int? = null,
+    /** 기본 소분류를 넣었는지 (한 번만, 지운 것을 되살리지 않게) */
+    @ColumnInfo(defaultValue = "0") val subSeeded: Boolean = false,
 )
 
 /** 고정 지출. [day]를 정하면 그날 가계부에 자동으로 적는다 (그 전에 결제 알림이 오면 알림으로). */
@@ -114,6 +116,13 @@ data class EntryEntity(
     val minuteOfDay: Int? = null,
     /** 고정 지출에서 온 기록 */
     val fixedId: Long? = null,
+    /** 소분류 */
+    val sub: String? = null,
+    /** 할부에서 온 기록과 몇 번째인지 ("2/6") */
+    val installmentId: Long? = null,
+    val installmentNo: String? = null,
+    /** 반복 수입에서 온 기록 */
+    val incomeId: Long? = null,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */
@@ -232,4 +241,52 @@ data class HouseEntity(
     val characterName: String = "나",
     /** 캐릭터 모습 (com.simbio.don.game.CharacterLook.encode). 비면 기본 */
     val look: String = "",
+)
+
+/** 직접 만든 카테고리. [name]은 "U" + 번호 (기록에는 이 이름이 저장된다) */
+@Entity(tableName = "category_def")
+data class CategoryDefEntity(
+    @PrimaryKey val name: String,
+    val label: String,
+    val income: Boolean,
+    /** ui/kit 아이콘 이름 */
+    val icon: String,
+    /** ARGB */
+    val color: Long,
+    val sortOrder: Int = 0,
+)
+
+/** 소분류. 카테고리마다 순서대로 */
+@Entity(tableName = "subcategory")
+data class SubcategoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** com.simbio.don.budget.Category 이름 */
+    val category: String,
+    val name: String,
+    val sortOrder: Int = 0,
+)
+
+/** 할부 하나. 달마다 나눈 기록이 [EntryEntity.installmentId]로 이어진다 */
+@Entity(tableName = "installment")
+data class InstallmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val label: String,
+    val total: Long,
+    val months: Int,
+    /** 처음 낸 날 (산 날) */
+    val firstEpochDay: Long,
+    val category: String,
+    val accountId: Long? = null,
+)
+
+/** 반복 수입 (월급 말고). [day]일에 가계부에 저절로 적고, 입금 알림이 오면 알림으로 고친다 */
+@Entity(tableName = "recurring_income")
+data class RecurringIncomeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val amount: Long,
+    val day: Int,
+    val accountId: Long? = null,
+    @ColumnInfo(defaultValue = "SIDE_INCOME") val category: String = "SIDE_INCOME",
+    val lastDueEpochDay: Long? = null,
 )

@@ -6,6 +6,14 @@ data class CategoryTotal(val category: Category, val amount: Long, val count: In
 
 data class PlaceTotal(val label: String, val amount: Long, val count: Int)
 
+/** 소분류별 합계. [sub]가 null이면 소분류를 안 고른 것 */
+data class SubTotal(val sub: String?, val amount: Long, val count: Int)
+
+/** 한 달(월급 주기) 합계 — 연간 통계용 */
+data class MonthTotal(val nominal: java.time.YearMonth, val income: Long, val expense: Long) {
+    val net: Long get() = income - expense
+}
+
 /** 한 달 지출 속도: [cumulative]는 시작일부터 하루씩 누적 지출, [pace]는 예산을 고르게 썼을 때의 누적. */
 data class SpendingPace(
     val start: LocalDate,
@@ -59,6 +67,19 @@ object Stats {
         return groups.map { (c, v) ->
             CategoryTotal(c, v.first, v.second, if (sum == 0L) 0 else (v.first * 10_000 / sum).toInt())
         }.sortedByDescending { it.amount }
+    }
+
+    /** [category] 안의 소분류별 (지출 카테고리면 지출, 수입 카테고리면 수입) */
+    fun bySub(entries: List<Entry>, category: Category): List<SubTotal> {
+        val inCat = entries.filter { it.category == category }
+        val list = if (category.income) inCat.filter { it.type == EntryType.INCOME } else spending(inCat)
+        return list.groupBy { it.sub?.takeIf(String::isNotBlank) }
+            .map { (s, l) ->
+                val a = if (category.income) l.sumOf { it.amount } else l.sumOf { signed(it) }
+                SubTotal(s, a, l.count { it.type != EntryType.REFUND })
+            }
+            .filter { it.amount > 0 }
+            .sortedWith(compareBy<SubTotal> { it.sub == null }.thenByDescending { it.amount })
     }
 
     /** 날짜별 지출 ([livingOnly]면 고정 지출 뺌) */

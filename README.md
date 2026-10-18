@@ -6,6 +6,7 @@
 월급을 주 단위 예산으로 나눠 매주 결산한다. 사고 싶을 땐 가짜 돈으로 모의 쇼핑 — 산 물건이 내 방을 채운다.
 방에는 얼굴·머리·옷을 직접 꾸민 도트 캐릭터가 살고, 이번 달 형편에 따라 표정이 바뀐다.
 월급은 처음 한 번만 넣으면 월급날마다 새 달이 저절로 시작되고 입금 알림으로 금액을 맞춘다.
+소분류·직접 만든 카테고리, 할부(달마다 나눠 적기), 반복 수입, 앱 잠금(4자리), 연간 통계도 된다.
 
 - **형태**: Android 네이티브 앱 (Google Play 목표, 초기엔 개인용 APK)
 - **실제 돈 연결 없음**: 계좌·결제 API 연동 없이 순수 모의 (규제 이슈 0)
@@ -27,6 +28,7 @@
 - `tools/pixelart/` — 도트 그림 생성기 (`python3 tools/pixelart/make_art.py`) — [docs/art-spec.md](docs/art-spec.md)
   - `notify/PaymentListenerService` — 고른 앱의 결제 알림만 읽어 기기 안에서 기록
   - `notify/DailyReminder` — 매일 밤 9시 지출 요약·결산 알림 (설정에서 켤 때만)
+  - `lock/AppLock` — 앱 잠금 (4자리, 소금 친 해시로 이 폰에만)
   - `widget/WeekWidget` — 홈 화면 위젯 (이번 주 남은 돈 + 지출 입력)
   - `weather/WeatherService` — 창밖 날씨 (Open-Meteo, 고른 도시 좌표만 보냄. 설정에서 끌 수 있음)
   - `data/` — Room 저장소(월급날 자동 새 달·고정 지출 자동 기록·자산 잔액·백업), `ui/` — 화면

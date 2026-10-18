@@ -137,10 +137,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun resetLearned() = viewModelScope.launch { repo.resetLearned() }
 
     fun save(draft: EntryDraft, existing: EntryEntity?) = viewModelScope.launch {
-        if (existing == null) {
+        if (existing == null && draft.months > 1) {
+            repo.addInstallment(
+                draft.date, draft.amount, draft.months, draft.label, draft.category, draft.sub, draft.memo, draft.accountId, draft.minuteOfDay,
+            )
+        } else if (existing == null) {
             repo.addManual(
                 draft.date, draft.amount, draft.label, draft.type, draft.category, draft.memo,
-                draft.accountId, draft.toAccountId, draft.minuteOfDay, LocalDateTime.now(),
+                draft.accountId, draft.toAccountId, draft.minuteOfDay, LocalDateTime.now(), draft.sub,
             )
         } else {
             repo.updateEntry(
@@ -154,6 +158,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     accountId = draft.accountId,
                     toAccountId = if (draft.type == com.simbio.don.budget.EntryType.TRANSFER) draft.toAccountId else null,
                     minuteOfDay = draft.minuteOfDay,
+                    sub = draft.sub,
                 ),
                 existing,
                 draft.applyToSameLabel,
@@ -216,6 +221,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveLook(look: com.simbio.don.game.CharacterLook) = viewModelScope.launch { repo.saveLook(look) }
+
+    // ── 카테고리·소분류·할부·반복 수입 ──
+    val customCategories = repo.customCategories.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val subcategories = repo.subcategories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    val recurringIncomes = repo.recurringIncomes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addCategory(label: String, income: Boolean, icon: String, color: Long) = viewModelScope.launch { repo.addCategory(label, income, icon, color) }
+    fun updateCategory(name: String, label: String, icon: String, color: Long) = viewModelScope.launch { repo.updateCategory(name, label, icon, color) }
+    fun deleteCategory(name: String) = viewModelScope.launch { repo.deleteCategory(name) }
+    fun addSubcategory(c: com.simbio.don.budget.Category, name: String) = viewModelScope.launch { repo.addSubcategory(c, name) }
+    fun renameSubcategory(s: com.simbio.don.app.data.SubcategoryEntity, name: String) = viewModelScope.launch { repo.renameSubcategory(s, name) }
+    fun deleteSubcategory(s: com.simbio.don.app.data.SubcategoryEntity) = viewModelScope.launch { repo.deleteSubcategory(s) }
+    fun deleteInstallment(id: Long) = viewModelScope.launch { repo.deleteInstallment(id) }
+    fun saveRecurringIncomes(items: List<com.simbio.don.app.data.RecurringIncomeEntity>) = viewModelScope.launch { repo.saveRecurringIncomes(items) }
+
+    /** 연간 통계에서 보는 해 */
+    private val year = MutableStateFlow(LocalDate.now().year)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val yearView = year.flatMapLatest { repo.year(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun pickYear(y: Int) { year.value = y }
 
     fun updateSettings(
         fixed: List<com.simbio.don.app.data.FixedExpenseEntity>,

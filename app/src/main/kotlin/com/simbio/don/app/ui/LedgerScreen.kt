@@ -100,8 +100,9 @@ fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEnt
                             EntryType.EXCEPTION -> "예외 · ${c.label}"
                             EntryType.REFUND -> "환불 · ${c.label}"
                             else -> c.label
-                        },
+                        } + (e.sub?.let { " > $it" } ?: ""),
                     )
+                    e.installmentNo?.let { add("할부 $it") }
                     if (type != EntryType.TRANSFER) e.accountId?.let(accountNames::get)?.let(::add)
                     e.minuteOfDay?.let { add(timeText(it)) }
                     when (e.source) {

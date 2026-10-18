@@ -37,6 +37,8 @@ data class Entry(
     val type: EntryType = EntryType.SPEND,
     val source: EntrySource = EntrySource.MANUAL,
     val category: Category = Category.ETC,
+    /** 소분류 (카테고리 안에서 더 나눈 것, 없으면 null) */
+    val sub: String? = null,
 ) {
     init {
         require(amount > 0) { "금액은 0원보다 커야 합니다: $label=$amount" }

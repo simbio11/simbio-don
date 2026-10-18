@@ -1,33 +1,88 @@
 package com.simbio.don.budget
 
-/** 카테고리. 저장할 때는 [name]을 쓰므로 이름을 바꾸지 않는다. [income]이면 수입 카테고리. */
-enum class Category(val label: String, val emoji: String, val income: Boolean = false) {
-    FOOD("식비", "🍚"),
-    CAFE("카페·간식", "☕"),
-    DELIVERY("배달", "🛵"),
-    TRANSPORT("교통", "🚌"),
-    SHOPPING("쇼핑", "🛍️"),
-    LIVING("생활·마트", "🧺"),
-    HEALTH("의료·건강", "💊"),
-    CULTURE("문화·여가", "🎬"),
-    EVENT("경조사·선물", "🎁"),
-    EDUCATION("교육", "📚"),
+/**
+ * 카테고리. 저장할 때는 [name]을 쓰므로 기본 카테고리 이름은 바꾸지 않는다. [income]이면 수입 카테고리.
+ *
+ * 기본 카테고리(식비·카페…) + 사용자가 직접 만든 카테고리("U1", "U2"…). [name]이 같으면 같은 카테고리다.
+ * 직접 만든 것은 앱이 저장소에서 읽어 [register]로 알려 준다.
+ */
+class Category private constructor(
+    val name: String,
+    val label: String,
+    val emoji: String,
+    val income: Boolean = false,
+    /** 직접 만든 카테고리의 아이콘 이름과 색 (ARGB). 기본 카테고리는 null */
+    val icon: String? = null,
+    val color: Long? = null,
+) {
+    val custom: Boolean get() = name.startsWith(CUSTOM_PREFIX)
 
-    /** 월세·관리비·통신비·보험 같은 고정 지출 (0.8) */
-    BILLS("주거·고정비", "🏠"),
-    ETC("기타", "📌"),
+    override fun equals(other: Any?): Boolean = other is Category && other.name == name
 
-    SALARY("월급", "💰", income = true),
-    SIDE_INCOME("부수입", "💼", income = true),
-    ALLOWANCE("용돈", "🧧", income = true),
-    INTEREST("이자·환급", "🏦", income = true),
-    OTHER_INCOME("기타 수입", "➕", income = true),
-    ;
+    override fun hashCode(): Int = name.hashCode()
+
+    override fun toString(): String = name
 
     companion object {
-        fun of(name: String?): Category = entries.firstOrNull { it.name == name } ?: ETC
+        /** 직접 만든 카테고리 이름 앞글자 */
+        const val CUSTOM_PREFIX = "U"
 
-        /** 지출 카테고리 12개 */
+        private val builtins = mutableListOf<Category>()
+
+        private fun builtin(name: String, label: String, emoji: String, income: Boolean = false) =
+            Category(name, label, emoji, income).also { builtins += it }
+
+        val FOOD = builtin("FOOD", "식비", "🍚")
+        val CAFE = builtin("CAFE", "카페·간식", "☕")
+        val DELIVERY = builtin("DELIVERY", "배달", "🛵")
+        val TRANSPORT = builtin("TRANSPORT", "교통", "🚌")
+        val SHOPPING = builtin("SHOPPING", "쇼핑", "🛍️")
+        val LIVING = builtin("LIVING", "생활·마트", "🧺")
+        val HEALTH = builtin("HEALTH", "의료·건강", "💊")
+        val CULTURE = builtin("CULTURE", "문화·여가", "🎬")
+        val EVENT = builtin("EVENT", "경조사·선물", "🎁")
+        val EDUCATION = builtin("EDUCATION", "교육", "📚")
+
+        /** 월세·관리비·통신비·보험 같은 고정 지출 (0.8) */
+        val BILLS = builtin("BILLS", "주거·고정비", "🏠")
+        val ETC = builtin("ETC", "기타", "📌")
+
+        val SALARY = builtin("SALARY", "월급", "💰", income = true)
+        val SIDE_INCOME = builtin("SIDE_INCOME", "부수입", "💼", income = true)
+        val ALLOWANCE = builtin("ALLOWANCE", "용돈", "🧧", income = true)
+        val INTEREST = builtin("INTEREST", "이자·환급", "🏦", income = true)
+        val OTHER_INCOME = builtin("OTHER_INCOME", "기타 수입", "➕", income = true)
+
+        @Volatile
+        private var customs: List<Category> = emptyList()
+
+        /** 직접 만든 카테고리 하나 */
+        fun custom(name: String, label: String, income: Boolean, icon: String, color: Long): Category {
+            require(name.startsWith(CUSTOM_PREFIX)) { "직접 만든 카테고리 이름은 $CUSTOM_PREFIX 로 시작해요: $name" }
+            return Category(name, label, "📌", income, icon, color)
+        }
+
+        /** 저장소에서 읽은 직접 만든 카테고리를 알려 준다 (순서대로 기본 카테고리 뒤에 놓인다) */
+        fun register(list: List<Category>) {
+            customs = list.filter { it.custom }
+        }
+
+        /** 기본 + 직접 만든 카테고리 */
+        val entries: List<Category> get() = builtins + customs
+
+        /** 기본 카테고리만 */
+        val builtIn: List<Category> get() = builtins.toList()
+
+        /**
+         * 저장된 이름으로 찾기. 모르는 이름은 기타.
+         * 직접 만든 카테고리를 아직 못 읽었으면 이름만 가진 임시 카테고리 (읽으면 제 이름으로 보인다).
+         */
+        fun of(name: String?): Category =
+            builtins.firstOrNull { it.name == name }
+                ?: customs.firstOrNull { it.name == name }
+                ?: if (name != null && name.startsWith(CUSTOM_PREFIX)) Category(name, "내 분류", "📌", false, "sell_fill", 0xFF8B95A1) else ETC
+
+        /** 지출 카테고리 (기본 12개 + 직접 만든 것) */
         val spending: List<Category> get() = entries.filter { !it.income }
 
         /** 수입 카테고리 */
@@ -110,4 +165,23 @@ object CategoryGuesser {
         }
         return best ?: Category.ETC
     }
+}
+
+/** 처음 깔 때 넣어 두는 소분류 (사용자가 더하고 지울 수 있다) */
+object Subcategories {
+    val defaults: Map<Category, List<String>> = mapOf(
+        Category.FOOD to listOf("아침", "점심", "저녁", "장보기", "술·모임"),
+        Category.CAFE to listOf("커피", "디저트", "편의점 간식"),
+        Category.DELIVERY to listOf("식사", "야식"),
+        Category.TRANSPORT to listOf("대중교통", "택시", "주유", "주차·통행료"),
+        Category.SHOPPING to listOf("옷", "신발·가방", "전자기기", "화장품"),
+        Category.LIVING to listOf("생필품", "마트", "세탁"),
+        Category.HEALTH to listOf("병원", "약국", "운동"),
+        Category.CULTURE to listOf("영화·공연", "구독", "게임", "여행"),
+        Category.EVENT to listOf("축의금", "조의금", "선물"),
+        Category.EDUCATION to listOf("학원", "책", "강의"),
+        Category.BILLS to listOf("월세", "관리비", "통신비", "보험", "공과금"),
+        Category.SIDE_INCOME to listOf("알바", "중고 판매"),
+        Category.INTEREST to listOf("이자", "캐시백", "환급"),
+    )
 }

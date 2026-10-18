@@ -1,5 +1,7 @@
 package com.simbio.don.app.ui
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import com.simbio.don.app.ui.kit.BackBar
@@ -78,6 +80,12 @@ fun SettingsScreen(
     onSalary: () -> Unit = {},
     onBackup: () -> Unit = {},
     onRestore: () -> Unit = {},
+    onCategories: () -> Unit = {},
+    onRecurringIncome: () -> Unit = {},
+    recurringCount: Int = 0,
+    lockOn: Boolean = false,
+    onLock: (Boolean) -> Unit = {},
+    onChangePin: () -> Unit = {},
     onBack: (() -> Unit)? = null,
 ) {
     val rows = remember(fixed) {
@@ -225,6 +233,10 @@ fun SettingsScreen(
                 Checkbox(checked = applyNow, onCheckedChange = { applyNow = it })
                 Text("고정비·저축은 이번 달 예산에도 바로 반영", fontSize = 13.sp)
             }
+            SubButton(onClick = onRecurringIncome, modifier = Modifier.fillMaxWidth()) {
+                Icon(UiIcon.REPEAT, 18.dp, DonColors.InkSoft)
+                Text(if (recurringCount > 0) "반복 수입 ${recurringCount}개" else "반복 수입 (부수입·용돈 등)")
+            }
             Button(onClick = {
                 val list = rows.mapNotNull { r ->
                     r.amount.toLongOrNull()?.takeIf { it > 0 }?.let {
@@ -240,6 +252,21 @@ fun SettingsScreen(
             Text("가게 이름으로 카테고리를 정해요. 기록에서 카테고리를 고치면 그 가게는 다음부터 고친 대로 분류해요.", fontSize = 13.sp, color = DonColors.InkSoft)
             Text("기억한 가게 ${learnedCount}곳", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             if (learnedCount > 0) SubButton(onClick = onResetLearned) { Text("기억한 가게 지우기") }
+            SubButton(onClick = onCategories, modifier = Modifier.fillMaxWidth()) {
+                Icon(UiIcon.TAG, 18.dp, DonColors.InkSoft)
+                Text("분류 관리 (소분류 · 직접 만들기)")
+            }
+        }
+
+        RealCard("앱 잠금") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("암호 4자리로 잠그기", fontSize = 15.sp, color = DonColors.Ink)
+                    Text("앱을 열 때와 30초 넘게 나갔다 돌아올 때 암호를 물어요. 암호는 이 폰에만 있고 백업에는 안 들어가요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                }
+                Switch(checked = lockOn, onCheckedChange = onLock, modifier = Modifier.semantics { contentDescription = "앱 잠금" })
+            }
+            if (lockOn) SubButton(onClick = onChangePin, modifier = Modifier.fillMaxWidth()) { Text("암호 바꾸기") }
         }
 
         RealCard("백업·복원") {

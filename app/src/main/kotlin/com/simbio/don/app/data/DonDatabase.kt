@@ -26,8 +26,12 @@ import com.simbio.don.budget.CategoryGuesser
         CategoryBudgetEntity::class,
         SavingsGoalEntity::class,
         AccountEntity::class,
+        CategoryDefEntity::class,
+        SubcategoryEntity::class,
+        InstallmentEntity::class,
+        RecurringIncomeEntity::class,
     ],
-    version = 6,
+    version = 7,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -45,7 +49,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 }
                 ).build().also { instance = it }
         }
@@ -54,6 +58,33 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v7: 직접 만든 카테고리·소분류, 할부, 반복 수입 */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS category_def (name TEXT PRIMARY KEY NOT NULL, label TEXT NOT NULL, income INTEGER NOT NULL, " +
+                        "icon TEXT NOT NULL, color INTEGER NOT NULL, sortOrder INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS subcategory (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, category TEXT NOT NULL, " +
+                        "name TEXT NOT NULL, sortOrder INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS installment (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, label TEXT NOT NULL, total INTEGER NOT NULL, " +
+                        "months INTEGER NOT NULL, firstEpochDay INTEGER NOT NULL, category TEXT NOT NULL, accountId INTEGER)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS recurring_income (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, amount INTEGER NOT NULL, " +
+                        "day INTEGER NOT NULL, accountId INTEGER, category TEXT NOT NULL DEFAULT 'SIDE_INCOME', lastDueEpochDay INTEGER)",
+                )
+                db.execSQL("ALTER TABLE entry ADD COLUMN sub TEXT")
+                db.execSQL("ALTER TABLE entry ADD COLUMN installmentId INTEGER")
+                db.execSQL("ALTER TABLE entry ADD COLUMN installmentNo TEXT")
+                db.execSQL("ALTER TABLE entry ADD COLUMN incomeId INTEGER")
+                db.execSQL("ALTER TABLE settings ADD COLUMN subSeeded INTEGER NOT NULL DEFAULT 0")
+            }
         }
 
         /** v6: 캐릭터 꾸미기 (모습 한 줄) */
