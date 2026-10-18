@@ -51,6 +51,7 @@ fun HouseScreen(
     onShop: () -> Unit,
     onRecycle: () -> Unit,
     onDiscard: (Set<Long>) -> Unit,
+    onDress: () -> Unit = {},
     onBuyWish: (MockItem) -> Unit = {},
     onGiveUpWish: (MockItem) -> Unit = {},
     weather: Weather? = null,
@@ -98,6 +99,7 @@ fun HouseScreen(
                 if (house.isCluttered) WarnLine("수납이 넘쳐서 바닥에 ${house.floor.size}개가 쌓였어요")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onShop, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) { Text("모의 쇼핑") }
+                    SubButton(onClick = onDress, containerColor = DonColors.Surface) { Text("꾸미기") }
                     if (house.trash.isNotEmpty()) {
                         SubButton(onClick = onRecycle, containerColor = DonColors.Surface) {
                             Icon(UiIcon.RECYCLE, 18.dp, DonColors.Good)

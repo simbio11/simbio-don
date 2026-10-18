@@ -211,9 +211,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun completeOnboarding(setup: OnboardingResult) = viewModelScope.launch {
         repo.completeOnboarding(
             setup.salary, setup.payDay, setup.fixed, setup.savings, setup.settlementDay, LocalDate.now(),
-            setup.firstCycleBudget, setup.accounts,
+            setup.firstCycleBudget, setup.accounts, setup.look,
         )
     }
+
+    fun saveLook(look: com.simbio.don.game.CharacterLook) = viewModelScope.launch { repo.saveLook(look) }
 
     fun updateSettings(
         fixed: List<com.simbio.don.app.data.FixedExpenseEntity>,

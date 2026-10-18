@@ -16,6 +16,7 @@ import com.simbio.don.budget.Payday
 import com.simbio.don.budget.Settlement
 import com.simbio.don.budget.WeekResult
 import com.simbio.don.game.HouseLayout
+import com.simbio.don.game.CharacterLook
 import com.simbio.don.game.HouseLevel
 import com.simbio.don.game.ItemKind
 import com.simbio.don.game.MockItem
@@ -107,6 +108,8 @@ data class HomeState(
     val streak: Int = 0,
     /** 자산과 잔액 */
     val accounts: List<AccountBalance> = emptyList(),
+    /** 내 캐릭터 모습 */
+    val look: CharacterLook = CharacterLook.MALE,
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
 
@@ -276,6 +279,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             mockItems = items,
             wallet = wallet,
             house = HouseLayout.of(enumOr(house?.level, HouseLevel.ONE_ROOM), items),
+            look = CharacterLook.decode(house?.look),
             mood = Moods.of(current, today, wallet, plan.disposable, cycle),
         )
     }
@@ -439,6 +443,16 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         disposableOverride = c.budgetOverride,
     )
 
+    // ── 캐릭터 ─────────────────────────────────────────────────
+
+    /** 캐릭터 모습 저장 (집 단계·이름은 그대로) */
+    suspend fun saveLook(look: CharacterLook) = writeLock.withLock { saveLookLocked(look) }
+
+    private suspend fun saveLookLocked(look: CharacterLook) {
+        val h = dao.houseNow() ?: HouseEntity()
+        dao.saveHouse(h.copy(look = look.encode()))
+    }
+
     // ── 초기 설정 ──────────────────────────────────────────────
 
     /** 처음 설정에서 만들 자산 */
@@ -459,7 +473,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         today: LocalDate,
         firstCycleBudget: Long? = null,
         accounts: List<AccountDraft> = emptyList(),
+        look: CharacterLook = CharacterLook.MALE,
     ) = writeLock.withLock {
+        saveLookLocked(look)
         val ids = accounts.mapIndexed { i, a ->
             dao.saveAccount(AccountEntity(name = a.name.take(20), type = a.type.name, opening = a.opening, sortOrder = i, packageName = a.packageName))
         }

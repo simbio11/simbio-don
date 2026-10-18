@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.simbio.don.app.weather.Weather
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.semantics.contentDescription
@@ -32,7 +33,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import com.simbio.don.app.R
 import com.simbio.don.app.ui.kit.icon
-import com.simbio.don.app.ui.kit.sprite
+import com.simbio.don.app.ui.kit.CharacterRenderer
+import com.simbio.don.app.ui.kit.LocalCharacterLook
+import com.simbio.don.app.ui.kit.Pose
 import com.simbio.don.app.ui.pixel.RoomLayout
 import com.simbio.don.game.HouseLayout
 import com.simbio.don.game.ItemKind
@@ -177,7 +180,11 @@ fun PixelRoom(
     val shadow = ImageBitmap.imageResource(R.drawable.px_shadow)
     val items = ItemKind.entries.associateWith { ImageBitmap.imageResource(it.icon()) }
     val trash = ItemKind.entries.filter { it.isFood }.associateWith { ImageBitmap.imageResource(it.icon(trash = true)) }
-    val frames = (0..3).map { ImageBitmap.imageResource(mood.sprite(it)) }
+    val context = LocalContext.current
+    val look = LocalCharacterLook.current
+    val frames = remember(look, mood) {
+        listOf(Pose.STAND, Pose.BLINK, Pose.WALK_LEFT, Pose.WALK_RIGHT).map { CharacterRenderer.bitmap(context, look, mood, it) }
+    }
 
     val clock = rememberInfiniteTransition(label = "room")
     val ms by clock.animateFloat(0f, WALK_CYCLE.toFloat(), infiniteRepeatable(tween(WALK_CYCLE, easing = LinearEasing)), label = "walk")
@@ -239,7 +246,7 @@ fun PixelRoom(
                 house.trash.zip(RoomLayout.trash).forEach { (item, p) -> put(trash.getValue(item.kind), p.x, p.y) }
 
                 val cy = RoomLayout.character.y
-                put(shadow, pose.x + 3, cy + RoomLayout.CHAR_H - 3)
+                put(shadow, pose.x + 4, cy + RoomLayout.CHAR_H - 3)
                 put(frames[pose.frame], pose.x, cy + pose.bob)
 
                 house.floor.zip(RoomLayout.floorPile).sortedBy { it.second.y }.forEach { (item, p) ->

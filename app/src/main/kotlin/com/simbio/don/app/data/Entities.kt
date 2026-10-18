@@ -230,4 +230,6 @@ data class HouseEntity(
     /** com.simbio.don.game.HouseLevel 이름 */
     val level: String = "ONE_ROOM",
     val characterName: String = "나",
+    /** 캐릭터 모습 (com.simbio.don.game.CharacterLook.encode). 비면 기본 */
+    val look: String = "",
 )

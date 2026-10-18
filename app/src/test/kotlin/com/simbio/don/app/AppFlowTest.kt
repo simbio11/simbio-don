@@ -24,6 +24,7 @@ import kotlinx.coroutines.runBlocking
 import com.simbio.don.app.data.DonDatabase
 import org.junit.rules.ExternalResource
 import org.junit.rules.RuleChain
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,6 +76,11 @@ class AppFlowTest {
         shot("01_welcome")
         rule.onNodeWithText("시작하기").performClick()
 
+        waitText("내 캐릭터")
+        rule.onNodeWithText("여자").performClick()
+        shot("01b_character")
+        rule.onNodeWithText("다음").performClick()
+
         waitText("월급을 알려주세요")
         rule.onNodeWithText("월급 (세금 뗀 실수령액)").performTextReplacement("3300000")
         // 월급날을 열흘 전으로 두면 언제 돌려도 '한 달 중간에 시작' 흐름을 탄다
@@ -108,6 +114,7 @@ class AppFlowTest {
         rule.onNodeWithText("이대로 시작하기").performClick()
 
         waitText("실제 내 돈 · 이번 주")
+        assertEquals(com.simbio.don.game.Gender.FEMALE, runBlocking { DonDatabase.get(rule.activity).dao().houseNow() }?.look?.let { com.simbio.don.game.CharacterLook.decode(it).gender })
         rule.onNodeWithText("결제 알림 자동 기록이 꺼져 있어요").assertExists()
         rule.onNodeWithText("지난주 결산이 준비됐어요").assertDoesNotExist()
 
@@ -251,6 +258,49 @@ class AppFlowTest {
         waitText("배송 중 2개")
         rule.onNodeWithText("배송 중 2개").performScrollTo()
         shot("24_house_shipping")
+    }
+
+    /** 캐릭터 꾸미기: 부위·색을 바꿔 저장하면 집에 그 모습으로 산다 */
+    @Test
+    fun 캐릭터_꾸미기() {
+        val today = LocalDate.now()
+        val repo = DonRepository.get(rule.activity)
+        runBlocking {
+            repo.completeOnboarding(3_300_000, today.minusDays(9).dayOfMonth, emptyList(), 400_000, DayOfWeek.MONDAY, today.minusDays(9), null)
+        }
+        waitText("실제 내 돈 · 이번 주")
+        rule.onNodeWithText("내 집").performClick()
+        waitText("꾸미기")
+        rule.onNodeWithText("꾸미기").performClick()
+        waitText("캐릭터 꾸미기")
+        rule.onNodeWithText("바뀐 게 없어요").assertExists()
+        shot("25_dress_face")
+        rule.onNodeWithText("눈").performClick()
+        rule.onNodeWithText("왕눈").performScrollTo().performClick()
+        rule.onNodeWithContentDescription("초록").performScrollTo().performClick()
+        shot("26_dress_eyes")
+        rule.onNodeWithText("머리").performClick()
+        rule.onNodeWithText("긴 생머리").performScrollTo().performClick()
+        rule.onNodeWithContentDescription("금발").performScrollTo().performClick()
+        shot("27_dress_hair")
+        rule.onNodeWithText("옷").performClick()
+        rule.onNodeWithText("원피스").performScrollTo().performClick()
+        waitText("원피스를 입으면 아래옷은 안 보여요.")
+        shot("28_dress_clothes")
+        rule.onNodeWithText("모자·소품").performClick()
+        rule.onNodeWithText("비니").performScrollTo().performClick()
+        rule.onNodeWithText("슬퍼요").performScrollTo().performClick()
+        shot("29_dress_hat")
+        rule.onNodeWithText("이 모습으로 저장").performClick()
+        waitText("모의 지갑")
+        val look = runBlocking { DonDatabase.get(rule.activity).dao().houseNow() }!!.look.let { com.simbio.don.game.CharacterLook.decode(it) }
+        assertEquals("big", look.eyes)
+        assertEquals("초록", look.eyeColor)
+        assertEquals("long", look.hair)
+        assertEquals("금발", look.hairColor)
+        assertEquals("dress", look.top)
+        assertEquals("beanie", look.hat)
+        shot("30_house_dressed")
     }
 
     /** 찜하기 · 내역 검색 · 자주 쓰는 곳 */

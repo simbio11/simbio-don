@@ -25,7 +25,6 @@ import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.Dp
 import com.simbio.don.app.R
 import com.simbio.don.game.ItemKind
-import com.simbio.don.game.Mood
 import kotlin.math.roundToInt
 
 // 도트 그림은 게임 안(방·캐릭터·모의로 산 물건)에만 쓴다.
@@ -75,21 +74,6 @@ fun ItemThumb(kind: ItemKind, size: Dp, modifier: Modifier = Modifier, fill: Col
     }
 }
 
-/** 캐릭터 그림 한 장: 0 기본, 1 눈 감음, 2·3 걷기 */
-@DrawableRes
-fun Mood.sprite(frame: Int): Int = when (this) {
-    Mood.JOYFUL -> listOf(R.drawable.px_char_joyful_0, R.drawable.px_char_joyful_1, R.drawable.px_char_joyful_2, R.drawable.px_char_joyful_3)
-    Mood.HAPPY -> listOf(R.drawable.px_char_happy_0, R.drawable.px_char_happy_1, R.drawable.px_char_happy_2, R.drawable.px_char_happy_3)
-    Mood.CALM -> listOf(R.drawable.px_char_calm_0, R.drawable.px_char_calm_1, R.drawable.px_char_calm_2, R.drawable.px_char_calm_3)
-    Mood.WORRIED -> listOf(R.drawable.px_char_worried_0, R.drawable.px_char_worried_1, R.drawable.px_char_worried_2, R.drawable.px_char_worried_3)
-    Mood.SAD -> listOf(R.drawable.px_char_sad_0, R.drawable.px_char_sad_1, R.drawable.px_char_sad_2, R.drawable.px_char_sad_3)
-    Mood.ANGRY -> listOf(R.drawable.px_char_angry_0, R.drawable.px_char_angry_1, R.drawable.px_char_angry_2, R.drawable.px_char_angry_3)
-    Mood.CHEER -> listOf(R.drawable.px_char_cheer_0, R.drawable.px_char_cheer_1, R.drawable.px_char_cheer_2, R.drawable.px_char_cheer_3)
-}[frame]
-
-const val CHAR_W = 22
-const val CHAR_H = 28
-
 /** 캐릭터 대기 동작: 3초마다 눈 깜빡임 + 한 칸 숨쉬기. */
 data class IdleFrame(val blink: Boolean, val bob: Int)
 
@@ -98,20 +82,4 @@ fun rememberIdleFrame(): IdleFrame {
     val t = rememberInfiniteTransition(label = "idle")
     val phase by t.animateFloat(0f, 1f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "phase")
     return IdleFrame(blink = phase > 0.94f, bob = if ((phase * 4).toInt() % 2 == 0) 0 else 1)
-}
-
-/** 캐릭터 한 명 (22×28 그림). 높이에 가장 가까운 정수배로 그린다. */
-@Composable
-fun CharacterSprite(mood: Mood, height: Dp, modifier: Modifier = Modifier) {
-    val f = rememberIdleFrame()
-    val scale = pixelScale(CHAR_H, height)
-    val unit = with(LocalDensity.current) { scale.toDp() }
-    Box(modifier.size(unit * CHAR_W, unit * (CHAR_H + 1))) {
-        Image(
-            ImageBitmap.imageResource(mood.sprite(if (f.blink) 1 else 0)),
-            contentDescription = mood.label,
-            modifier = Modifier.offset(y = unit * f.bob).size(unit * CHAR_W, unit * CHAR_H),
-            filterQuality = FilterQuality.None,
-        )
-    }
 }

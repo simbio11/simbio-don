@@ -73,7 +73,7 @@ object Backup {
             o.put("id", x.id); o.put("name", x.name); o.put("price", x.price); o.put("kind", x.kind); o.putOpt("store", x.store)
             o.put("epochDay", x.epochDay); o.put("status", x.status); o.put("createdAtEpochSecond", x.createdAtEpochSecond)
         })
-        put("houses", arr(d.houses) { o, x -> o.put("level", x.level); o.put("characterName", x.characterName) })
+        put("houses", arr(d.houses) { o, x -> o.put("level", x.level); o.put("characterName", x.characterName); o.put("look", x.look) })
         put("categoryBudgets", arr(d.categoryBudgets) { o, x -> o.put("category", x.category); o.put("amount", x.amount) })
         put("goals", arr(d.goals) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("target", x.target); o.put("icon", x.icon)
@@ -132,7 +132,7 @@ object Backup {
                     MockPurchaseEntity(o.getLong("id"), o.getString("name"), o.getLong("price"), o.getString("kind"), o.strOrNull("store"),
                         o.getLong("epochDay"), o.getString("status"), o.getLong("createdAtEpochSecond"))
                 },
-                houses = list(root, "houses") { o -> HouseEntity(level = o.getString("level"), characterName = o.getString("characterName")) },
+                houses = list(root, "houses") { o -> HouseEntity(level = o.getString("level"), characterName = o.getString("characterName"), look = o.optString("look", "")) },
                 categoryBudgets = list(root, "categoryBudgets") { o -> CategoryBudgetEntity(o.getString("category"), o.getLong("amount")) },
                 goals = list(root, "goals") { o ->
                     SavingsGoalEntity(o.getLong("id"), o.getString("name"), o.getLong("target"), o.getString("icon"),

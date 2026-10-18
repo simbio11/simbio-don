@@ -1,140 +1,128 @@
 """
-캐릭터 v3: 24×32 레이어 조합.
+캐릭터 v3: 24×32 레이어 조합 (머리 위 4줄 여유를 둔 24×36 칸).
 
-그리는 순서: 뒷머리 → 몸(피부) → 아래옷 → 신발 → 윗옷 → 얼굴(눈썹·눈·코·입·볼) → 앞머리 → 모자·장신구.
-모든 부위는 같은 24×32 칸 위에 그린다 (투명 '.'). 색은 cpal의 표식 글자 → 앱이 고른 색으로 바꾼다.
+그리는 순서: 뒷머리 → 몸(피부) → 아래옷 → 신발 → 윗옷 → 얼굴(볼·눈·코·입) → 앞머리 → 눈썹·표정 → 모자 → 장신구.
+모든 부위는 같은 칸 위에 그린다 (투명 '.'). 색은 cpal의 표식 글자 → 앱이 고른 색으로 바꾼다.
 
-모양은 '#' 마스크로 그리고 자동으로 외곽선·명암을 넣은 뒤(shape), 손으로 디테일을 덧그린다.
-빛은 왼쪽 위: 왼쪽 가장자리 안쪽은 밝게, 오른쪽 가장자리 안쪽은 어둡게.
+얼굴 자리: 눈썹 6~8줄, 눈 8~12줄 (왼눈 5~9칸, 오른눈 14~18칸), 볼 12줄, 코 12~13줄, 입 14~16줄 (10~13칸).
+빛은 왼쪽 위: 왼쪽은 밝게, 오른쪽·아래는 어둡게.
 """
-from .lib import Canvas, check
+from .lib import Canvas, row
 
-W, H = 24, 32
+W, H = 24, 36
+OY = 4  # 머리 꼭대기(0줄) 위로 4줄: 올림머리·모자 자리
 
-# 묶음별 (밝음, 기본, 그늘, 외곽선)
-RAMP = {
-    'skin': ('z', 's', 'S', 't'),
-    'hair': ('J', 'h', 'H', 'j'),
-    'cloth1': ('v', 'c', 'C', 'N'),
-    'cloth2': ('q', 'p', 'P', 'Q'),
-    'shoes': ('o', 'o', 'O', 'x'),
+# ── 몸 ────────────────────────────────────────────────────────
+HEAD = {2: (8, 15), 3: (6, 17), 4: (5, 18), **{y: (4, 19) for y in range(5, 15)}, 15: (5, 18), 16: (6, 17), 17: (8, 15)}
+
+# 얼굴형: 아래쪽 줄 윤곽만 다르다
+FACE_SHAPES = {
+    'round': {'label': '동글', 'rows': {}},
+    'vline': {'label': 'V라인', 'rows': {14: (5, 18), 15: (6, 17), 16: (7, 16), 17: (9, 14)}},
+    'square': {'label': '각진', 'rows': {15: (4, 19), 16: (5, 18), 17: (7, 16)}},
 }
 
 
-def shape(c, mask, group, y0=0, light=True, outline=True):
-    """'#' 마스크(y0줄부터)를 채운다. 바깥과 닿은 칸 = 외곽선, 그 안쪽 오른쪽 = 그늘, 왼쪽 = 밝음."""
-    L, B, D, O = RAMP[group]
-    filled = {(x, y0 + y) for y, r in enumerate(mask) for x, ch in enumerate(r) if ch == '#'}
+def head(c, shape='round'):
+    spans = {**HEAD, **FACE_SHAPES[shape]['rows']}
+    last = max(spans)
+    for y, (l, r) in spans.items():
+        if y in (2, last):
+            for x in range(l, r + 1):
+                c.set(x, y, 't')
+            continue
+        for x in range(l, r + 1):
+            c.set(x, y, 's')
+        c.set(l, y, 't')
+        c.set(r, y, 't')
+        # 둥근 모서리: 위아래 줄보다 넓은 부분도 선
+        nl, nr = spans.get(y + 1, (l, r))
+        pl, pr = spans.get(y - 1, (l, r))
+        for x in range(l + 1, min(nl, pl)):
+            c.set(x, y, 't')
+        for x in range(max(nr, pr) + 1, r):
+            c.set(x, y, 't')
+    for y in range(6, last - 1):
+        l, r = spans[y]
+        if c.get(r - 1, y) == 's':
+            c.set(r - 1, y, 'S')
+    l, r = spans[last - 1]
+    for x in range(r - 3, r):
+        if c.get(x, last - 1) == 's':
+            c.set(x, last - 1, 'S')
 
-    def edge(x, y):
-        return any((x + dx, y + dy) not in filled for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
 
-    for (x, y) in filled:
-        if outline and edge(x, y):
-            c.set(x, y, O)
-        elif (x + 1, y) in filled and edge(x + 1, y) and outline:
-            c.set(x, y, D)
-        elif light and (x - 1, y) in filled and edge(x - 1, y) and outline:
-            c.set(x, y, L)
-        else:
-            c.set(x, y, B)
+EARS = [
+    row(3, "t", 20, "t"),     # 9
+    row(2, "tS", 20, "St"),
+    row(3, "t", 20, "t"),
+]
+
+BODY = [
+    row(10, "tSSt"),                                        # 18 목
+    row(6, "tttt", 10, "sSSs", 14, "tttt"),                  # 19 어깨
+    row(5, "t", 6, "zsss", 10, "ssss", 14, "sssS", 18, "t"),  # 20
+    row(4, "tzst", 8, "sssssssS", 16, "tsSt"),               # 21 팔
+    row(4, "tzst", 8, "sssssssS", 16, "tsSt"),
+    row(4, "tzst", 8, "sssssssS", 16, "tsSt"),
+    row(4, "tsSt", 8, "sssssssS", 16, "tsSt"),               # 24 손
+    row(5, "tt", 7, "t", 8, "sssssssS", 16, "t", 17, "tt"),  # 25
+    row(7, "t", 8, "ssssssSS", 16, "t"),                    # 26 엉덩이
+    row(7, "tsSt", 13, "tsSt"),                             # 27 다리
+    row(7, "tsSt", 13, "tsSt"),
+    row(7, "tsSt", 13, "tsSt"),
+    row(7, "tsSt", 13, "tsSt"),                             # 30
+    row(7, "tttt", 13, "tttt"),                             # 31
+]
+
+
+def body(c, face_shape='round'):
+    c.stamp(BODY, 0, 18)
+    c.stamp(EARS, 0, 9)
+    head(c, face_shape)
     return c
 
 
-# ── 몸 ────────────────────────────────────────────────────────
-HEAD = check("head", [
-    #012345678901234567890123
-    "........................",  # 0
-    "........................",  # 1
-    "........########........",  # 2
-    "......############......",  # 3
-    ".....##############.....",  # 4
-    "....################....",  # 5
-    "....################....",
-    "....################....",
-    "....################....",
-    "....################....",
-    "....################....",  # 10
-    "....################....",
-    "....################....",
-    "....################....",
-    "....################....",
-    ".....##############.....",  # 15
-    "......############......",
-    "........########........",  # 17
-], W)
-
-EARS = check("ears", [
-    "...#................#...",  # 9
-    "..##................##..",
-    "...#................#...",
-], W)
-
-TORSO = check("torso", [
-    #012345678901234567890123
-    "..........####..........",  # 18 목
-    "........########........",  # 19
-    ".......##########.......",  # 20
-    ".......##########.......",
-    ".......##########.......",
-    ".......##########.......",
-    ".......##########.......",
-    ".......##########.......",  # 25
-    "........########........",  # 26
-], W)
-
-ARM_L = check("arm", [
-    #012345678901234567890123
-    "......###...............",  # 20
-    ".....####...............",
-    ".....####...............",
-    ".....####...............",
-    ".....####...............",
-    ".....###................",  # 25
-], W)
-ARM_R = [r[::-1] for r in ARM_L]
-
-LEG_L = check("leg", [
-    #012345678901234567890123
-    "........####............",  # 26
-    "........####............",
-    "........####............",
-    "........####............",
-    "........####............",
-    "........####............",  # 31
-], W)
-LEG_R = [r[::-1] for r in LEG_L]
-
-
-def body(c):
-    shape(c, LEG_L, 'skin', 26, light=False)
-    shape(c, LEG_R, 'skin', 26, light=False)
-    shape(c, TORSO, 'skin', 18)
-    shape(c, ARM_L, 'skin', 20)
-    shape(c, ARM_R, 'skin', 20)
-    shape(c, EARS, 'skin', 9, light=False)
-    shape(c, HEAD, 'skin', light=False)
-    # 턱 그늘
-    for x in range(12, 15):
-        c.set(x, 16, 'S')
-    return c
-
-
-# ── 얼굴 ──────────────────────────────────────────────────────
-# 눈: 14칸(5~18칸) × 5줄(8~12줄). 가운데 10~13칸은 비움. '_' = 안 그림.
-#         왼눈 5-9    가운데     오른눈 14-18
+# ── 눈 ────────────────────────────────────────────────────────
+# 14칸(5~18칸) × 5줄(8~12줄). 가운데 10~13칸은 비움. '_' = 안 그림.
 EYE_STYLES = {
-    # 기본: 둥근 눈동자, 위 눈꺼풀만 선
-    'basic': [
+    'basic': {'label': '또렷한 눈', 'open': [
         "______________",  # 8
         "__KKK____KKK__",  # 9
         "_KWee____WeeK_",  # 10
-        "_Keee____eeeK_",  # 11
-        "__EEe____eEE__",  # 12
-    ],
+        "_KeKe____eKeK_",  # 11
+        "__EEE____EEE__",  # 12
+    ]},
+    'big': {'label': '왕눈', 'open': [
+        "__KKK____KKK__",
+        "_KWWe____WWeK_",
+        "_KWeK____WeKK_",
+        "_KeeK____eeeK_",
+        "__EEE____EEE__",
+    ]},
+    'cat': {'label': '고양이 눈', 'open': [
+        "____K____K____",
+        "__KKK____KKK__",
+        "_KWee____WeeK_",
+        "__eKe____eKe__",
+        "___EE____EE___",
+    ]},
+    'puppy': {'label': '강아지 눈', 'open': [
+        "______________",
+        "__KKK____KKK__",
+        "__WeeK__KWee__",
+        "_KeKe____eKeK_",
+        "_KEEE____EEEK_",
+    ]},
+    'sharp': {'label': '날렵한 눈', 'open': [
+        "______________",
+        "______________",
+        "_KKKK____KKKK_",
+        "__WeK____KWe__",
+        "__eEe____eEe__",
+    ]},
 }
 
-# 표정용 눈 (스타일 상관없이 같음)
 EYE_SHARED = {
     'closed': [
         "______________",
@@ -150,176 +138,198 @@ EYE_SHARED = {
         "_K__K____K__K_",
         "______________",
     ],
+    'xx': [  # 질끈 감은 눈 > <
+        "______________",
+        "_K__________K_",
+        "__KK______KK__",
+        "_K__________K_",
+        "______________",
+    ],
 }
 
-# 속눈썹 (여자 기본): 눈꼬리 바깥으로 한 칸 + 위로 한 칸
+# 속눈썹: 눈꼬리 바깥으로 한 칸 + 위로 한 칸
 LASHES = [
-    "K____________K",  # 8
-    "KKKKK____KKKKK",  # 9  (눈꺼풀 선을 바깥으로 이어 그림)
     "______________",
+    "_K__________K_",
+    "K____________K",
     "______________",
     "______________",
 ]
 
-# 눈썹: 14칸 × 3줄(6~8줄), 앞머리 위에 그린다
-BROWS = {
-    'normal': [
-        "______________",
-        "__jjj____jjj__",
-        "______________",
-    ],
-    'angry': [
-        "______________",
-        "_jj________jj_",
-        "___jj____jj___",
-    ],
-    'sad': [
-        "______________",
-        "___jj____jj___",
-        "_jj________jj_",
-    ],
-    'up': [
-        "__jjj____jjj__",
-        "______________",
-        "______________",
-    ],
-}
 
-# 코: 4칸(10~13칸) × 2줄(12~13줄)
+def _lid_row(g, xs):
+    for y, r in enumerate(g):
+        if any(r[x] == 'K' for x in xs):
+            return y
+    return None
+
+
+def eyes_for(style, state):
+    """눈 격자. state: open / closed / joy / xx / angry / sad"""
+    if state in EYE_SHARED:
+        return EYE_SHARED[state]
+    g = [list(r) for r in EYE_STYLES[style]['open']]
+    if state in ('angry', 'sad'):
+        for xs, inner_last in ((range(0, 5), True), (range(9, 14), False)):
+            y = _lid_row(g, xs)
+            ks = [x for x in xs if g[y][x] == 'K']
+            inner, outer = (ks[-1], ks[0]) if inner_last else (ks[0], ks[-1])
+            x = inner if state == 'angry' else outer
+            g[y][x] = '_'
+            if y + 1 < len(g):
+                g[y + 1][x] = 'K'
+    return [''.join(r) for r in g]
+
+
+# ── 눈썹 · 코 · 입 · 볼 ──────────────────────────────────────
+# 눈썹: 14칸 × 3줄(6~8줄). 앞머리 위에 그린다. 색 = 머리 가장 어두운 색
+BROW_STYLES = {
+    'normal': {'label': '일자 눈썹', 'w': 3, 'thick': False},
+    'thick': {'label': '진한 눈썹', 'w': 3, 'thick': True},
+    'short': {'label': '짧은 눈썹', 'w': 2, 'thick': False},
+}
+BROW_STATES = ['normal', 'up', 'angry', 'sad']
+
+
+def brows_for(style, state):
+    w = BROW_STYLES[style]['w']
+    thick = BROW_STYLES[style]['thick']
+    g = [['_'] * 14 for _ in range(3)]
+    lx = list(range(5 - w, 5))
+    rx = list(range(9, 9 + w))
+    if state == 'normal':
+        ys_l = [1] * w
+        ys_r = [1] * w
+    elif state == 'up':
+        ys_l = [0] * w
+        ys_r = [0] * w
+    elif state == 'angry':
+        ys_l = [1] * (w - 1) + [2]
+        ys_r = [2] + [1] * (w - 1)
+        lx = [x - 1 for x in lx]
+        rx = [x + 1 for x in rx]
+    else:  # sad
+        ys_l = [2] + [1] * (w - 1)
+        ys_r = [1] * (w - 1) + [2]
+    for xs, ys in ((lx, ys_l), (rx, ys_r)):
+        for x, y in zip(xs, ys):
+            g[y][x] = 'j'
+            if thick and y + 1 < 3 and state in ('normal', 'up'):
+                g[y + 1][x] = 'H'
+    return [''.join(r) for r in g]
+
+
+# 코: 4칸(10~13칸) × 2줄(12~13줄). S = 피부 그늘, z = 콧등 빛
 NOSES = {
-    'dot': ["____", "_S__"],
+    'dot': {'label': '점 코', 'rows': ["____", "_S__"]},
+    'button': {'label': '동글 코', 'rows': ["____", "_SS_"]},
+    'high': {'label': '오똑한 코', 'rows': ["__S_", "_zS_"]},
+    'none': {'label': '코 없음', 'rows': ["____", "____"]},
 }
 
-# 입: 4칸(10~13칸) × 3줄(14~16줄)
-MOUTHS = {
-    'smile': ["____", "K__K", "_KK_"],
-    'calm': ["____", "____", "_KK_"],
-    'grin': ["KKKK", "KmmK", "_KK_"],
-    'open': ["____", "_KK_", "_KK_"],
-    'frown': ["____", "_KK_", "K__K"],
-    'wobble': ["____", "_K_K", "K_K_"],
-    'grit': ["____", "KKKK", "KWWK"],
+# 입 모양 (성형): 웃음·보통 입만 다르고, 크게 웃거나 화낸 입은 같다
+MOUTH_STYLES = {
+    'basic': {'label': '기본 입', 'smile': ["____", "k__k", "_kk_"], 'calm': ["____", "____", "_kk_"]},
+    'cat': {'label': '고양이 입', 'smile': ["____", "k_k_", "_k_k"], 'calm': ["____", "k_k_", "_k_k"]},
+    'lips': {'label': '도톰한 입술', 'smile': ["____", "n__n", "_nn_"], 'calm': ["____", "_nn_", "_bb_"]},
+    'small': {'label': '작은 입', 'smile': ["____", "____", "_kk_"], 'calm': ["____", "____", "_k__"]},
 }
-# 볼: 14칸 × 2줄(12~13줄)
-BLUSH = [
-    "bb__________bb",
-    "______________",
-]
+MOUTH_SHARED = {
+    'grin': ["kkkk", "kmmk", "_nn_"],
+    'open': ["____", "_kk_", "_mm_"],
+    'frown': ["____", "_kk_", "k__k"],
+    'wobble': ["____", "_k_k", "k_k_"],
+    'grit': ["____", "kkkk", "kWWk"],
+}
 
 
-def face(c, eyes='basic', brow='normal', nose='dot', mouth='smile', lashes=False, blush=True, eye_rows=None):
-    rows = eye_rows or EYE_STYLES.get(eyes) or EYE_SHARED[eyes]
-    if blush:
+def mouth_for(style, state):
+    if state in ('smile', 'calm'):
+        return MOUTH_STYLES[style][state]
+    return MOUTH_SHARED[state]
+
+
+BLUSH = ["_bb________bb_"]
+
+# 기분 → 얼굴 (앱 Mood와 같은 이름)
+MOOD_FACE = {
+    'joyful': {'eyes': 'joy', 'brow': 'up', 'mouth': 'grin', 'extra': 'sparkle'},
+    'happy': {'eyes': 'open', 'brow': 'up', 'mouth': 'open'},
+    'calm': {'eyes': 'open', 'brow': 'normal', 'mouth': 'smile'},
+    'worried': {'eyes': 'open', 'brow': 'sad', 'mouth': 'wobble', 'extra': 'sweat'},
+    'sad': {'eyes': 'sad', 'brow': 'sad', 'mouth': 'frown', 'extra': 'tears'},
+    'angry': {'eyes': 'angry', 'brow': 'angry', 'mouth': 'grit', 'extra': 'anger'},
+    'cheer': {'eyes': 'xx', 'brow': 'up', 'mouth': 'grin', 'extra': 'sparkle'},
+}
+
+EXTRAS = {
+    'tears': [(6, 13, 'F'), (6, 14, 'f'), (17, 13, 'F'), (17, 14, 'f')],
+    'sweat': [(20, 5, 'F'), (20, 6, 'F'), (21, 6, 'f')],
+    'anger': [(18, -1, 'r'), (20, -1, 'r'), (19, 0, 'r'), (18, 1, 'r'), (20, 1, 'r')],
+    'sparkle': [(1, 1, 'y'), (0, 2, 'y'), (2, 2, 'y'), (1, 3, 'y'), (22, 4, 'y'), (21, 5, 'Y'), (23, 5, 'Y'), (22, 6, 'y')],
+}
+
+
+def blink_state(state):
+    return 'closed' if state in ('open', 'angry', 'sad') else state
+
+
+def face(c, look, mood='calm', blink=False):
+    f = MOOD_FACE[mood]
+    state = blink_state(f['eyes']) if blink else f['eyes']
+    if look.get('blush', True):
         c.stamp(BLUSH, 5, 12)
-    c.stamp(rows, 5, 8)
-    if lashes and eyes not in EYE_SHARED:
+    c.stamp(eyes_for(look['eyes'], state), 5, 8)
+    if look.get('lashes') and state not in EYE_SHARED:
         c.stamp(LASHES, 5, 8)
-    c.stamp(NOSES[nose], 10, 12)
-    c.stamp(MOUTHS[mouth], 10, 14)
+    c.stamp(NOSES[look['nose']]['rows'], 10, 12)
+    c.stamp(mouth_for(look['mouth'], f['mouth']), 10, 14)
 
 
-def brows(c, brow='normal'):
-    c.stamp(BROWS[brow], 5, 6)
+def face_top(c, look, mood='calm'):
+    """앞머리 위에 얹는 것: 눈썹, 눈물·땀·화남 표시"""
+    f = MOOD_FACE[mood]
+    c.stamp(brows_for(look['brow'], f['brow']), 5, 6)
+    for x, y, ch in EXTRAS.get(f.get('extra'), []):
+        c.set(x, y, ch)
 
 
-# ── 머리카락 ──────────────────────────────────────────────────
+# ── 머리카락 · 옷 ─────────────────────────────────────────────
 from .hair3 import HAIRS  # noqa: E402
+from .clothes3 import TOPS, BOTTOMS, SHOES, HATS, ACCS  # noqa: E402
 
 
-def hair(c, style, part):
-    spec = HAIRS[style].get(part)
+def stamp_part(c, spec):
     if spec:
         y0, rows = spec
         c.stamp(rows, 0, y0)
 
 
-# ── 옷 ────────────────────────────────────────────────────────
-TOPS = {
-    'tee': (19, [
-        #012345678901234567890123
-        "........########........",  # 19
-        ".......##########.......",
-        "......############......",
-        ".....##############.....",
-        ".......##########.......",
-        ".......##########.......",
-        ".......##########.......",  # 25
-    ]),
-}
-BOTTOMS = {
-    'pants': (25, [
-        #012345678901234567890123
-        ".......##########.......",  # 25
-        "........########........",
-        "........########........",
-        "........###..###........",
-        "........###..###........",
-        "........###..###........",  # 30
-    ]),
-    'skirt': (25, [
-        #012345678901234567890123
-        ".......##########.......",  # 25
-        "......############......",
-        ".....##############.....",
-    ]),
-}
-SHOES = {
-    'sneakers': (30, [
-        #012345678901234567890123
-        ".......#####..#####......",
-        ".......#####..#####......",
-    ]),
-}
-
-
-def top(c, name):
-    y0, mask = TOPS[name]
-    shape(c, mask, 'cloth1', y0)
-    # 목둘레
-    c.stamp(["tSSt"], 10, 19)
-
-
-def bottom(c, name):
-    y0, mask = BOTTOMS[name]
-    shape(c, mask, 'cloth2', y0)
-
-
-def shoes(c, name):
-    y0, mask = SHOES[name]
-    shape(c, mask, 'shoes', y0)
-
-
-CH = 36   # 캔버스 높이 (머리 위 4줄 여유)
-OY = 4
-
-
-def compose(look, mood='calm'):
-    c = Canvas(W, CH, OY)
-    hair(c, look['hair'], 'back')
-    body(c)
-    bottom(c, look['bottom'])
-    shoes(c, look['shoes'])
-    top(c, look['top'])
-    f = MOOD_FACE[mood]
-    face(c, eyes=f['eyes'] if f['eyes'] in EYE_SHARED else look['eyes'], mouth=f['mouth'], lashes=look['lashes'], nose=look['nose'])
-    hair(c, look['hair'], 'front')
-    brows(c, f['brow'])
+def compose(look, mood='calm', blink=False):
+    c = Canvas(W, H, OY)
+    hair = HAIRS[look['hair']]
+    stamp_part(c, hair.get('back'))
+    body(c, look.get('face', 'round'))
+    top = TOPS[look['top']]
+    if not top.get('dress'):
+        stamp_part(c, BOTTOMS[look['bottom']]['rows'])
+    stamp_part(c, SHOES[look['shoes']]['rows'])
+    stamp_part(c, top['rows'])
+    face(c, look, mood, blink)
+    stamp_part(c, hair.get('front'))
+    face_top(c, look, mood)
+    if look.get('hat'):
+        stamp_part(c, HATS[look['hat']]['rows'])
+    if look.get('acc'):
+        stamp_part(c, ACCS[look['acc']]['rows'])
     return c
 
 
-MOOD_FACE = {
-    'joyful': {'eyes': 'joy', 'brow': 'up', 'mouth': 'grin'},
-    'happy': {'eyes': 'open', 'brow': 'up', 'mouth': 'open'},
-    'calm': {'eyes': 'open', 'brow': 'normal', 'mouth': 'smile'},
-    'worried': {'eyes': 'open', 'brow': 'sad', 'mouth': 'wobble'},
-    'sad': {'eyes': 'open', 'brow': 'sad', 'mouth': 'frown'},
-    'angry': {'eyes': 'open', 'brow': 'angry', 'mouth': 'grit'},
-    'cheer': {'eyes': 'joy', 'brow': 'up', 'mouth': 'grin'},
-}
-
 LOOKS = {
-    'm': {'hair': 'short', 'top': 'tee', 'bottom': 'pants', 'shoes': 'sneakers', 'eyes': 'basic', 'lashes': False, 'nose': 'dot'},
-    'f': {'hair': 'long', 'top': 'tee', 'bottom': 'skirt', 'shoes': 'sneakers', 'eyes': 'basic', 'lashes': True, 'nose': 'dot'},
+    'm': {'hair': 'short', 'top': 'hoodie', 'bottom': 'pants', 'shoes': 'sneakers', 'eyes': 'basic', 'lashes': False,
+          'nose': 'dot', 'mouth': 'basic', 'brow': 'thick', 'face': 'round'},
+    'f': {'hair': 'long', 'top': 'blouse', 'bottom': 'skirt', 'shoes': 'flats', 'eyes': 'big', 'lashes': True,
+          'nose': 'dot', 'mouth': 'lips', 'brow': 'normal', 'face': 'vline'},
 }
 
 

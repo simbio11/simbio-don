@@ -20,10 +20,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from palette import PALETTE  # noqa: E402
 import room  # noqa: E402
 import sprites  # noqa: E402
+from v3 import char3, export3  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "app/src/main/res/drawable-nodpi")
 LAYOUT_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/RoomLayout.kt")
+PARTS_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/CharacterParts.kt")
 
 
 def grid_image(rows, name="?"):
@@ -42,9 +44,8 @@ def grid_image(rows, name="?"):
 
 def build():
     outputs = {}
-    for mood, frames in sprites.CHARACTER.items():
-        for i, rows in enumerate(frames):
-            outputs[f"px_char_{mood}_{i}"] = grid_image(rows, f"char {mood} {i}")
+    # 캐릭터 v3: 부위 아틀라스 (앱이 색을 바꿔 겹쳐 그린다)
+    outputs["px_char_atlas"] = export3.atlas(export3.parts())
     for name, rows in sprites.ITEMS.items():
         outputs[f"px_item_{name}"] = grid_image(rows, f"item {name}")
 
@@ -164,6 +165,8 @@ def main():
     for name, img in outputs.items():
         save(img, name)
     write_layout_kt()
+    with open(PARTS_KT, "w") as f:
+        f.write(export3.kotlin(export3.parts()))
     icon = write_launcher_icon()
     print(f"{len(outputs)}개 그림 → {OUT}, 런처 아이콘")
 
@@ -193,6 +196,11 @@ def make_sheet(outputs, path, scale=6):
     sheet.save(path)
 
 
+def lib_img(rows):
+    from v3.lib import img
+    return img(rows)
+
+
 def make_scene(outputs, phase):
     """앱과 같은 순서로 겹친 미리보기 (칸을 채워서)"""
     out = Image.new("RGBA", (room.W, room.H), (0, 0, 0, 255))
@@ -213,8 +221,8 @@ def make_scene(outputs, phase):
     for (x, y), k in zip(room.TRASH, ["meal_trash", "drink_trash", "meal_trash"]):
         out.alpha_composite(outputs[f"px_item_{k}"], (x, y))
     cx, cy = room.CHARACTER_POS
-    out.alpha_composite(outputs["px_shadow"], (cx + 3, cy + room.CHAR_H - 3))
-    out.alpha_composite(outputs["px_char_happy_0"], (cx, cy))
+    out.alpha_composite(outputs["px_shadow"], (cx + 4, cy + room.CHAR_H - 3))
+    out.alpha_composite(lib_img(char3.compose(char3.LOOKS["m"], "happy").rows()), (cx, cy))
     pile = ["shoes", "clothes", "toy", "bag", "electronics", "shoes", "book"]
     for (x, y), k in sorted(zip(room.FLOOR_PILE, pile), key=lambda p: p[0][1]):
         out.alpha_composite(outputs[f"px_item_{k}"], (x, y))

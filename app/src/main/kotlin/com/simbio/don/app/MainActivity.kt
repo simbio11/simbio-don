@@ -4,11 +4,8 @@ import android.Manifest
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
-import android.os.Build
-import com.simbio.don.app.notify.DailyReminder
-import com.simbio.don.app.widget.WeekWidget
-import com.simbio.don.app.weather.WeatherService
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -23,19 +20,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,40 +41,47 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.HomeState
 import com.simbio.don.app.data.QuickPick
 import com.simbio.don.app.data.toRule
-import com.simbio.don.app.ui.AppState
-import com.simbio.don.app.ui.BudgetsScreen
-import com.simbio.don.app.ui.GoalsScreen
-import com.simbio.don.app.ui.DonColors
-import com.simbio.don.app.ui.DonTheme
-import com.simbio.don.app.ui.kit.AddFab
-import com.simbio.don.app.ui.kit.TabBar
-import com.simbio.don.app.ui.kit.TabItem
-import com.simbio.don.app.ui.kit.UiIcon
+import com.simbio.don.app.notify.DailyReminder
 import com.simbio.don.app.ui.AccountDetailScreen
 import com.simbio.don.app.ui.AccountEditScreen
+import com.simbio.don.app.ui.AppState
 import com.simbio.don.app.ui.AssetsScreen
+import com.simbio.don.app.ui.BudgetsScreen
+import com.simbio.don.app.ui.DonColors
+import com.simbio.don.app.ui.DonTheme
+import com.simbio.don.app.ui.DressScreen
 import com.simbio.don.app.ui.EntryDraft
 import com.simbio.don.app.ui.EntryEditScreen
-import com.simbio.don.app.ui.LedgerMode
-import com.simbio.don.app.ui.LedgerScreen
-import com.simbio.don.app.ui.SearchScreen
+import com.simbio.don.app.ui.GoalsScreen
 import com.simbio.don.app.ui.HomeScreen
 import com.simbio.don.app.ui.HouseScreen
-import com.simbio.don.app.ui.MockShopScreen
+import com.simbio.don.app.ui.LedgerMode
+import com.simbio.don.app.ui.LedgerScreen
 import com.simbio.don.app.ui.MainViewModel
+import com.simbio.don.app.ui.MockShopScreen
 import com.simbio.don.app.ui.OnboardingScreen
 import com.simbio.don.app.ui.ReviewScreen
 import com.simbio.don.app.ui.RuleEditScreen
 import com.simbio.don.app.ui.SalaryScreen
+import com.simbio.don.app.ui.SearchScreen
 import com.simbio.don.app.ui.SettingsScreen
 import com.simbio.don.app.ui.SettlementScreen
 import com.simbio.don.app.ui.StatsScreen
+import com.simbio.don.app.ui.kit.AddFab
+import com.simbio.don.app.ui.kit.LocalCharacterLook
+import com.simbio.don.app.ui.kit.TabBar
+import com.simbio.don.app.ui.kit.TabItem
+import com.simbio.don.app.ui.kit.UiIcon
+import com.simbio.don.app.weather.WeatherService
+import com.simbio.don.app.widget.WeekWidget
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntryType
 import com.simbio.don.game.SharedProduct
@@ -108,6 +111,7 @@ private sealed interface Overlay {
     data object Search : Overlay
     data class Account(val id: Long) : Overlay
     data class EditAccount(val id: Long?) : Overlay
+    data object Dress : Overlay
 }
 
 class MainActivity : ComponentActivity() {
@@ -179,7 +183,7 @@ class MainActivity : ComponentActivity() {
         when (val s = state) {
             AppState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             AppState.NeedsOnboarding -> OnboardingScreen(LocalDate.now(), listenerEnabled, ::openListenerSettings) { vm.completeOnboarding(it) }
-            is AppState.Ready -> Main(s.home)
+            is AppState.Ready -> CompositionLocalProvider(LocalCharacterLook provides s.home.look) { Main(s.home) }
         }
     }
 
@@ -286,6 +290,7 @@ class MainActivity : ComponentActivity() {
                     Tab.House -> HouseScreen(
                         home = home,
                         onShop = { overlay = Overlay.Shop(null) },
+                        onDress = { overlay = Overlay.Dress },
                         onRecycle = { vm.recycle() },
                         onDiscard = { vm.discard(it) },
                         onBuyWish = { vm.buyWished(it.id) },
@@ -560,6 +565,15 @@ class MainActivity : ComponentActivity() {
                     onBack = close,
                 )
             }
+            Overlay.Dress -> DressScreen(
+                current = home.look,
+                onSave = {
+                    vm.saveLook(it)
+                    Toast.makeText(this, "새 모습으로 바꿨어요", Toast.LENGTH_SHORT).show()
+                    close()
+                },
+                onBack = close,
+            )
             Overlay.Goals -> {
                 val all by vm.goals.collectAsStateWithLifecycle()
                 GoalsScreen(

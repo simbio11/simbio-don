@@ -27,7 +27,7 @@ import com.simbio.don.budget.CategoryGuesser
         SavingsGoalEntity::class,
         AccountEntity::class,
     ],
-    version = 5,
+    version = 6,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -45,7 +45,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 }
                 ).build().also { instance = it }
         }
@@ -54,6 +54,13 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v6: 캐릭터 꾸미기 (모습 한 줄) */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE house ADD COLUMN look TEXT NOT NULL DEFAULT ''")
+            }
         }
 
         /** v5: 자산·이체, 기록 시각, 고정 지출 날짜(자동 기록), 월급 자동 처리 */

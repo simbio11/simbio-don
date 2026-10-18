@@ -30,13 +30,13 @@ object RoomLayout {
     val trashHit = IntRect(33, 86, 55, 136)
     val floorHit = IntRect(50, 104, 116, 136)
 
-    const val CHAR_W = 22
-    const val CHAR_H = 28
-    val character = IntOffset(73, 78)
+    const val CHAR_W = 24
+    const val CHAR_H = 36
+    val character = IntOffset(72, 70)
 
     /** 캐릭터가 걸어 다니는 x 범위 (왼쪽 위 기준) */
-    const val WALK_MIN = 58
-    const val WALK_MAX = 90
+    const val WALK_MIN = 57
+    const val WALK_MAX = 89
 
     /** 수납이 넘친 물건이 바닥에 쌓이는 자리 (채우는 순서) */
     val floorPile = listOf(IntOffset(76, 122), IntOffset(88, 122), IntOffset(64, 122), IntOffset(100, 122), IntOffset(52, 122), IntOffset(70, 110), IntOffset(94, 110), IntOffset(82, 116), IntOffset(62, 116), IntOffset(98, 116), IntOffset(56, 110), IntOffset(106, 110))

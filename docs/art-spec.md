@@ -10,7 +10,8 @@
   - 카테고리 아이콘은 카테고리마다 색 동그라미(아이콘 칸에만 색을 쓰고, 차트는 한 가지 파랑)
 - **도트 그림 생성기** `tools/pixelart/`
   - `palette.py`: 색 (글자 하나 = 색 하나, 외곽선은 짙은 자두색 `#2b2234`, 1~9·d·M·V·Z 등은 밝은/어두운 단계)
-  - `sprites.py`: 캐릭터·물건 격자 (글자 하나 = 픽셀 하나). 빛은 왼쪽 위에서
+  - `sprites.py`: 물건·아이콘 격자 (글자 하나 = 픽셀 하나). 빛은 왼쪽 위에서
+  - `v3/`: 캐릭터 v3 (부위를 겹쳐 그리는 24×36 캐릭터) — 아래 "캐릭터 v3"
   - `room.py`: 원룸 장면과 시간대 레이어 (하늘·햇빛·밤 그늘·밤 불빛)
   - `make_art.py`: 전부 PNG로 저장하고 방 좌표 `RoomLayout.kt` 생성
 - **결과물** `app/src/main/res/drawable-nodpi/px_*.png` — 원본 픽셀 크기
@@ -22,6 +23,20 @@
 - 창밖 하늘이 천천히 흐른다 (구름·별·달). 시간대: 6–17시 낮, 17–19시 노을, 19–6시 밤
 - 낮·노을엔 창살 그림자가 진 햇빛이 바닥에 들고, 밤엔 방이 어두워지고 스탠드·전구줄이 켜진다
 - 캐릭터가 16초마다 러그 위를 왔다 갔다 걷는다 (걷기 2프레임), 서 있을 땐 깜빡이고 숨 쉰다
+
+## 캐릭터 v3 (0.9.0)
+
+캐릭터는 한 장짜리 그림이 아니라 **부위를 겹쳐** 그린다. 그래서 얼굴·머리·옷을 바꾸고(꾸미기·성형) 색을 고를 수 있다.
+
+- 크기 **24 × 36** (맨 위 4줄은 모자·올림머리 자리). 2.5등신, 큰 머리(0–17줄) + 몸(18–31줄)
+- 겹치는 순서: 뒷머리 → 몸(얼굴형) → 아래옷(원피스면 생략) → 신발 → 윗옷 → 볼 → 눈(+속눈썹) → 코 → 입 → 앞머리 → 눈썹 → 덧그림(눈물·땀·화남·반짝) → 모자 → 소품
+- 부위: `v3/char3.py`(몸·얼굴형 3, 눈 5, 눈썹 3, 코 4, 입 4, 표정 7), `v3/hair3.py`(머리), `v3/clothes3.py`(윗옷 9·아래옷 5·신발 3·모자 4·소품 4)
+- **표정**: 기분마다 눈 상태·눈썹·입·덧그림 조합(`MOOD_FACE`). 눈 모양마다 '뜸·슬픔·화남'을 따로 그리고, 감은 눈·웃는 눈·X 눈은 공통
+- **색 바꾸기**: 바꿀 수 있는 곳은 '표식 색'으로 그린다(`v3/cpal.py`의 SWAP — 피부 4, 머리 4, 윗옷 4, 아래옷 4, 신발 3, 눈동자 2, 모자 4단계). 앱이 표식 색을 고른 색 묶음(RAMPS)으로 바꾼다. 표식 색은 서로 달라야 한다(생성기가 확인)
+- 결과물: 부위마다 한 칸씩 담은 아틀라스 `px_char_atlas.png`(16칸 × n줄, 칸 24×36)와 `ui/pixel/CharacterParts.kt`(칸 번호·표식 색·고를 수 있는 색·부위 이름). 앱의 `ui/kit/CharacterRenderer`가 부위를 골라 색을 바꿔 겹치고, 모습·기분·동작마다 기억해 둔다
+- 걷기는 따로 그리지 않고 한쪽 다리를 한 줄 들어 올려 만든다, 깜빡임은 감은 눈으로 바꿔 그린다
+- 남자 기본: 짧은 머리·후드티·긴바지·운동화·진한 눈썹·동글 얼굴. 여자 기본: 긴 생머리·블라우스·치마·구두·왕눈+속눈썹·도톰한 입술·V라인. 부위는 남녀 상관없이 고를 수 있다
+- 미리보기: `python3 tools/pixelart/v3/preview.py out.png` 같은 스크립트 없이도 `make_art.py <폴더>`의 `sheet.png`에 남녀 기본 모습이 나온다
 
 ## 다시 만들기
 
@@ -39,7 +54,7 @@ python3 tools/pixelart/make_art.py /tmp/preview   # 미리보기: sheet.png, sce
 
 | 그림 | 이름 | 원본 크기 |
 | :--- | :--- | :--- |
-| 캐릭터 (표정 4 × 프레임 4: 0 기본, 1 눈 감음, 2·3 걷기) | `px_char_{happy,calm,worried,cheer}_{0..3}` | 22 × 28 |
+| 캐릭터 부위 아틀라스 (생성기로만 — 칸 번호가 `CharacterParts.kt`와 맞아야 함) | `px_char_atlas` | 384 × (36 × 줄 수) |
 | 물건 | `px_item_{clothes,bag,shoes,electronics,book,beauty,living,toy,meal,drink,etc}` | 12 × 12 |
 | 먹고 남은 쓰레기 | `px_item_meal_trash`, `px_item_drink_trash` | 12 × 12 |
 | 캐릭터 그림자 | `px_shadow` | 16 × 4 |
@@ -52,7 +67,8 @@ python3 tools/pixelart/make_art.py /tmp/preview   # 미리보기: sheet.png, sce
 
 ## 이미지 생성 AI로 그릴 때 프롬프트 예시
 
-> 22x28 pixel art character sprite, front view, full body, cute chibi young adult, brown hair, blue t-shirt, navy pants,
+> 24x36 pixel art character sprite, front view, full body, cute chibi young adult (2.5 heads tall), {머리} hair, {옷},
 > dark plum outline (#2b2234), warm cozy palette, transparent background, no anti-aliasing, {표정} expression
+> (캐릭터는 부위를 겹쳐 그리므로, 손그림을 쓰려면 부위별로 나눠 `v3/` 격자로 옮겨야 한다)
 
 > 12x12 pixel art icon of {물건}, game inventory item, dark plum outline, warm cozy palette, transparent background, no anti-aliasing

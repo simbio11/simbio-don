@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -47,6 +49,7 @@ import com.simbio.don.app.data.AccountType
 import com.simbio.don.app.data.DonRepository
 import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Button
+import com.simbio.don.app.ui.kit.CharacterSprite
 import com.simbio.don.app.ui.kit.FilterChip
 import com.simbio.don.app.ui.kit.Icon
 import com.simbio.don.app.ui.kit.IconBubble
@@ -58,6 +61,9 @@ import com.simbio.don.budget.BudgetEngine
 import com.simbio.don.budget.FixedExpense
 import com.simbio.don.budget.PayCycle
 import com.simbio.don.budget.Payday
+import com.simbio.don.game.CharacterLook
+import com.simbio.don.game.Gender
+import com.simbio.don.game.Mood
 import java.time.DayOfWeek
 import java.time.LocalDate
 
@@ -114,12 +120,13 @@ data class OnboardingResult(
     val settlementDay: DayOfWeek,
     val firstCycleBudget: Long?,
     val accounts: List<DonRepository.AccountDraft>,
+    val look: CharacterLook = CharacterLook.MALE,
 )
 
 /** 이번 달 남은 생활비를 정하는 방법 */
 private enum class StartMode(val label: String) { PRORATE("남은 날만큼"), BALANCE("통장 잔액으로"), DIRECT("직접 정하기") }
 
-private enum class Step { WELCOME, SALARY, FIXED, SAVINGS, THIS_MONTH, ASSETS, FINISH }
+private enum class Step { WELCOME, CHARACTER, SALARY, FIXED, SAVINGS, THIS_MONTH, ASSETS, FINISH }
 
 /**
  * 처음 설정 (한 번만). 월급은 여기서만 묻고, 다음 달부터는 월급날·입금 알림으로 저절로 돌아간다.
@@ -147,6 +154,7 @@ fun OnboardingScreen(
     var bankTouched by remember { mutableStateOf(false) }
     var useCard by remember { mutableStateOf(true) }
     var cardDebt by remember { mutableStateOf("") }
+    var gender by remember { mutableStateOf(Gender.MALE) }
 
     val salaryValue = salary.toLongOrNull() ?: 0
     val fixedList = fixed.mapNotNull { it.toFixed() }
@@ -186,7 +194,7 @@ fun OnboardingScreen(
         onDone(
             OnboardingResult(
                 salaryValue, payDayValue!!, fixedList, savingsValue, settlementDay,
-                if (midCycle) firstBudget else null, accounts,
+                if (midCycle) firstBudget else null, accounts, CharacterLook.default(gender),
             ),
         )
     }
@@ -205,6 +213,23 @@ fun OnboardingScreen(
             ) {
                 when (s) {
                     Step.WELCOME -> Welcome()
+                    Step.CHARACTER -> {
+                        StepTitle("내 캐릭터", "아낀 돈으로 꾸미는 방에 살 캐릭터예요. 얼굴·머리·옷은 나중에 집 탭의 꾸미기에서 마음대로 바꿀 수 있어요.")
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Gender.entries.forEach { g ->
+                                val selected = gender == g
+                                Column(
+                                    Modifier.weight(1f).card().border(2.dp, if (selected) DonColors.Real else Color.Transparent, RoundedCornerShape(16.dp))
+                                        .clickable { gender = g }.padding(vertical = 16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    CharacterSprite(Mood.HAPPY, 108.dp, look = CharacterLook.default(g), animate = selected)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(g.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (selected) DonColors.Real else DonColors.Ink)
+                                }
+                            }
+                        }
+                    }
                     Step.SALARY -> {
                         StepTitle("월급을 알려주세요", "처음 한 번만 물어볼게요. 다음 달부터는 월급날이 되면 저절로 새 달이 시작되고, 월급 입금 알림으로 금액도 맞춰요.")
                         FormCard {

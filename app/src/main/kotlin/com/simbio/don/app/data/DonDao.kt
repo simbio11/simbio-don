@@ -126,6 +126,9 @@ interface DonDao {
     @Query("SELECT * FROM house WHERE id = 0")
     fun house(): Flow<HouseEntity?>
 
+    @Query("SELECT * FROM house WHERE id = 0")
+    suspend fun houseNow(): HouseEntity?
+
     @Upsert
     suspend fun saveHouse(h: HouseEntity)
 

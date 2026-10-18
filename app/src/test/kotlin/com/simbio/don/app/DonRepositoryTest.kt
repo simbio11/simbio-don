@@ -8,13 +8,15 @@ import com.simbio.don.app.data.Backup
 import com.simbio.don.app.data.DonDatabase
 import com.simbio.don.app.data.DonRepository
 import com.simbio.don.app.data.FixedExpenseEntity
+import com.simbio.don.app.data.HouseEntity
 import com.simbio.don.app.data.SalarySource
-import com.simbio.don.budget.EntrySource
 import com.simbio.don.app.notify.DailyReminder
 import com.simbio.don.app.widget.WeekWidget
 import com.simbio.don.budget.Category
+import com.simbio.don.budget.EntrySource
 import com.simbio.don.budget.EntryType
 import com.simbio.don.budget.FixedExpense
+import com.simbio.don.game.CharacterLook
 import com.simbio.don.game.ItemKind
 import com.simbio.don.game.Slot
 import com.simbio.don.notify.AppRule
@@ -24,9 +26,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -536,6 +538,8 @@ class DonRepositoryTest {
         repo.addManual(LocalDate.of(2026, 10, 24), 4_500, "스타벅스", EntryType.SPEND, memo = "\"따옴표\" 메모", minuteOfDay = 8 * 60 + 30)
         repo.buyMock("모자", 50_000, ItemKind.CLOTHES, null, LocalDate.of(2026, 10, 24), at(10, 24))
         repo.addGoal("여행", 1_000_000, "FLIGHT", LocalDate.of(2026, 10, 24))
+        val look = CharacterLook.FEMALE.copy(hairColor = "금발", hat = "ribbon")
+        repo.saveLook(look)
         val json = repo.exportBackup(at(10, 24))
         val before = db.dao().allEntriesNow()
 
@@ -547,11 +551,31 @@ class DonRepositoryTest {
         assertEquals(listOf("통장"), db.dao().accountsNow().map { it.name })
         assertEquals(1, db.dao().mockPurchasesNow().size)
         assertEquals(listOf("여행"), db.dao().goalsNow().map { it.name })
+        assertEquals(look, home(at(10, 24)).look)
 
         // 망가진 파일은 아무것도 바꾸지 않는다
         val bad = runCatching { repo.restoreBackup("{\"format\":\"other\"}") }
         assertTrue(bad.exceptionOrNull() is Backup.BadBackup)
         assertEquals(before, db.dao().allEntriesNow())
+    }
+
+    @Test
+    fun `캐릭터 모습을 저장해도 집 단계와 이름은 그대로다`() = runTest {
+        assertEquals(CharacterLook.MALE, home(at(10, 24)).look)
+        db.dao().saveHouse(HouseEntity(level = "TWO_ROOM", characterName = "돈돈"))
+        val look = CharacterLook.MALE.copy(hair = "long", topColor = "민트", acc = "glasses")
+        repo.saveLook(look)
+        assertEquals(look, home(at(10, 24)).look)
+        val h = db.dao().houseNow()!!
+        assertEquals("TWO_ROOM", h.level)
+        assertEquals("돈돈", h.characterName)
+    }
+
+    @Test
+    fun `첫 설정에서 고른 성별의 기본 모습으로 시작한다`() = runTest {
+        db.clearAllTables()
+        repo.completeOnboarding(2_000_000, 10, emptyList(), 0, DayOfWeek.FRIDAY, LocalDate.of(2026, 10, 24), look = CharacterLook.FEMALE)
+        assertEquals(CharacterLook.FEMALE, home(at(10, 24)).look)
     }
 
     // ── 검수 반영 ──
