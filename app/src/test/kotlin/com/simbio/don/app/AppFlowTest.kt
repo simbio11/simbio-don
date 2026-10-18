@@ -70,6 +70,30 @@ class AppFlowTest {
     @OptIn(ExperimentalTestApi::class)
     private fun waitText(text: String) = rule.waitUntilAtLeastOneExists(hasText(text), 5_000)
 
+    /**
+     * DB 읽기. 메인 스레드에서 runBlocking으로 기다리면 앱 쪽 코루틴(메인에서 이어지며 쓰기 잠금을 쥔 것)과
+     * 서로 기다려 멈출 수 있어, 다른 스레드에서 읽고 메인 루퍼를 돌리며 기다린다.
+     */
+    private fun <T> readDb(block: suspend com.simbio.don.app.data.DonDao.() -> T): T {
+        val dao = DonDatabase.get(appContext).dao()
+        return background { dao.block() }
+    }
+
+    /** 미리 기록 넣기 등: 다른 스레드에서 돌리고 메인 루퍼를 돌리며 기다린다 (위 [readDb]와 같은 까닭) */
+    private val appContext: android.content.Context get() = androidx.test.core.app.ApplicationProvider.getApplicationContext()
+
+    private fun <T> background(block: suspend () -> T): T {
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        var result: Result<T>? = null
+        Thread { result = runCatching { runBlocking { block() } }; done.set(true) }.start()
+        // 메인에서 이어질 앱 쪽 코루틴(쓰기 잠금을 쥔 것)이 돌 수 있게 메인 루퍼를 비워 가며 기다린다
+        rule.waitUntil(15_000) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            done.get()
+        }
+        return result!!.getOrThrow()
+    }
+
     @Test
     fun 초기_설정부터_지출_입력까지() {
         waitText("시작하기")
@@ -114,7 +138,7 @@ class AppFlowTest {
         rule.onNodeWithText("이대로 시작하기").performClick()
 
         waitText("실제 내 돈 · 이번 주")
-        assertEquals(com.simbio.don.game.Gender.FEMALE, runBlocking { DonDatabase.get(rule.activity).dao().houseNow() }?.look?.let { com.simbio.don.game.CharacterLook.decode(it).gender })
+        assertEquals(com.simbio.don.game.Gender.FEMALE, readDb { houseNow() }?.look?.let { com.simbio.don.game.CharacterLook.decode(it).gender })
         rule.onNodeWithText("결제 알림 자동 기록이 꺼져 있어요").assertExists()
         rule.onNodeWithText("지난주 결산이 준비됐어요").assertDoesNotExist()
 
@@ -150,8 +174,8 @@ class AppFlowTest {
     @Test
     fun 기록이_쌓인_화면() {
         val today = LocalDate.now()
-        val repo = DonRepository.get(rule.activity)
-        runBlocking {
+        val repo = DonRepository.get(appContext)
+        background {
             repo.completeOnboarding(
                 salary = 3_300_000,
                 payDay = today.minusDays(14).dayOfMonth,
@@ -166,7 +190,7 @@ class AppFlowTest {
                     DonRepository.AccountDraft("신용카드", AccountType.CARD, -320_000),
                 ),
             )
-            val ids = DonDatabase.get(rule.activity).dao().accountsNow().associate { it.name to it.id }
+            val ids = DonDatabase.get(appContext).dao().accountsNow().associate { it.name to it.id }
             val sample = listOf(
                 Triple(14, 4_500L, "스타벅스"), Triple(14, 9_000L, "김밥천국"), Triple(13, 23_000L, "배달의민족"),
                 Triple(13, 1_450L, "지하철"), Triple(12, 68_000L, "이마트"), Triple(12, 4_800L, "메가커피"),
@@ -221,8 +245,8 @@ class AppFlowTest {
     @Test
     fun 모의_쇼핑과_집() {
         val today = LocalDate.now()
-        val repo = DonRepository.get(rule.activity)
-        runBlocking {
+        val repo = DonRepository.get(appContext)
+        background {
             repo.completeOnboarding(3_300_000, today.minusDays(9).dayOfMonth, listOf(FixedExpense("월세", 700_000)), 400_000, DayOfWeek.MONDAY, today.minusDays(9), null)
             val bought = listOf(
                 "나이키 에어포스1" to 129_000L, "오버핏 맨투맨" to 39_000L, "뉴발란스 530" to 109_000L, "에어팟 프로" to 359_000L,
@@ -233,7 +257,7 @@ class AppFlowTest {
                 repo.buyMock(n, p, com.simbio.don.game.ItemKind.guess(n), "쿠팡", today.minusDays((9 - i % 6).toLong()), java.time.LocalDateTime.now())
             }
             // 지난 주들이 결산돼 집에 도착한 상태로 만든다
-            val dao = DonDatabase.get(rule.activity).dao()
+            val dao = DonDatabase.get(appContext).dao()
             dao.updateMocks(dao.mockPurchasesNow().map { it.copy(status = com.simbio.don.game.PurchaseStatus.DELIVERED.name) })
             repo.buyMock("스타벅스 텀블러", 35_000, com.simbio.don.game.ItemKind.LIVING, "스타벅스", today, java.time.LocalDateTime.now())
         }
@@ -264,8 +288,8 @@ class AppFlowTest {
     @Test
     fun 캐릭터_꾸미기() {
         val today = LocalDate.now()
-        val repo = DonRepository.get(rule.activity)
-        runBlocking {
+        val repo = DonRepository.get(appContext)
+        background {
             repo.completeOnboarding(3_300_000, today.minusDays(9).dayOfMonth, emptyList(), 400_000, DayOfWeek.MONDAY, today.minusDays(9), null)
         }
         waitText("실제 내 돈 · 이번 주")
@@ -293,7 +317,9 @@ class AppFlowTest {
         shot("29_dress_hat")
         rule.onNodeWithText("이 모습으로 저장").performClick()
         waitText("모의 지갑")
-        val look = runBlocking { DonDatabase.get(rule.activity).dao().houseNow() }!!.look.let { com.simbio.don.game.CharacterLook.decode(it) }
+        // 저장은 비동기라 기다렸다 읽는다
+        rule.waitUntil(5_000) { readDb { houseNow() }?.look?.contains("hair=long") == true }
+        val look = readDb { houseNow() }!!.look.let { com.simbio.don.game.CharacterLook.decode(it) }
         assertEquals("big", look.eyes)
         assertEquals("초록", look.eyeColor)
         assertEquals("long", look.hair)
@@ -307,8 +333,8 @@ class AppFlowTest {
     @Test
     fun 찜하기와_검색() {
         val today = LocalDate.now()
-        val repo = DonRepository.get(rule.activity)
-        runBlocking {
+        val repo = DonRepository.get(appContext)
+        background {
             repo.completeOnboarding(3_300_000, today.minusDays(5).dayOfMonth, listOf(FixedExpense("월세", 700_000)), 400_000, DayOfWeek.MONDAY, today.minusDays(5), null)
             listOf(4_500L to "스타벅스", 9_000L to "김밥천국", 5_000L to "스타벅스", 3_200L to "CU").forEachIndexed { i, (a, l) ->
                 repo.addManual(today.minusDays(i.toLong() % 3), a, l, EntryType.SPEND)

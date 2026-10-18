@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from palette import PALETTE  # noqa: E402
 import room  # noqa: E402
 import sprites  # noqa: E402
-from v3 import char3, export3  # noqa: E402
+from v3 import char3, export3, lib as lib3  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "app/src/main/res/drawable-nodpi")
@@ -173,6 +173,8 @@ def main():
     if preview:
         os.makedirs(preview, exist_ok=True)
         make_sheet(outputs, os.path.join(preview, "sheet.png"))
+        # 캐릭터 v3: 남녀 기본 모습 × 표정 7
+        lib3.sheet(char3.preview(), os.path.join(preview, "characters.png"), scale=6, cols=len(char3.MOOD_FACE))
         bg = Image.new("RGBA", icon.size, room.rgba("#346AFF"))
         bg.alpha_composite(icon)
         bg.resize((54 * 6, 54 * 6), Image.NEAREST).save(os.path.join(preview, "icon.png"))

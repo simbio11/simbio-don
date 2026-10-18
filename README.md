@@ -4,6 +4,7 @@
 
 가계부 + 예산형 소비 시뮬레이션. 결제·입금 알림으로 가계부(일일·달력·주별·월별, 자산·이체)를 저절로 적고,
 월급을 주 단위 예산으로 나눠 매주 결산한다. 사고 싶을 땐 가짜 돈으로 모의 쇼핑 — 산 물건이 내 방을 채운다.
+방에는 얼굴·머리·옷을 직접 꾸민 도트 캐릭터가 살고, 이번 달 형편에 따라 표정이 바뀐다.
 월급은 처음 한 번만 넣으면 월급날마다 새 달이 저절로 시작되고 입금 알림으로 금액을 맞춘다.
 
 - **형태**: Android 네이티브 앱 (Google Play 목표, 초기엔 개인용 APK)
@@ -21,6 +22,7 @@
 - `core/` — 순수 Kotlin 로직 (Android 의존 없음, 단위 테스트)
   - `budget/` — 월급날 기준 한 달(`PayCycle`), 주 예산 배분(`BudgetEngine`), 이월·예외 지출·결산 판정(`CycleLedger`, `Settlement`), 월급 입금 판별·고정 지출 날짜(`Payday`)
   - `notify/` — 결제 알림 규칙(앱 선택 → 키워드), 금액 추출, 중복·고정비 의심 판정(`ReviewPolicy`)
+  - `game/` — 모의 구매·집·기분, 캐릭터 모습(`CharacterLook`)
 - `app/` — Android 앱 (Kotlin · Jetpack Compose · Room), 쇼핑앱식 UI (`ui/kit`) + 게임 속 도트 그림 (`tools/pixelart`)
 - `tools/pixelart/` — 도트 그림 생성기 (`python3 tools/pixelart/make_art.py`) — [docs/art-spec.md](docs/art-spec.md)
   - `notify/PaymentListenerService` — 고른 앱의 결제 알림만 읽어 기기 안에서 기록

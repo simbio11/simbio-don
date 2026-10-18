@@ -36,12 +36,12 @@
 - 결과물: 부위마다 한 칸씩 담은 아틀라스 `px_char_atlas.png`(16칸 × n줄, 칸 24×36)와 `ui/pixel/CharacterParts.kt`(칸 번호·표식 색·고를 수 있는 색·부위 이름). 앱의 `ui/kit/CharacterRenderer`가 부위를 골라 색을 바꿔 겹치고, 모습·기분·동작마다 기억해 둔다
 - 걷기는 따로 그리지 않고 한쪽 다리를 한 줄 들어 올려 만든다, 깜빡임은 감은 눈으로 바꿔 그린다
 - 남자 기본: 짧은 머리·후드티·긴바지·운동화·진한 눈썹·동글 얼굴. 여자 기본: 긴 생머리·블라우스·치마·구두·왕눈+속눈썹·도톰한 입술·V라인. 부위는 남녀 상관없이 고를 수 있다
-- 미리보기: `python3 tools/pixelart/v3/preview.py out.png` 같은 스크립트 없이도 `make_art.py <폴더>`의 `sheet.png`에 남녀 기본 모습이 나온다
+- 미리보기: `python3 tools/pixelart/make_art.py <폴더>` → `characters.png`(남녀 기본 모습 × 표정 7), `scene_*.png`(방 안 캐릭터)
 
 ## 다시 만들기
 
 ```sh
-python3 tools/pixelart/make_art.py /tmp/preview   # 미리보기: sheet.png, scene_{day,sunset,night}.png
+python3 tools/pixelart/make_art.py /tmp/preview   # 미리보기: sheet.png, characters.png, scene_{day,sunset,night}.png
 ```
 
 격자나 방 그리는 코드를 고친 뒤 다시 돌리면 PNG와 `RoomLayout.kt`가 함께 바뀐다 (안 쓰는 옛 `px_*.png`는 지운다).
