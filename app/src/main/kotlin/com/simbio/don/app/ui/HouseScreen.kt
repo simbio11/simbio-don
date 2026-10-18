@@ -1,5 +1,6 @@
 package com.simbio.don.app.ui
 
+import com.simbio.don.game.PurchaseStatus
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,9 @@ fun HouseScreen(
     onRecycle: () -> Unit,
     onDiscard: (Set<Long>) -> Unit,
     onDress: () -> Unit = {},
+    onMiles: () -> Unit = {},
+    onFurniture: () -> Unit = {},
+    onCards: () -> Unit = {},
     onBuyWish: (MockItem) -> Unit = {},
     onGiveUpWish: (MockItem) -> Unit = {},
     weather: Weather? = null,
@@ -99,7 +103,6 @@ fun HouseScreen(
                 if (house.isCluttered) WarnLine("수납이 넘쳐서 바닥에 ${house.floor.size}개가 쌓였어요")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onShop, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) { Text("모의 쇼핑") }
-                    SubButton(onClick = onDress, containerColor = DonColors.Surface) { Text("꾸미기") }
                     if (house.trash.isNotEmpty()) {
                         SubButton(onClick = onRecycle, containerColor = DonColors.Surface) {
                             Icon(UiIcon.RECYCLE, 18.dp, DonColors.Good)
@@ -112,6 +115,15 @@ fun HouseScreen(
                 }
             }
         }
+
+        MilesCard(
+            home.miles,
+            cardCount = home.mockItems.count { it.payload == null && it.status in setOf(PurchaseStatus.DELIVERED, PurchaseStatus.DISCARDED, PurchaseStatus.RECYCLED) },
+            onMiles = onMiles,
+            onFurniture = onFurniture,
+            onCards = onCards,
+            onDress = onDress,
+        )
 
         if (house.wouldHaveCost > 0) {
             Row(
@@ -157,7 +169,6 @@ fun HouseScreen(
                 Text("이번 주 실제 예산을 지키면 전부 도착하고, 넘기면 넘긴 만큼 반품돼요.", fontSize = 12.sp, color = DonColors.InkMuted)
             }
         }
-        Text("수납장 사기·이사는 다음 버전(마일리지)에서 열려요.", fontSize = 11.sp, color = DonColors.InkMuted, modifier = Modifier.padding(horizontal = 4.dp))
         Spacer(Modifier.height(88.dp))
     }
 

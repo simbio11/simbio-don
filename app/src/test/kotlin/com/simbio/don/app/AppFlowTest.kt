@@ -293,31 +293,34 @@ class AppFlowTest {
         val repo = DonRepository.get(appContext)
         background {
             repo.completeOnboarding(3_300_000, today.minusDays(9).dayOfMonth, emptyList(), 400_000, DayOfWeek.MONDAY, today.minusDays(9), null)
+            // 원피스·비니는 옷장에서 마일로 산다
+            DonDatabase.get(appContext).dao().insertMileTx(com.simbio.don.app.data.MileTxEntity(epochDay = today.toEpochDay(), amount = 2_000, kind = "EARN"))
         }
         waitText("실제 내 돈 · 이번 주")
         rule.onNodeWithText("내 집").performClick()
-        waitText("꾸미기")
-        rule.onNodeWithText("꾸미기").performClick()
-        waitText("캐릭터 꾸미기")
+        waitText("옷장·뷰티샵")
+        rule.onNodeWithText("옷장·뷰티샵").performScrollTo().performClick()
+        waitText("옷장 · 뷰티샵")
         rule.onNodeWithText("바뀐 게 없어요").assertExists()
         shot("25_dress_face")
         rule.onNodeWithText("눈").performClick()
-        rule.onNodeWithText("왕눈").performScrollTo().performClick()
-        rule.onNodeWithContentDescription("초록").performScrollTo().performClick()
+        rule.onNodeWithText("왕눈").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithContentDescription("초록").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         shot("26_dress_eyes")
         rule.onNodeWithText("머리").performClick()
-        rule.onNodeWithText("긴 생머리").performScrollTo().performClick()
-        rule.onNodeWithContentDescription("금발").performScrollTo().performClick()
+        rule.onNodeWithText("긴 생머리").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithContentDescription("금발").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         shot("27_dress_hair")
         rule.onNodeWithText("옷").performClick()
-        rule.onNodeWithText("원피스").performScrollTo().performClick()
+        rule.onNodeWithText("원피스").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         waitText("원피스를 입으면 아래옷은 안 보여요.")
         shot("28_dress_clothes")
         rule.onNodeWithText("모자·소품").performClick()
-        rule.onNodeWithText("비니").performScrollTo().performClick()
+        rule.onNodeWithText("비니").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithText("슬퍼요").performScrollTo().performClick()
         shot("29_dress_hat")
-        rule.onNodeWithText("이 모습으로 저장").performClick()
+        waitText("첫 꾸미기라 공짜예요!")
+        rule.onNodeWithText("1,500마일로 바꾸기").performSemanticsAction(SemanticsActions.OnClick)
         waitText("모의 지갑")
         // 저장은 비동기라 기다렸다 읽는다
         rule.waitUntil(5_000) { readDb { houseNow() }?.look?.contains("hair=long") == true }
@@ -457,5 +460,70 @@ class AppFlowTest {
         shot("40_lock")
         "1234".forEach { rule.onNodeWithText(it.toString()).performClick() }
         waitText("실제 내 돈 · 이번 주")
+    }
+
+    /** 0.11 M2: 마일 카드 · 마일 키우기 · 가구점(이사·수납) · 카드 · 옷장·뷰티샵 */
+    @Test
+    fun 마일과_가게() {
+        val today = LocalDate.now()
+        val repo = DonRepository.get(appContext)
+        background {
+            repo.completeOnboarding(3_300_000, today.minusDays(9).dayOfMonth, listOf(FixedExpense("월세", 700_000)), 400_000, DayOfWeek.MONDAY, today.minusDays(9), null)
+            val dao = DonDatabase.get(appContext).dao()
+            dao.insertMileTx(com.simbio.don.app.data.MileTxEntity(epochDay = today.toEpochDay(), amount = 21_000, kind = "EARN", memo = "10월 1주 25% 아낌", refKey = "t#1:EARN"))
+            repo.buyMock("나이키 에어포스1", 129_000, com.simbio.don.game.ItemKind.SHOES, "쿠팡", today.minusDays(3), java.time.LocalDateTime.now())
+            repo.buyMock("아이스 아메리카노", 4_500, com.simbio.don.game.ItemKind.DRINK, null, today.minusDays(2), java.time.LocalDateTime.now())
+            dao.updateMocks(dao.mockPurchasesNow().mapIndexed { i, m -> m.copy(status = com.simbio.don.game.PurchaseStatus.DELIVERED.name, grade = if (i == 0) "LEGEND" else "RARE") })
+        }
+        waitText("실제 내 돈 · 이번 주")
+        rule.onNodeWithText("내 집").performClick()
+        waitText("21,000마일")
+        rule.onNodeWithText("21,000마일").performScrollTo()
+        shot("41_house_miles")
+
+        // 마일 키우기
+        rule.onNodeWithText("마일 키우기").performScrollTo().performClick()
+        waitText("지갑")
+        rule.onNode(hasSetTextAction() and hasText("마일")).performTextReplacement("5000")
+        rule.onNodeWithText("넣기").performClick()
+        waitText("키우기에 넣음")
+        shot("42_miles")
+        rule.onNodeWithContentDescription("뒤로").performClick()
+
+        // 가구점: 이사 + 수납 가구
+        waitText("가구점·이사")
+        rule.onNodeWithText("가구점·이사").performScrollTo().performClick()
+        waitText("투룸으로 이사하기")
+        shot("43_furniture_move")
+        rule.onNodeWithText("투룸으로 이사하기").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitUntil(5_000) { readDb { houseNow() }?.level == "TWO_ROOM" }
+        rule.onNodeWithText("수납 가구").performClick()
+        waitText("+3칸 · 800마일")
+        shot("44_furniture_storage")
+        rule.onNodeWithContentDescription("뒤로").performClick()
+
+        // 카드
+        waitText("카드 2")
+        rule.onNodeWithText("카드 2").performScrollTo().performClick()
+        waitText("카드 2장")
+        shot("45_cards")
+        rule.onNodeWithContentDescription("뒤로").performClick()
+
+        // 옷장·뷰티샵: 없는 옷은 마일 값, 첫 꾸미기는 공짜
+        waitText("옷장·뷰티샵")
+        rule.onNodeWithText("옷장·뷰티샵").performScrollTo().performClick()
+        waitText("옷장 · 뷰티샵")
+        rule.onNodeWithText("눈").performClick()
+        rule.onNodeWithText("왕눈").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        waitText("첫 꾸미기라 공짜예요!")
+        rule.onNodeWithText("옷").performClick()
+        rule.onNodeWithText("니트").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        waitText("옷장에서 새로 사는 것 600마일")
+        shot("46_dress_costs")
+        rule.onNodeWithText("600마일로 바꾸기").performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitUntil(5_000) { readDb { houseNow() }?.owned?.contains("top:knit") == true }
+        val h = readDb { houseNow() }!!
+        assertEquals("big", com.simbio.don.game.CharacterLook.decode(h.look).eyes)
+        assertEquals(false, h.freeMakeover)
     }
 }

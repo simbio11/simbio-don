@@ -118,6 +118,22 @@ fun SettlementScreen(
                 }
             }
 
+            // 이번 결산으로 받을 마일 (예산을 넘기면 0)
+            val earned = com.simbio.don.game.Miles.forWeek(result.savedBps, result.overspent, result.week.days, if (over) 0 else streakBefore + 1)
+            GameCard("게임 · 마일") {
+                if (earned.total > 0) {
+                    Text("+${miles(earned.total)}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DonColors.GameDeep)
+                    Text(
+                        "아낀 ${result.savedBps / 100}% × 100" + (if (result.week.days != 7) " · ${result.week.days}일 주" else "") +
+                            (if (earned.bonus > 0) " · 연속 보너스 +${earned.bonusBps / 100}%" else ""),
+                        fontSize = 12.sp,
+                        color = DonColors.InkSoft,
+                    )
+                } else {
+                    Text(if (over) "예산을 넘긴 주는 마일이 없어요." else "아낀 돈이 없어서 이번 주 마일은 없어요.", fontSize = 13.sp, color = DonColors.InkSoft)
+                }
+            }
+
             GameCard("게임 · 이번 주 모의 쇼핑") {
                 if (week.isEmpty()) {
                     Text("이번 주엔 모의로 산 게 없어요.", fontSize = 13.sp, color = DonColors.InkSoft)

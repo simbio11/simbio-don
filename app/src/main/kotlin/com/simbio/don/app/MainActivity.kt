@@ -47,6 +47,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.simbio.don.app.data.EntryEntity
 import com.simbio.don.app.data.HomeState
+import com.simbio.don.app.data.LookResult
 import com.simbio.don.app.data.QuickPick
 import com.simbio.don.app.data.toRule
 import com.simbio.don.app.lock.AppLock
@@ -58,28 +59,35 @@ import com.simbio.don.app.ui.AccountEditScreen
 import com.simbio.don.app.ui.AppState
 import com.simbio.don.app.ui.AssetsScreen
 import com.simbio.don.app.ui.BudgetsScreen
+import com.simbio.don.app.ui.CardsScreen
 import com.simbio.don.app.ui.CategoryManageScreen
+import com.simbio.don.app.ui.DayPhase
 import com.simbio.don.app.ui.DonColors
 import com.simbio.don.app.ui.DonTheme
 import com.simbio.don.app.ui.DressScreen
 import com.simbio.don.app.ui.EntryDraft
 import com.simbio.don.app.ui.EntryEditScreen
+import com.simbio.don.app.ui.FurnitureScreen
 import com.simbio.don.app.ui.GoalsScreen
 import com.simbio.don.app.ui.HomeScreen
 import com.simbio.don.app.ui.HouseScreen
 import com.simbio.don.app.ui.LedgerMode
 import com.simbio.don.app.ui.LedgerScreen
 import com.simbio.don.app.ui.MainViewModel
+import com.simbio.don.app.ui.MilesScreen
 import com.simbio.don.app.ui.MockShopScreen
 import com.simbio.don.app.ui.OnboardingScreen
+import com.simbio.don.app.ui.PixelRoom
 import com.simbio.don.app.ui.RecurringIncomeScreen
 import com.simbio.don.app.ui.ReviewScreen
+import com.simbio.don.app.ui.RoomThemes
 import com.simbio.don.app.ui.RuleEditScreen
 import com.simbio.don.app.ui.SalaryScreen
 import com.simbio.don.app.ui.SearchScreen
 import com.simbio.don.app.ui.SettingsScreen
 import com.simbio.don.app.ui.SettlementScreen
 import com.simbio.don.app.ui.StatsScreen
+import com.simbio.don.app.ui.ro
 import com.simbio.don.app.ui.kit.AddFab
 import com.simbio.don.app.ui.kit.LocalCharacterLook
 import com.simbio.don.app.ui.kit.TabBar
@@ -117,6 +125,9 @@ private sealed interface Overlay {
     data class Account(val id: Long) : Overlay
     data class EditAccount(val id: Long?) : Overlay
     data object Dress : Overlay
+    data object Miles : Overlay
+    data object Cards : Overlay
+    data object Furniture : Overlay
     data object Categories : Overlay
     data object RecurringIncome : Overlay
 
@@ -318,6 +329,9 @@ class MainActivity : ComponentActivity() {
                         home = home,
                         onShop = { overlay = Overlay.Shop(null) },
                         onDress = { overlay = Overlay.Dress },
+                        onMiles = { overlay = Overlay.Miles },
+                        onFurniture = { overlay = Overlay.Furniture },
+                        onCards = { overlay = Overlay.Cards },
                         onRecycle = { vm.recycle() },
                         onDiscard = { vm.discard(it) },
                         onBuyWish = { vm.buyWished(it.id) },
@@ -640,13 +654,49 @@ class MainActivity : ComponentActivity() {
             }
             Overlay.Dress -> DressScreen(
                 current = home.look,
-                onSave = {
-                    vm.saveLook(it)
-                    Toast.makeText(this, "새 모습으로 바꿨어요", Toast.LENGTH_SHORT).show()
-                    close()
+                owned = home.owned,
+                miles = home.miles.wallet,
+                wallet = home.wallet,
+                freeMakeover = home.freeMakeover,
+                onApply = { look, withMiles ->
+                    vm.applyLook(look, withMiles) { r ->
+                        Toast.makeText(
+                            this,
+                            when (r) {
+                                LookResult.SAVED -> "새 모습으로 바꿨어요"
+                                LookResult.SAVED_FREE -> "첫 꾸미기는 공짜! 새 모습으로 바꿨어요"
+                                LookResult.BOOKED -> "뷰티샵 예약했어요. 이번 주 결산 때 예산을 지키면 바뀌어요"
+                                LookResult.NOT_ENOUGH_MILES -> "마일이 모자라요"
+                                LookResult.NOT_ENOUGH_WALLET -> "모의 지갑이 모자라요"
+                            },
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        if (r != LookResult.NOT_ENOUGH_MILES && r != LookResult.NOT_ENOUGH_WALLET) close()
+                    }
                 },
                 onBack = close,
             )
+            Overlay.Furniture -> FurnitureScreen(
+                house = home.house,
+                setup = home.setup,
+                miles = home.miles.wallet,
+                themes = RoomThemes.all,
+                preview = { level, interior ->
+                    PixelRoom(home.house.copy(level = level), home.mood, phase = DayPhase.of(home.now.toLocalTime()), interior = interior)
+                },
+                onMove = { level ->
+                    vm.moveHouse(level) { ok -> Toast.makeText(this, if (ok) "${ro(level.label)} 이사했어요!" else "마일이 모자라요", Toast.LENGTH_SHORT).show() }
+                },
+                onStorage = { slot ->
+                    vm.buyStorage(slot) { ok -> Toast.makeText(this, if (ok) "${slot.label}이 커졌어요" else "마일이 모자라요", Toast.LENGTH_SHORT).show() }
+                },
+                onInterior = { part, theme, isDefault ->
+                    vm.chooseInterior(part, theme, isDefault) { ok -> if (!ok) Toast.makeText(this, "마일이 모자라요", Toast.LENGTH_SHORT).show() }
+                },
+                onBack = close,
+            )
+            Overlay.Miles -> MilesScreen(home.miles, onDeposit = { vm.depositMiles(it) }, onWithdraw = { vm.withdrawMiles(it) }, onBack = close)
+            Overlay.Cards -> CardsScreen(home.mockItems, home.salary, onBack = close)
             Overlay.Goals -> {
                 val all by vm.goals.collectAsStateWithLifecycle()
                 GoalsScreen(

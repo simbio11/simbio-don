@@ -158,6 +158,8 @@ fun PixelRoom(
     phase: DayPhase = remember { DayPhase.of(LocalTime.now()) },
     weather: Weather = Weather.CLEAR,
     onTap: ((RoomHit) -> Unit)? = null,
+    /** 고른 인테리어 색 (없으면 기본) */
+    interior: Map<com.simbio.don.game.Shop.Interior, String> = emptyMap(),
 ) {
     val room = ImageBitmap.imageResource(R.drawable.px_room_one_room)
     val overcast = weather.overcast

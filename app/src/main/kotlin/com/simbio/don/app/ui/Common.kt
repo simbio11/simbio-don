@@ -25,6 +25,14 @@ import java.util.Locale
 
 fun won(amount: Long) = Won.format(amount)
 
+/** 받침에 맞춘 "(으)로": 투룸으로, 아파트로, 서울로 */
+fun ro(word: String): String {
+    val c = word.lastOrNull() ?: return "로"
+    if (c !in '가'..'힣') return word + "로"
+    val jong = (c - '가') % 28
+    return word + if (jong == 0 || jong == 8) "로" else "으로"
+}
+
 fun dayName(d: DayOfWeek): String = d.getDisplayName(TextStyle.SHORT, Locale.KOREAN)
 
 fun shortDate(d: LocalDate): String = "${d.monthValue}/${d.dayOfMonth}(${dayName(d.dayOfWeek)})"

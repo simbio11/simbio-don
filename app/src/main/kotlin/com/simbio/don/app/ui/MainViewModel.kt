@@ -236,6 +236,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteInstallment(id: Long) = viewModelScope.launch { repo.deleteInstallment(id) }
     fun saveRecurringIncomes(items: List<com.simbio.don.app.data.RecurringIncomeEntity>) = viewModelScope.launch { repo.saveRecurringIncomes(items) }
 
+    // ── 마일·가게 ──
+    fun depositMiles(n: Long) = viewModelScope.launch { repo.depositMiles(n) }
+    fun withdrawMiles(n: Long) = viewModelScope.launch { repo.withdrawMiles(n) }
+    fun moveHouse(level: com.simbio.don.game.HouseLevel, done: (Boolean) -> Unit) = viewModelScope.launch { done(repo.moveHouse(level)) }
+    fun buyStorage(slot: com.simbio.don.game.Slot, done: (Boolean) -> Unit) = viewModelScope.launch { done(repo.buyStorage(slot)) }
+    fun chooseInterior(part: com.simbio.don.game.Shop.Interior, theme: String, isDefault: Boolean, done: (Boolean) -> Unit) =
+        viewModelScope.launch { done(repo.chooseInterior(part, theme, isDefault)) }
+    fun applyLook(look: com.simbio.don.game.CharacterLook, payWithMiles: Boolean, done: (com.simbio.don.app.data.LookResult) -> Unit) =
+        viewModelScope.launch { done(repo.applyLook(look, payWithMiles)) }
+
     /** 연간 통계에서 보는 해 */
     private val year = MutableStateFlow(LocalDate.now().year)
 

@@ -1,5 +1,7 @@
 package com.simbio.don.app.ui
 
+import com.simbio.don.game.Shop
+import com.simbio.don.game.Miles
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -52,22 +54,42 @@ private enum class DressTab(val label: String) {
     FACE("얼굴"), EYES("눈"), BROWS("눈썹"), NOSE_MOUTH("코·입"), HAIR("머리"), CLOTHES("옷"), HAT("모자·소품"),
 }
 
-/** 고를 칸 하나: 이름과 그 부위를 바꾼 모습 */
-private data class Choice(val label: String, val look: CharacterLook)
+/** 고를 칸 하나: 이름과 그 부위를 바꾼 모습, 옷장에서 사야 하면 마일 값 */
+private data class Choice(val label: String, val look: CharacterLook, val miles: Long = 0)
 
 /**
- * 캐릭터 꾸미기. 얼굴형·눈·눈썹·코·입(성형), 머리, 옷, 모자·소품을 고르고 색을 바꾼다.
- * 위 큰 그림으로 표정마다 어떻게 보이는지 바로 본다. [onSave]를 눌러야 저장된다.
+ * 캐릭터 꾸미기 = 옷장 + 뷰티샵. 얼굴형·눈·눈썹·코·입·머리(뷰티샵), 옷·모자·소품(옷장)을 고르고 색을 바꾼다.
+ * 위 큰 그림으로 표정마다 어떻게 보이는지 바로 본다.
+ *
+ * - 옷장: 가진 옷은 공짜로 갈아입고, 없는 옷은 마일로 산다. 색은 언제나 공짜.
+ * - 뷰티샵: 얼굴·머리를 바꾸면 시술 값. 모의 지갑으로 예약하면 이번 주 결산 때 예산을 지켜야 바뀌고,
+ *   마일로 내면 바로 바뀐다. 첫 꾸미기는 공짜.
  */
 @Composable
-fun DressScreen(current: CharacterLook, onSave: (CharacterLook) -> Unit, onBack: () -> Unit) {
+fun DressScreen(
+    current: CharacterLook,
+    owned: Set<String> = emptySet(),
+    miles: Long = 0,
+    wallet: Long = 0,
+    freeMakeover: Boolean = true,
+    onApply: (CharacterLook, Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
     var draft by remember(current) { mutableStateOf(current) }
     var tab by rememberSaveable { mutableStateOf(DressTab.FACE) }
     var mood by remember { mutableStateOf(Mood.CALM) }
+    var payWithMiles by remember { mutableStateOf(false) }
     val changed = draft != current
+    val procedures = Shop.procedures(current, draft)
+    val won = procedures.sumOf { it.won }
+    val clothesMiles = Shop.wardrobeNeeded(draft, owned).sumOf { Shop.wardrobeCost(it) }
+    val beautyMiles = if (procedures.isEmpty() || freeMakeover) 0 else Miles.ofWon(won)
+    val needMiles = clothesMiles + if (payWithMiles) beautyMiles else 0
+    val canPay = needMiles <= miles && (procedures.isEmpty() || freeMakeover || payWithMiles || won <= wallet)
+    fun cost(key: String) = if (key in owned) 0 else Shop.wardrobeCost(key)
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
-        BackBar("캐릭터 꾸미기", onBack)
+        BackBar("옷장 · 뷰티샵", onBack, trailing = { com.simbio.don.app.ui.kit.Badge(miles(miles), DonColors.GameDeep, modifier = Modifier.padding(end = 16.dp)) })
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -115,37 +137,70 @@ fun DressScreen(current: CharacterLook, onSave: (CharacterLook) -> Unit, onBack:
                 }
                 DressTab.CLOTHES -> {
                     val dress = CharacterParts.tops.firstOrNull { it.id == draft.top }?.flag == true
-                    Section("윗옷") { Choices(CharacterParts.tops.map { Choice(it.label, draft.copy(top = it.id)) }, draft, head = false) { draft = it } }
+                    Section("윗옷") { Choices(CharacterParts.tops.map { Choice(it.label, draft.copy(top = it.id), cost("top:${it.id}")) }, draft, head = false) { draft = it } }
                     Section("윗옷 색") { Swatches(CharacterParts.clothColors, draft.topColor) { draft = draft.copy(topColor = it) } }
                     Section("아래옷") {
                         if (dress) {
                             Text("원피스를 입으면 아래옷은 안 보여요.", fontSize = 13.sp, color = DonColors.InkMuted)
                         } else {
-                            Choices(CharacterParts.bottoms.map { Choice(it.label, draft.copy(bottom = it.id)) }, draft, head = false) { draft = it }
+                            Choices(CharacterParts.bottoms.map { Choice(it.label, draft.copy(bottom = it.id), cost("bottom:${it.id}")) }, draft, head = false) { draft = it }
                         }
                     }
                     if (!dress) Section("아래옷 색") { Swatches(CharacterParts.clothColors, draft.bottomColor) { draft = draft.copy(bottomColor = it) } }
-                    Section("신발") { Choices(CharacterParts.shoes.map { Choice(it.label, draft.copy(shoes = it.id)) }, draft, head = false) { draft = it } }
+                    Section("신발") { Choices(CharacterParts.shoes.map { Choice(it.label, draft.copy(shoes = it.id), cost("shoes:${it.id}")) }, draft, head = false) { draft = it } }
                     Section("신발 색") { Swatches(CharacterParts.clothColors, draft.shoesColor) { draft = draft.copy(shoesColor = it) } }
                 }
                 DressTab.HAT -> {
                     Section("모자") {
-                        val hats = listOf(Choice("없음", draft.copy(hat = null))) + CharacterParts.hats.map { Choice(it.label, draft.copy(hat = it.id)) }
+                        val hats = listOf(Choice("없음", draft.copy(hat = null))) + CharacterParts.hats.map { Choice(it.label, draft.copy(hat = it.id), cost("hat:${it.id}")) }
                         Choices(hats, draft, head = true) { draft = it }
                     }
                     if (draft.hat != null) Section("모자 색") { Swatches(CharacterParts.hatColors, draft.hatColor) { draft = draft.copy(hatColor = it) } }
                     Section("소품") {
-                        val accs = listOf(Choice("없음", draft.copy(acc = null))) + CharacterParts.accs.map { Choice(it.label, draft.copy(acc = it.id)) }
+                        val accs = listOf(Choice("없음", draft.copy(acc = null))) + CharacterParts.accs.map { Choice(it.label, draft.copy(acc = it.id), cost("acc:${it.id}")) }
                         Choices(accs, draft, head = true) { draft = it }
                     }
                 }
             }
             Spacer(Modifier.height(4.dp))
         }
-        Row(Modifier.fillMaxWidth().background(DonColors.Surface).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (changed) SubButton(onClick = { draft = current }) { Text("되돌리기") }
-            Button(onClick = { onSave(draft) }, enabled = changed, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) {
-                Text(if (changed) "이 모습으로 저장" else "바뀐 게 없어요")
+        Column(Modifier.fillMaxWidth().background(DonColors.Surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (procedures.isNotEmpty()) {
+                Text(
+                    "뷰티샵: " + procedures.joinToString(" · ") { "${it.label} ${won(it.won)}" },
+                    fontSize = 12.sp,
+                    color = DonColors.InkSoft,
+                )
+                if (freeMakeover) {
+                    Text("첫 꾸미기라 공짜예요!", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DonColors.Good)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = !payWithMiles, onClick = { payWithMiles = false }, label = { Text("모의 지갑 ${won(won)}") })
+                        FilterChip(selected = payWithMiles, onClick = { payWithMiles = true }, label = { Text(miles(beautyMiles)) })
+                    }
+                    Text(
+                        if (payWithMiles) "마일로 내면 바로 바뀌어요." else "모의 지갑으로 예약하면 이번 주 결산 때 예산을 지켜야 바뀌어요. 넘기면 취소돼요.",
+                        fontSize = 12.sp,
+                        color = DonColors.InkMuted,
+                    )
+                }
+            }
+            if (clothesMiles > 0) Text("옷장에서 새로 사는 것 ${miles(clothesMiles)}", fontSize = 12.sp, color = DonColors.InkSoft)
+            if (changed && !canPay) {
+                Text(if (needMiles > miles) "마일이 모자라요 (${miles(miles)} 있음)" else "모의 지갑이 모자라요", fontSize = 12.sp, color = DonColors.Warn)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (changed) SubButton(onClick = { draft = current }) { Text("되돌리기") }
+                Button(onClick = { onApply(draft, payWithMiles) }, enabled = changed && canPay, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) {
+                    Text(
+                        when {
+                            !changed -> "바뀐 게 없어요"
+                            procedures.isNotEmpty() && !freeMakeover && !payWithMiles -> "예약하기"
+                            needMiles > 0 -> "${ro(miles(needMiles))} 바꾸기"
+                            else -> "이 모습으로 저장"
+                        },
+                    )
+                }
             }
         }
     }
@@ -187,6 +242,7 @@ private fun Choices(choices: List<Choice>, draft: CharacterLook, head: Boolean, 
                             textAlign = TextAlign.Center,
                             maxLines = 1,
                         )
+                        if (c.miles > 0) Text("%,d마일".format(c.miles), fontSize = 10.sp, color = DonColors.Game, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
