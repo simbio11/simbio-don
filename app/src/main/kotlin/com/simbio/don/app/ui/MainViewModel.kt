@@ -10,8 +10,6 @@ import com.simbio.don.app.data.HomeState
 import com.simbio.don.app.data.MonthView
 import com.simbio.don.app.data.ReviewItemEntity
 import com.simbio.don.app.data.ReviewResolution
-import com.simbio.don.budget.FixedExpense
-import com.simbio.don.budget.WeekResult
 import com.simbio.don.game.ItemKind
 import com.simbio.don.notify.AppRule
 import com.simbio.don.app.weather.WeatherService
@@ -47,15 +45,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
+            repo.dailyUpkeep(LocalDateTime.now())
             while (true) {
                 delay(60_000)
-                clock.value = LocalDateTime.now()
+                val now = LocalDateTime.now()
+                // 날짜가 바뀌면 월급날·고정 지출 확인
+                if (now.toLocalDate() != clock.value.toLocalDate()) repo.dailyUpkeep(now)
+                clock.value = now
             }
         }
     }
 
     fun refreshClock() {
-        clock.value = LocalDateTime.now()
+        val now = LocalDateTime.now()
+        clock.value = now
+        viewModelScope.launch { repo.dailyUpkeep(now) }
         refreshWeather()
     }
 
@@ -124,13 +128,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         selectedNominal.value = null
     }
 
+    fun pickMonth(nominal: String) {
+        selectedNominal.value = nominal
+    }
+
     val learned = repo.learnedCount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     suspend fun learnedMap() = repo.learned()
     fun resetLearned() = viewModelScope.launch { repo.resetLearned() }
 
     fun save(draft: EntryDraft, existing: EntryEntity?) = viewModelScope.launch {
         if (existing == null) {
-            repo.addManual(draft.date, draft.amount, draft.label, draft.type, draft.category, draft.memo)
+            repo.addManual(
+                draft.date, draft.amount, draft.label, draft.type, draft.category, draft.memo,
+                draft.accountId, draft.toAccountId, draft.minuteOfDay, LocalDateTime.now(),
+            )
         } else {
             repo.updateEntry(
                 existing.copy(
@@ -140,6 +151,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     type = draft.type.name,
                     category = draft.category.name,
                     memo = draft.memo,
+                    accountId = draft.accountId,
+                    toAccountId = if (draft.type == com.simbio.don.budget.EntryType.TRANSFER) draft.toAccountId else null,
+                    minuteOfDay = draft.minuteOfDay,
                 ),
                 existing,
                 draft.applyToSameLabel,
@@ -147,24 +161,67 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ── 자산 ──
+    val accountBalances = repo.accountBalances.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun saveAccount(a: com.simbio.don.app.data.AccountEntity) = viewModelScope.launch { repo.saveAccount(a) }
+
+    fun deleteAccount(a: com.simbio.don.app.data.AccountEntity) = viewModelScope.launch { repo.deleteAccount(a) }
+
+    fun entriesOfAccount(id: Long) = repo.entriesOfAccount(id)
+
+    // ── 전체 검색 ──
+    val searchQuery = MutableStateFlow("")
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val searchResults: StateFlow<List<EntryEntity>> = searchQuery.flatMapLatest { repo.search(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ── 백업 ──
+    fun exportBackup(uri: Uri, done: (Boolean) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val ok = runCatching {
+            val json = repo.exportBackup(LocalDateTime.now())
+            getApplication<Application>().contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                ?: error("파일을 열 수 없어요")
+        }.isSuccess
+        kotlinx.coroutines.withContext(Dispatchers.Main) { done(ok) }
+    }
+
+    /** 복원 결과: null = 성공, 아니면 이유 */
+    fun restoreBackup(uri: Uri, done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val error = try {
+            val json = getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                ?: error("파일을 열 수 없어요")
+            repo.restoreBackup(json)
+            repo.dailyUpkeep(LocalDateTime.now())
+            null
+        } catch (e: com.simbio.don.app.data.Backup.BadBackup) {
+            e.message
+        } catch (e: Exception) {
+            "복원하지 못했어요"
+        }
+        kotlinx.coroutines.withContext(Dispatchers.Main) { done(error) }
+    }
+
     fun exportCsv(uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
         val csv = repo.exportCsv()
         getApplication<Application>().contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
     }
 
-    fun completeOnboarding(
-        salary: Long,
-        payDay: Int,
-        fixed: List<FixedExpense>,
-        savings: Long,
-        settlementDay: DayOfWeek,
-        firstCycleBudget: Long?,
-    ) = viewModelScope.launch {
-        repo.completeOnboarding(salary, payDay, fixed, savings, settlementDay, LocalDate.now(), firstCycleBudget)
+    fun completeOnboarding(setup: OnboardingResult) = viewModelScope.launch {
+        repo.completeOnboarding(
+            setup.salary, setup.payDay, setup.fixed, setup.savings, setup.settlementDay, LocalDate.now(),
+            setup.firstCycleBudget, setup.accounts,
+        )
     }
 
-    fun updateSettings(fixed: List<FixedExpense>, savings: Long, settlementDay: DayOfWeek, applyNow: Boolean) =
-        viewModelScope.launch { repo.updateSettings(fixed, savings, settlementDay, applyNow) }
+    fun updateSettings(
+        fixed: List<com.simbio.don.app.data.FixedExpenseEntity>,
+        savings: Long,
+        settlementDay: DayOfWeek,
+        applyNow: Boolean,
+        payDay: Int? = null,
+    ) = viewModelScope.launch { repo.updateSettings(fixed, savings, settlementDay, applyNow, payDay) }
 
     private val _deleted = MutableStateFlow<EntryEntity?>(null)
 
@@ -190,7 +247,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resolve(item: ReviewItemEntity, r: ReviewResolution) = viewModelScope.launch { repo.resolveReview(item, r) }
 
-    fun settle(week: WeekResult, returnIds: Set<Long>) =
+    fun settle(week: com.simbio.don.app.data.PendingWeek, returnIds: Set<Long>) =
         viewModelScope.launch { repo.settle(week, LocalDateTime.now(), returnIds) }
 
     fun buyMock(name: String, price: Long, kind: ItemKind, store: String?) =
@@ -206,10 +263,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun recycle() = viewModelScope.launch { repo.recycle() }
     fun discard(ids: Set<Long>) = viewModelScope.launch { repo.discard(ids) }
 
-    suspend fun suggestedSalary(home: HomeState): Long = repo.suggestedSalary(home.nextExpectedPayday)
+    fun updateSalary(amount: Long) = viewModelScope.launch { repo.updateSalary(amount) }
 
-    fun confirmSalary(amount: Long, start: LocalDate) =
-        viewModelScope.launch { repo.confirmSalary(amount, start, LocalDateTime.now()) }
+    fun dismissSalaryNotice() = viewModelScope.launch { repo.dismissSalaryNotice() }
 
     fun saveRule(rule: AppRule) = viewModelScope.launch { repo.saveRule(rule) }
     fun deleteRule(pkg: String) = viewModelScope.launch { repo.deleteRule(pkg) }

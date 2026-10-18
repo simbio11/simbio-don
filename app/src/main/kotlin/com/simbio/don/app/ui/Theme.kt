@@ -58,6 +58,11 @@ object DonColors {
     /** 별·뱃지 */
     val Highlight = Color(0xFFFFB800)
 
+    /** 가계부 금액: 수입 파랑, 지출 빨강, 이체 회색 (가계부 앱 관례) */
+    val Income = Color(0xFF346AFF)
+    val Expense = Color(0xFFE5484D)
+    val Transfer = Color(0xFF8B95A1)
+
     val Warn = Color(0xFFF04452)
     val WarnSurface = Color(0xFFFFF0F1)
     val Good = Color(0xFF14A06A)

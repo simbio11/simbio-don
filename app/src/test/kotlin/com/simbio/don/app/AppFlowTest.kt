@@ -15,6 +15,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import com.simbio.don.app.data.AccountType
 import com.simbio.don.app.data.DonRepository
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntryType
@@ -70,38 +71,72 @@ class AppFlowTest {
 
     @Test
     fun 초기_설정부터_지출_입력까지() {
-        waitText("처음 설정")
-        shot("01_onboarding")
+        waitText("시작하기")
+        shot("01_welcome")
+        rule.onNodeWithText("시작하기").performClick()
 
-        rule.onNodeWithText("이번 달 월급 (실수령액)").performTextReplacement("3300000")
+        waitText("월급을 알려주세요")
+        rule.onNodeWithText("월급 (세금 뗀 실수령액)").performTextReplacement("3300000")
         // 월급날을 열흘 전으로 두면 언제 돌려도 '한 달 중간에 시작' 흐름을 탄다
         rule.onNodeWithText("25").performTextReplacement(LocalDate.now().minusDays(10).dayOfMonth.toString())
+        shot("02_salary")
+        rule.onNodeWithText("다음").performClick()
+
+        waitText("매달 나가는 고정비")
         rule.onAllNodesWithText("금액").onFirst().performTextReplacement("1000000")
-        rule.onNodeWithText("매달 저축").performScrollTo().performTextReplacement("320000")
-        rule.onNodeWithText("이번 달은 이미 시작됐어요").performScrollTo()
-        rule.onNodeWithText("이대로 예산 짜기").performScrollTo().performClick()
+        rule.onAllNodesWithText("날").onFirst().performTextReplacement("1")
+        shot("03_fixed")
+        rule.onNodeWithText("다음").performClick()
+
+        waitText("먼저 떼어둘 저축")
+        rule.onNodeWithText("매달 저축").performTextReplacement("320000")
+        shot("04_savings")
+        rule.onNodeWithText("다음").performClick()
+
+        waitText("이번 달은 이미 시작됐어요")
+        rule.onNodeWithText("통장 잔액으로").performClick()
+        rule.onNodeWithText("지금 생활비 통장·현금 잔액").performTextReplacement("1500000")
+        shot("05_this_month")
+        rule.onNodeWithText("다음").performClick()
+
+        waitText("자산 잔액 (선택)")
+        shot("06_assets_setup")
+        rule.onNodeWithText("다음").performClick()
+
+        waitText("거의 다 됐어요")
+        shot("07_finish")
+        rule.onNodeWithText("이대로 시작하기").performClick()
 
         waitText("실제 내 돈 · 이번 주")
         rule.onNodeWithText("결제 알림 자동 기록이 꺼져 있어요").assertExists()
         rule.onNodeWithText("지난주 결산이 준비됐어요").assertDoesNotExist()
 
-        rule.onNodeWithContentDescription("지출 입력").performClick()
-        waitText("어디에 썼나요")
+        rule.onNodeWithContentDescription("가계부 쓰기").performClick()
+        waitText("내용 (어디에 썼나요)")
         rule.onNode(hasSetTextAction() and hasText("금액")).performTextReplacement("4500")
-        rule.onNodeWithText("어디에 썼나요").performTextReplacement("스타벅스")
+        rule.onNodeWithText("내용 (어디에 썼나요)").performTextReplacement("스타벅스")
         // 가게 이름으로 카테고리가 골라진다
         rule.onNode(hasText("카페·간식") and isSelected()).assertExists()
-        shot("02_add_entry")
+        shot("08_add_entry")
         rule.onNodeWithText("저장").performClick()
 
         waitText("−4,500원")
-        rule.onNodeWithText("내역").performClick()
-        waitText("이번 달 4,500원 썼어요")
+        rule.onNodeWithText("가계부").performClick()
+        waitText("일일")
+        shot("09_ledger_daily")
+        rule.onNodeWithText("달력").performClick()
+        shot("09b_ledger_calendar")
+        rule.onNodeWithText("월별").performClick()
+        shot("09c_ledger_monthly")
         rule.onNodeWithText("통계").performClick()
-        waitText("지출 속도")
-        rule.onNodeWithText("설정").performClick()
+        waitText("카테고리별")
+        rule.onNodeWithText("자산").performClick()
+        waitText("순자산")
+        shot("10_assets")
+        rule.onNodeWithText("홈").performClick()
+        rule.onNodeWithContentDescription("설정").performClick()
         waitText("알림 읽을 앱")
-        shot("06_settings")
+        shot("11_settings")
     }
 
     /** 2주쯤 쓴 상태를 만들어 화면을 찍는다. */
@@ -113,12 +148,18 @@ class AppFlowTest {
             repo.completeOnboarding(
                 salary = 3_300_000,
                 payDay = today.minusDays(14).dayOfMonth,
-                fixed = listOf(FixedExpense("월세", 700_000), FixedExpense("통신·보험", 280_000)),
+                fixed = listOf(FixedExpense("월세", 700_000, today.minusDays(10).dayOfMonth), FixedExpense("통신·보험", 280_000, today.minusDays(3).dayOfMonth)),
                 savings = 400_000,
                 settlementDay = DayOfWeek.MONDAY,
                 today = today.minusDays(14),
                 firstCycleBudget = null,
+                accounts = listOf(
+                    DonRepository.AccountDraft("현금", AccountType.CASH, 80_000),
+                    DonRepository.AccountDraft("생활비 통장", AccountType.BANK, 1_850_000),
+                    DonRepository.AccountDraft("신용카드", AccountType.CARD, -320_000),
+                ),
             )
+            val ids = DonDatabase.get(rule.activity).dao().accountsNow().associate { it.name to it.id }
             val sample = listOf(
                 Triple(14, 4_500L, "스타벅스"), Triple(14, 9_000L, "김밥천국"), Triple(13, 23_000L, "배달의민족"),
                 Triple(13, 1_450L, "지하철"), Triple(12, 68_000L, "이마트"), Triple(12, 4_800L, "메가커피"),
@@ -128,28 +169,44 @@ class AppFlowTest {
                 Triple(4, 6_000L, "동네빵집"), Triple(3, 31_000L, "배달의민족"), Triple(2, 4_500L, "스타벅스"),
                 Triple(1, 18_000L, "국밥"), Triple(0, 3_200L, "CU"),
             )
-            sample.forEach { (ago, amount, label) -> repo.addManual(today.minusDays(ago.toLong()), amount, label, EntryType.SPEND) }
-            repo.addManual(today.minusDays(6), 100_000, "친구 결혼식", EntryType.EXCEPTION, Category.EVENT)
+            sample.forEachIndexed { i, (ago, amount, label) ->
+                val account = if (i % 3 == 0) ids["현금"] else ids["신용카드"]
+                repo.addManual(today.minusDays(ago.toLong()), amount, label, EntryType.SPEND, accountId = account, minuteOfDay = 9 * 60 + i * 37 % 600)
+            }
+            repo.addManual(today.minusDays(6), 100_000, "친구 결혼식", EntryType.EXCEPTION, Category.EVENT, accountId = ids["생활비 통장"])
+            repo.addManual(today.minusDays(4), 150_000, "중고거래", EntryType.INCOME, Category.SIDE_INCOME, accountId = ids["생활비 통장"])
+            repo.addManual(today.minusDays(2), 100_000, "ATM 출금", EntryType.TRANSFER, accountId = ids["생활비 통장"], toAccountId = ids["현금"])
+            // 나가는 날이 지난 고정 지출은 앱을 켤 때 적힌다
+            repo.dailyUpkeep(java.time.LocalDateTime.now())
         }
         waitText("실제 내 돈 · 이번 주")
-        shot("10_home")
+        shot("12_home")
         rule.onNodeWithText("최근 내역").performScrollTo()
-        shot("11_home_bottom")
-        rule.onNodeWithText("내역").performClick()
-        waitText("칸 색이 진할수록 그날 많이 썼어요. 날짜를 누르면 그날 내역만 봐요.")
-        shot("12_history")
+        shot("13_home_bottom")
+        rule.onNodeWithText("가계부").performClick()
+        waitText("일일")
+        shot("14_ledger_daily")
+        rule.onNodeWithText("달력").performClick()
+        shot("15_ledger_calendar")
+        rule.onNodeWithText("주별").performClick()
+        shot("16_ledger_weekly")
         rule.onNodeWithText("통계").performClick()
-        waitText("지출 속도")
-        shot("13_stats")
-        rule.onNodeWithText("카테고리별").performScrollTo()
-        shot("14_stats_categories")
-        rule.onNodeWithText("주별 예산").performScrollTo()
-        shot("15_stats_weeks")
+        waitText("카테고리별")
+        shot("17_stats")
+        rule.onNodeWithText("생활비 쓰는 속도").performScrollTo()
+        shot("18_stats_pace")
+        rule.onNodeWithText("자산").performClick()
+        waitText("순자산")
+        shot("19_assets")
+        rule.onNodeWithText("생활비 통장").performClick()
+        waitText("이체 적기")
+        shot("19b_account")
+        rule.onNodeWithContentDescription("뒤로").performClick()
         rule.onNodeWithText("홈").performClick()
         waitText("결산 보기")
         rule.onNodeWithText("결산 보기").performClick()
         waitText("지난주 결산")
-        shot("16_settlement")
+        shot("19c_settlement")
     }
 
     /** 모의 쇼핑 → 결제 → 결산 → 집. */
@@ -217,13 +274,15 @@ class AppFlowTest {
         rule.onAllNodesWithText("안 살래요").onFirst().performClick()
         waitText("안 산 돈 899,000원")
 
-        rule.onNodeWithText("내역").performClick()
-        waitText("가게 이름·메모 검색")
-        rule.onNodeWithContentDescription("가게 이름·메모 검색").performTextInput("스타")
-        waitText("'스타' 2건 · 9,500원")
-        shot("32_history_search")
+        rule.onNodeWithText("가계부").performClick()
+        waitText("일일")
+        rule.onNodeWithContentDescription("검색").performClick()
+        rule.onNodeWithContentDescription("내용·메모·금액으로 찾기").performTextInput("스타")
+        waitText("2건 · 지출 9,500원")
+        shot("32_search")
+        rule.onNodeWithContentDescription("뒤로").performClick()
 
-        rule.onNodeWithContentDescription("지출 입력").performClick()
+        rule.onNodeWithContentDescription("가계부 쓰기").performClick()
         waitText("자주 쓰는 곳")
         rule.onNodeWithText("스타벅스 · 4,500원").performClick()
         rule.onNode(hasText("카페·간식") and isSelected()).assertExists()

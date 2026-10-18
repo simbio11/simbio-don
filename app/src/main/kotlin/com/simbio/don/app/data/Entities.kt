@@ -16,14 +16,60 @@ data class SettingsEntity(
     val pendingSettlementDay: Int? = null,
 )
 
+/** 고정 지출. [day]를 정하면 그날 가계부에 자동으로 적는다 (그 전에 결제 알림이 오면 알림으로). */
 @Entity(tableName = "fixed_expense")
 data class FixedExpenseEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val amount: Long,
+    /** 매달 나가는 날 (1~31, 모르면 null) */
+    val day: Int? = null,
+    /** 빠져나가는 자산 */
+    val accountId: Long? = null,
+    @ColumnInfo(defaultValue = "LIVING") val category: String = "LIVING",
+    /** 이미 적은 달 (그 달 기록을 지워도 다시 적지 않게) */
+    val doneNominal: String? = null,
 )
 
-/** 한 주기(월급날 ~ 다음 월급날 전날). 월급날마다 사용자가 확인해서 만든다. */
+/** 월급이 어디서 왔는지 */
+enum class SalarySource {
+    /** 처음 설정에서 넣음 */
+    ONBOARDING,
+
+    /** 월급 입금 알림(또는 직접 적은 월급 수입)으로 맞춤 */
+    NOTIFICATION,
+
+    /** 새 달이 됐지만 입금을 아직 못 봐서 지난달 월급으로 둠 */
+    ESTIMATED,
+
+    /** 사용자가 고침 */
+    MANUAL,
+}
+
+/** 자산 종류 */
+enum class AccountType(val label: String) {
+    CASH("현금"),
+    BANK("은행"),
+    CARD("카드"),
+    ETC("기타"),
+}
+
+/** 자산 (현금·통장·카드). 잔액 = 처음 잔액 + 이 자산으로 적은 수입·지출·이체. */
+@Entity(tableName = "account")
+data class AccountEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    /** [AccountType] 이름 */
+    val type: String,
+    /** 처음 잔액 (카드는 보통 0, 갚을 돈이 있으면 음수) */
+    val opening: Long,
+    val sortOrder: Int,
+    val hidden: Boolean = false,
+    /** 이 앱의 결제 알림은 이 자산으로 적는다 */
+    val packageName: String? = null,
+)
+
+/** 한 주기(월급날 ~ 다음 월급날 전날). 처음 설정 때 만들고, 그다음부터는 월급날마다 자동으로 만든다. */
 @Entity(tableName = "cycle")
 data class CycleEntity(
     /** "2026-10" 형식 */
@@ -38,6 +84,10 @@ data class CycleEntity(
     val fixedTotal: Long,
     /** 한 달 중간에 처음 시작한 달: 주 예산으로 나눌 금액을 직접 정함 */
     val budgetOverride: Long? = null,
+    /** [SalarySource] 이름 */
+    @ColumnInfo(defaultValue = "MANUAL") val salarySource: String = SalarySource.MANUAL.name,
+    /** 새 달 시작 안내를 봤는지 */
+    @ColumnInfo(defaultValue = "1") val noticeShown: Boolean = true,
 )
 
 @Entity(tableName = "entry")
@@ -56,6 +106,14 @@ data class EntryEntity(
     /** com.simbio.don.budget.Category 이름 */
     @ColumnInfo(defaultValue = "ETC") val category: String = "ETC",
     @ColumnInfo(defaultValue = "") val memo: String = "",
+    /** 돈이 나가거나 들어온 자산 (이체면 보낸 자산) */
+    val accountId: Long? = null,
+    /** 이체 받은 자산 */
+    val toAccountId: Long? = null,
+    /** 시각 (0시부터 분, 모르면 null) */
+    val minuteOfDay: Int? = null,
+    /** 고정 지출에서 온 기록 */
+    val fixedId: Long? = null,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */

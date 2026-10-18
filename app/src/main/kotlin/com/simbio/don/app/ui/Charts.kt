@@ -326,79 +326,6 @@ fun WeekMeters(results: List<WeekResult>, today: LocalDate) {
     }
 }
 
-/**
- * 주기 달력. 칸 색은 그날 지출 크기(한 색 4단계), 금액은 줄여서 표시.
- * 이번 주기 밖 날짜는 비워 둔다.
- */
-@Composable
-fun MonthCalendar(
-    start: LocalDate,
-    end: LocalDate,
-    weekStart: DayOfWeek,
-    daily: Map<LocalDate, Long>,
-    today: LocalDate,
-    selected: LocalDate?,
-    onSelect: (LocalDate) -> Unit,
-) {
-    val first = start.minusDays(((start.dayOfWeek.value - weekStart.value + 7) % 7).toLong())
-    val max = daily.values.maxOrNull()?.coerceAtLeast(1) ?: 1
-    val days = generateSequence(first) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
-    val rows = days.chunked(7)
-    Column {
-        Row(Modifier.fillMaxWidth()) {
-            (0..6).forEach { i ->
-                Text(
-                    dayName(weekStart.plus(i.toLong())),
-                    fontSize = 11.sp,
-                    color = ChartColors.InkMuted,
-                    modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
-        }
-        rows.forEach { week ->
-            Row(Modifier.fillMaxWidth()) {
-                (0..6).forEach { i ->
-                    val d = week.getOrNull(i)
-                    Box(Modifier.weight(1f).aspectRatio(0.9f).padding(1.5.dp)) {
-                        if (d != null && !d.isBefore(start)) DayCell(d, daily[d] ?: 0, max, d == today, d == selected) { onSelect(d) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DayCell(d: LocalDate, amount: Long, max: Long, isToday: Boolean, isSelected: Boolean, onClick: () -> Unit) {
-    val bin = when {
-        amount <= 0 -> -1
-        else -> ((amount.toDouble() / max) * 4).toInt().coerceIn(0, 3)
-    }
-    val bg = if (bin < 0) Color.Transparent else ChartColors.Ramp[bin]
-    val ink = if (bin >= 2) Color.White else ChartColors.InkPrimary
-    val shape = RoundedCornerShape(8.dp)
-    Column(
-        Modifier.fillMaxWidth().aspectRatio(0.9f)
-            .clip(shape)
-            .background(bg)
-            .let { if (isSelected) it.border(2.dp, DonColors.Ink, shape) else it }
-            .clickable(onClick = onClick)
-            .padding(2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            if (d.dayOfMonth == 1) "${d.monthValue}/1" else d.dayOfMonth.toString(),
-            fontSize = 12.sp,
-            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-            color = if (bin < 0) ChartColors.InkSecondary else ink,
-        )
-        if (amount != 0L) Text(compactWon(amount), fontSize = 9.sp, color = if (bin < 0) ChartColors.InkSecondary else ink, maxLines = 1)
-        if (isToday) Box(Modifier.size(4.dp).clip(CircleShape).background(if (bin >= 2) Color.White else DonColors.Real))
-    }
-}
-
 /** 숫자 하나가 주인공인 칸. */
 @Composable
 fun StatTile(label: String, value: String, sub: String? = null, modifier: Modifier = Modifier) {
@@ -409,5 +336,116 @@ fun StatTile(label: String, value: String, sub: String? = null, modifier: Modifi
         Text(label, fontSize = 12.sp, color = ChartColors.InkMuted, maxLines = 1)
         Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = ChartColors.InkPrimary, maxLines = 1)
         sub?.let { Text(it, fontSize = 11.sp, color = ChartColors.InkMuted, maxLines = 1) }
+    }
+}
+
+/** 도넛 조각 색: 큰 순서대로 이 차례 (색약 검증한 순서), 나머지는 회색 "그 밖" */
+val DonutSlots = listOf(Color(0xFF2A78D6), Color(0xFFEB6834), Color(0xFF1BAF7A), Color(0xFFEDA100), Color(0xFFE87BA4))
+val DonutOther = Color(0xFFC4CAD1)
+
+/** 도넛 한 조각 */
+data class DonutPart(val label: String, val amount: Long, val color: Color)
+
+/** 카테고리 합계 → 도넛 조각 (5개 + 그 밖) */
+fun donutParts(totals: List<CategoryTotal>): List<DonutPart> {
+    val top = totals.take(DonutSlots.size).mapIndexed { i, t -> DonutPart(t.category.label, t.amount, DonutSlots[i]) }
+    val rest = totals.drop(DonutSlots.size).sumOf { it.amount }
+    return if (rest > 0) top + DonutPart("그 밖", rest, DonutOther) else top
+}
+
+/**
+ * 한눈에 보는 비율 도넛. 조각 사이 2dp 틈. 누르면 그 조각 금액·비율이 가운데에 보인다.
+ * 정확한 값은 아래 목록(범례)이 보여준다.
+ */
+@Composable
+fun DonutChart(parts: List<DonutPart>, centerLabel: String, modifier: Modifier = Modifier) {
+    val total = parts.sumOf { it.amount }.coerceAtLeast(1)
+    var selected by remember(parts) { mutableStateOf<Int?>(null) }
+    val gapColor = ChartColors.Surface
+    Box(modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+        Canvas(
+            Modifier.size(190.dp).pointerInput(parts) {
+                detectTapGestures { p ->
+                    val c = Offset(size.width / 2f, size.height / 2f)
+                    val dx = p.x - c.x
+                    val dy = p.y - c.y
+                    val r = kotlin.math.sqrt(dx * dx + dy * dy)
+                    if (r < size.width * 0.28f || r > size.width / 2f) { selected = null; return@detectTapGestures }
+                    // 12시 방향부터 시계 방향 각도
+                    var deg = Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
+                    if (deg < 0) deg += 360f
+                    var acc = 0f
+                    selected = parts.indexOfFirst { part ->
+                        acc += part.amount * 360f / total
+                        deg <= acc
+                    }.takeIf { it >= 0 }
+                }
+            },
+        ) {
+            val stroke = size.width * 0.17f
+            val inset = stroke / 2f
+            var start = -90f
+            parts.forEachIndexed { i, part ->
+                val sweep = part.amount * 360f / total
+                val grow = if (selected == i) stroke * 0.18f else 0f
+                drawArc(
+                    color = part.color,
+                    startAngle = start,
+                    sweepAngle = sweep,
+                    useCenter = false,
+                    topLeft = Offset(inset - grow / 2, inset - grow / 2),
+                    size = androidx.compose.ui.geometry.Size(size.width - inset * 2 + grow, size.height - inset * 2 + grow),
+                    style = Stroke(width = stroke + grow),
+                )
+                start += sweep
+            }
+            // 조각 사이 틈 (2dp, 바탕색)
+            if (parts.size > 1) {
+                var a = -90f
+                val c = Offset(size.width / 2f, size.height / 2f)
+                parts.forEach { part ->
+                    val rad = Math.toRadians(a.toDouble())
+                    val inner = size.width / 2f - stroke - inset
+                    val outer = size.width / 2f + 4f
+                    drawLine(
+                        gapColor,
+                        Offset(c.x + (inner * kotlin.math.cos(rad)).toFloat(), c.y + (inner * kotlin.math.sin(rad)).toFloat()),
+                        Offset(c.x + (outer * kotlin.math.cos(rad)).toFloat(), c.y + (outer * kotlin.math.sin(rad)).toFloat()),
+                        strokeWidth = 2.dp.toPx(),
+                    )
+                    a += part.amount * 360f / total
+                }
+            }
+        }
+        val s = selected?.let { parts.getOrNull(it) }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(s?.label ?: centerLabel, fontSize = 12.sp, color = ChartColors.InkMuted)
+            Text(compactWon(s?.amount ?: parts.sumOf { it.amount }), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ChartColors.InkPrimary)
+            if (s != null) Text("${s.amount * 100 / total}%", fontSize = 12.sp, color = ChartColors.InkSecondary)
+        }
+    }
+}
+
+/** 도넛 범례 겸 표: 색 · 아이콘 · 이름 · 비율 · 금액. 누르면 그 카테고리 내역 */
+@Composable
+fun DonutLegend(totals: List<CategoryTotal>, onClick: ((com.simbio.don.budget.Category) -> Unit)?) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        totals.forEachIndexed { i, t ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                    .let { if (onClick != null) it.clickable { onClick(t.category) } else it }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(DonutSlots.getOrNull(i) ?: DonutOther))
+                Spacer(Modifier.width(10.dp))
+                CategoryIcon(t.category, 32.dp)
+                Spacer(Modifier.width(10.dp))
+                Text(t.category.label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DonColors.Ink, modifier = Modifier.weight(1f))
+                Text("${t.shareBps / 100}%", fontSize = 13.sp, color = ChartColors.InkMuted)
+                Spacer(Modifier.width(10.dp))
+                Text(won(t.amount), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+            }
+        }
     }
 }

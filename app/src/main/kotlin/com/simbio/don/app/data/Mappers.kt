@@ -34,7 +34,7 @@ fun EntryEntity.toEntry() = Entry(
     category = Category.of(category),
 )
 
-fun FixedExpenseEntity.toFixed() = FixedExpense(name, amount)
+fun FixedExpenseEntity.toFixed() = FixedExpense(name, amount, day)
 
 fun AppRuleEntity.toRule() = AppRule(packageName, displayName, enabled, KeywordRuleCodec.decode(keywordRules))
 

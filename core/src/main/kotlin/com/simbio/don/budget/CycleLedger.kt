@@ -14,9 +14,21 @@ enum class EntryType {
 
     /** 수입 (월급·부수입·용돈 등) — 가계부에만 적고 주 예산은 건드리지 않는다 */
     INCOME,
+
+    /** 고정 지출 (월세·통신비 등) — 월급에서 미리 뺐으므로 가계부 지출에만 들어가고 주 예산은 그대로 */
+    FIXED,
+
+    /** 내 자산끼리 옮긴 돈 (통장 → 현금, 카드값 내기) — 수입도 지출도 아니다 */
+    TRANSFER,
 }
 
-enum class EntrySource { NOTIFICATION, MANUAL }
+enum class EntrySource {
+    NOTIFICATION,
+    MANUAL,
+
+    /** 고정 지출을 정한 날에 자동으로 적은 것 */
+    RECURRING,
+}
 
 data class Entry(
     val date: LocalDate,
@@ -85,7 +97,7 @@ data class CycleLedger(val plan: CyclePlan, val entries: List<Entry> = emptyList
                 when (it.type) {
                     EntryType.SPEND -> it.amount
                     EntryType.REFUND -> -it.amount
-                    EntryType.EXCEPTION, EntryType.INCOME -> 0L
+                    EntryType.EXCEPTION, EntryType.INCOME, EntryType.FIXED, EntryType.TRANSFER -> 0L
                 }
             }
             WeekResult(week, carry, spent, overflow[i]).also { carry = it.carryOut }

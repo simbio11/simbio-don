@@ -15,11 +15,14 @@ data class CycleSummary(
     val disposable: Long,
     /** 먼저 떼어둔 저축 */
     val savings: Long,
+    /** 생활비로 쓴 돈 (고정 지출 뺌) — 생활비 예산과 견준다 */
     val spent: Long,
     val income: Long,
     /** 이 달에 모은 돈 = 먼저 뗀 저축 + 남은 생활비 (지난 달은 마지막 주 남은 돈, 이번 달은 지금까지 아낀 돈). 0 아래로는 안 감 */
     val saved: Long,
     val isCurrent: Boolean,
+    /** 가계부 지출 (고정 지출 포함) */
+    val expense: Long = spent,
 )
 
 /** 저축 목표 하나의 진행 */
@@ -54,10 +57,11 @@ object Summaries {
                 cycle = cycle,
                 disposable = plan.disposable,
                 savings = c.savings,
-                spent = Stats.total(inCycle),
+                spent = Stats.livingTotal(inCycle),
                 income = Stats.income(inCycle),
                 saved = (c.savings + leftover).coerceAtLeast(0),
                 isCurrent = i == 0,
+                expense = Stats.total(inCycle),
             )
         }
 

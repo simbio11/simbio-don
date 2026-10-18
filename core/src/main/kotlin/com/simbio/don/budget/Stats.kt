@@ -20,24 +20,35 @@ data class SpendingPace(
 }
 
 /**
- * 가계부 통계. 실제로 나간 돈 기준이라 예외 지출도 포함하고, 환불은 그 카테고리에서 뺀다.
+ * 가계부 통계. 실제로 나간 돈 기준이라 예외·고정 지출도 포함하고, 환불은 그 카테고리에서 뺀다.
+ * 생활비([living])는 고정 지출을 뺀 것 — 주 예산·모의 지갑·지출 속도는 이것으로 본다.
  * (주 예산 판정은 [CycleLedger]가 따로 한다.)
  */
 object Stats {
 
-    /** 지출 쪽 금액 (환불은 빼고, 수입은 0) */
+    /** 가계부 지출 쪽 금액 (환불은 빼고, 수입·이체는 0, 고정 지출 포함) */
     fun signed(e: Entry): Long = when (e.type) {
         EntryType.REFUND -> -e.amount
-        EntryType.INCOME -> 0
+        EntryType.INCOME, EntryType.TRANSFER -> 0
         else -> e.amount
     }
 
+    /** 생활비 쪽 금액: 고정 지출은 월급에서 미리 뺐으므로 0 */
+    fun living(e: Entry): Long = if (e.type == EntryType.FIXED) 0 else signed(e)
+
+    /** 가계부 지출 합계 (고정 지출 포함) */
     fun total(entries: List<Entry>): Long = entries.sumOf { signed(it) }.coerceAtLeast(0)
+
+    /** 생활비로 쓴 돈 (고정 지출 뺌) */
+    fun livingTotal(entries: List<Entry>): Long = entries.sumOf { living(it) }.coerceAtLeast(0)
+
+    /** 고정 지출 합계 */
+    fun fixedTotal(entries: List<Entry>): Long = entries.filter { it.type == EntryType.FIXED }.sumOf { it.amount }
 
     /** 수입 합계 */
     fun income(entries: List<Entry>): Long = entries.filter { it.type == EntryType.INCOME }.sumOf { it.amount }
 
-    private fun spending(entries: List<Entry>) = entries.filter { it.type != EntryType.INCOME }
+    private fun spending(entries: List<Entry>) = entries.filter { it.type != EntryType.INCOME && it.type != EntryType.TRANSFER }
 
     /** 카테고리별 지출 (수입 제외) */
     fun byCategory(entries: List<Entry>): List<CategoryTotal> {
@@ -50,19 +61,38 @@ object Stats {
         }.sortedByDescending { it.amount }
     }
 
-    fun daily(entries: List<Entry>): Map<LocalDate, Long> =
-        spending(entries).groupBy { it.date }.mapValues { (_, l) -> l.sumOf { signed(it) } }.filterValues { it != 0L }
+    /** 날짜별 지출 ([livingOnly]면 고정 지출 뺌) */
+    fun daily(entries: List<Entry>, livingOnly: Boolean = false): Map<LocalDate, Long> =
+        spending(entries).groupBy { it.date }
+            .mapValues { (_, l) -> l.sumOf { if (livingOnly) living(it) else signed(it) } }
+            .filterValues { it != 0L }
 
+    /** 날짜별 수입 */
+    fun dailyIncome(entries: List<Entry>): Map<LocalDate, Long> =
+        entries.filter { it.type == EntryType.INCOME }.groupBy { it.date }.mapValues { (_, l) -> l.sumOf { it.amount } }
+
+    /** 수입 카테고리별 */
+    fun incomeByCategory(entries: List<Entry>): List<CategoryTotal> {
+        val groups = entries.filter { it.type == EntryType.INCOME }.groupBy { it.category }
+        val sum = groups.values.sumOf { l -> l.sumOf { it.amount } }
+        return groups.map { (c, l) ->
+            val a = l.sumOf { it.amount }
+            CategoryTotal(c, a, l.size, if (sum == 0L) 0 else (a * 10_000 / sum).toInt())
+        }.sortedByDescending { it.amount }
+    }
+
+    /** 생활비를 많이 쓴 곳 (고정 지출·이체 제외) */
     fun topPlaces(entries: List<Entry>, n: Int = 5): List<PlaceTotal> =
-        entries.filter { it.type != EntryType.REFUND && it.type != EntryType.INCOME }
+        entries.filter { it.type == EntryType.SPEND || it.type == EntryType.EXCEPTION }
             .groupBy { CategoryGuesser.key(it.label) }
             .map { (_, l) -> PlaceTotal(l.first().label, l.sumOf { it.amount }, l.size) }
             .sortedByDescending { it.amount }
             .take(n)
 
+    /** 생활비 지출 속도 (고정 지출 제외 — 생활비 예산과 견준다) */
     fun pace(entries: List<Entry>, start: LocalDate, end: LocalDate, budget: Long, today: LocalDate): SpendingPace {
         val days = (end.toEpochDay() - start.toEpochDay() + 1).toInt()
-        val perDay = daily(entries)
+        val perDay = daily(entries, livingOnly = true)
         var acc = 0L
         val cumulative = (0 until days).map { i -> acc += perDay[start.plusDays(i.toLong())] ?: 0; acc }
         val pace = (1..days).map { budget * it / days }

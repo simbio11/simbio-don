@@ -40,6 +40,20 @@ interface DonDao {
         insertFixedExpenses(items.map { it.copy(id = 0) })
     }
 
+    @Upsert
+    suspend fun upsertFixedExpense(f: FixedExpenseEntity): Long
+
+    @Query("DELETE FROM fixed_expense WHERE id NOT IN (:keep)")
+    suspend fun deleteFixedExcept(keep: List<Long>)
+
+    /** 고정 지출 목록 저장. id가 있는 것은 그대로 고쳐서, 이미 적은 기록과의 연결(fixedId)이 끊기지 않게 한다 */
+    @Transaction
+    suspend fun syncFixedExpenses(items: List<FixedExpenseEntity>) {
+        val kept = items.filter { it.id != 0L }.map { it.id }
+        if (kept.isEmpty()) clearFixedExpenses() else deleteFixedExcept(kept)
+        items.forEach { upsertFixedExpense(it) }
+    }
+
     // 주기
     // 최신 주기 = 가장 늦은 달(nominal "YYYY-MM"). 시작일로 고르면 한 달 중간에 시작한 첫 달과
     // 앞당겨 입금된 다음 달이 같은 날일 때 옛 달에 머문다
@@ -54,6 +68,9 @@ interface DonDao {
 
     @Query("SELECT * FROM cycle ORDER BY nominal DESC")
     fun cycles(): Flow<List<CycleEntity>>
+
+    @Query("SELECT * FROM cycle ORDER BY nominal DESC")
+    suspend fun cyclesNow(): List<CycleEntity>
 
     // 지출
     @Query("SELECT * FROM entry WHERE epochDay BETWEEN :from AND :to ORDER BY epochDay DESC, id DESC")
@@ -203,4 +220,83 @@ interface DonDao {
     // ── 여러 달 기록 (월별 추이·모은 돈) ──
     @Query("SELECT * FROM entry WHERE epochDay >= :from ORDER BY epochDay")
     fun entriesSince(from: Long): Flow<List<EntryEntity>>
+
+    // ── 자산 ──
+    @Query("SELECT * FROM account ORDER BY sortOrder, id")
+    fun accounts(): Flow<List<AccountEntity>>
+
+    @Query("SELECT * FROM account ORDER BY sortOrder, id")
+    suspend fun accountsNow(): List<AccountEntity>
+
+    @Upsert
+    suspend fun saveAccount(a: AccountEntity): Long
+
+    @Delete
+    suspend fun deleteAccount(a: AccountEntity)
+
+    @Query("UPDATE entry SET accountId = NULL WHERE accountId = :id")
+    suspend fun detachAccountFrom(id: Long)
+
+    @Query("UPDATE entry SET toAccountId = NULL WHERE toAccountId = :id")
+    suspend fun detachAccountTo(id: Long)
+
+    @Query("UPDATE fixed_expense SET accountId = NULL WHERE accountId = :id")
+    suspend fun detachAccountFixed(id: Long)
+
+    /** 잔액 계산용: 자산이 붙은 기록 */
+    @Query("SELECT * FROM entry WHERE accountId IS NOT NULL OR toAccountId IS NOT NULL")
+    fun accountEntries(): Flow<List<EntryEntity>>
+
+    @Query("SELECT * FROM entry WHERE accountId = :id OR toAccountId = :id ORDER BY epochDay DESC, id DESC")
+    fun entriesOfAccount(id: Long): Flow<List<EntryEntity>>
+
+    // ── 전체 검색 ──
+    @Query(
+        "SELECT * FROM entry WHERE label LIKE '%' || :q || '%' OR memo LIKE '%' || :q || '%' OR CAST(amount AS TEXT) = :q " +
+            "ORDER BY epochDay DESC, id DESC LIMIT 500",
+    )
+    fun search(q: String): Flow<List<EntryEntity>>
+
+    // ── 월급 입금 ──
+    @Query("SELECT * FROM entry WHERE type = 'INCOME' AND category = 'SALARY' AND epochDay BETWEEN :from AND :to ORDER BY amount DESC")
+    suspend fun salaryIncomeBetween(from: Long, to: Long): List<EntryEntity>
+
+    // ── 백업·복원 ──
+    @Query("SELECT * FROM fixed_expense") suspend fun allFixed(): List<FixedExpenseEntity>
+    @Query("SELECT * FROM cycle") suspend fun allCycles(): List<CycleEntity>
+    @Query("SELECT * FROM review_item") suspend fun allReviews(): List<ReviewItemEntity>
+    @Query("SELECT * FROM app_rule") suspend fun allRules(): List<AppRuleEntity>
+    @Query("SELECT * FROM settled_week") suspend fun allSettled(): List<SettledWeekEntity>
+    @Query("SELECT * FROM category_budget") suspend fun allCategoryBudgets(): List<CategoryBudgetEntity>
+    @Query("SELECT * FROM house") suspend fun allHouses(): List<HouseEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSettings(x: List<SettingsEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putFixed(x: List<FixedExpenseEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCycles(x: List<CycleEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putEntries(x: List<EntryEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putReviews(x: List<ReviewItemEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putRules(x: List<AppRuleEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSettled(x: List<SettledWeekEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCategoryRules(x: List<CategoryRuleEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putMocks(x: List<MockPurchaseEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putHouses(x: List<HouseEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCategoryBudgets(x: List<CategoryBudgetEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putGoals(x: List<SavingsGoalEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putAccounts(x: List<AccountEntity>)
+
+    @Query("DELETE FROM settings") suspend fun wipeSettings()
+    @Query("DELETE FROM fixed_expense") suspend fun wipeFixed()
+    @Query("DELETE FROM cycle") suspend fun wipeCycles()
+    @Query("DELETE FROM entry") suspend fun wipeEntries()
+    @Query("DELETE FROM review_item") suspend fun wipeReviews()
+    @Query("DELETE FROM income") suspend fun wipeIncome()
+    @Query("DELETE FROM app_rule") suspend fun wipeRules()
+    @Query("DELETE FROM seen_app") suspend fun wipeSeen()
+    @Query("DELETE FROM settled_week") suspend fun wipeSettled()
+    @Query("DELETE FROM category_rule") suspend fun wipeCategoryRules()
+    @Query("DELETE FROM mock_purchase") suspend fun wipeMocks()
+    @Query("DELETE FROM house") suspend fun wipeHouses()
+    @Query("DELETE FROM category_budget") suspend fun wipeCategoryBudgets()
+    @Query("DELETE FROM savings_goal") suspend fun wipeGoals()
+    @Query("DELETE FROM account") suspend fun wipeAccounts()
 }

@@ -3,6 +3,7 @@ package com.simbio.don.budget
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class StatsTest {
     private fun d(day: Int) = LocalDate.of(2026, 11, day)
@@ -54,5 +55,23 @@ class StatsTest {
         val r = WeekResult(week, carryIn = 0, spent = 10_000, exceptionOverflow = 0)
         assertEquals(12_000, Stats.todayAllowance(r, d(4))) // 60,000 / 5일
         assertEquals(0, Stats.todayAllowance(r, d(9)))
+    }
+
+    @Test
+    fun `고정 지출은 가계부 지출에 들고 생활비에서는 빠지며, 이체는 어디에도 안 든다`() {
+        val more = entries + listOf(
+            e(6, 600_000, "월세", Category.LIVING, EntryType.FIXED),
+            e(6, 100_000, "ATM 출금", Category.ETC, EntryType.TRANSFER),
+            e(7, 3_000_000, "월급", Category.SALARY, EntryType.INCOME),
+        )
+        assertEquals(Stats.total(entries) + 600_000, Stats.total(more))
+        assertEquals(Stats.total(entries), Stats.livingTotal(more))
+        assertEquals(600_000, Stats.fixedTotal(more))
+        assertEquals(3_000_000, Stats.income(more))
+        assertEquals(mapOf(d(7) to 3_000_000L), Stats.dailyIncome(more))
+        assertEquals(null, Stats.daily(more, livingOnly = true)[d(6)])
+        assertEquals(600_000L, Stats.daily(more)[d(6)])
+        assertTrue(Stats.byCategory(more).none { it.category == Category.ETC })
+        assertEquals(listOf(Category.SALARY), Stats.incomeByCategory(more).map { it.category })
     }
 }

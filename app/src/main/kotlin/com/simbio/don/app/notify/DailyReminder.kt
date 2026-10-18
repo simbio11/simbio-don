@@ -78,7 +78,7 @@ object DailyReminder {
         if (home.settleable.isNotEmpty()) {
             return "지난주 결산이 준비됐어요" to "예산을 지켰는지 보고, 모의로 산 물건을 받아보세요."
         }
-        val todaySpent = Stats.total(home.entries.filter { it.epochDay == home.today.toEpochDay() }.map { it.toEntry() })
+        val todaySpent = Stats.livingTotal(home.entries.filter { it.epochDay == home.today.toEpochDay() }.map { it.toEntry() })
         val week = home.currentWeek
         val title = if (todaySpent > 0) "오늘 ${Won.format(todaySpent)} 썼어요" else "오늘은 아직 기록된 지출이 없어요"
         val body = buildString {
@@ -116,7 +116,10 @@ object DailyReminder {
             val pending = goAsync()
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                 try {
-                    val home = DonRepository.get(context.applicationContext).home(flowOf(LocalDateTime.now())).first() ?: return@launch
+                    val repo = DonRepository.get(context.applicationContext)
+                    // 앱을 안 켠 날에도 월급날·고정 지출은 챙긴다
+                    repo.dailyUpkeep(LocalDateTime.now())
+                    val home = repo.home(flowOf(LocalDateTime.now())).first() ?: return@launch
                     val (title, body) = message(home)
                     notify(context, title, body)
                 } finally {

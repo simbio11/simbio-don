@@ -42,7 +42,6 @@ import com.simbio.don.app.data.FixedExpenseEntity
 import com.simbio.don.app.data.SeenAppEntity
 import com.simbio.don.app.data.SettingsEntity
 import com.simbio.don.app.data.toRule
-import com.simbio.don.budget.FixedExpense
 import com.simbio.don.notify.AppRule
 import com.simbio.don.notify.DefaultApps
 import com.simbio.don.notify.KeywordRule
@@ -61,7 +60,7 @@ fun SettingsScreen(
     appLabel: (String) -> String?,
     onOpenListenerSettings: () -> Unit,
     onOpenBatterySettings: () -> Unit,
-    onSaveBudget: (List<FixedExpense>, Long, DayOfWeek, Boolean) -> Unit,
+    onSaveBudget: (List<FixedExpenseEntity>, Long, DayOfWeek, Boolean, Int?) -> Unit,
     onEditRule: (String) -> Unit,
     onBudgets: () -> Unit = {},
     onSaveRule: (AppRule) -> Unit,
@@ -74,19 +73,40 @@ fun SettingsScreen(
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
+    salary: Long = 0,
+    salarySource: com.simbio.don.app.data.SalarySource = com.simbio.don.app.data.SalarySource.MANUAL,
+    onSalary: () -> Unit = {},
+    onBackup: () -> Unit = {},
+    onRestore: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
 ) {
-    val rows = remember(fixed) { mutableStateListOf<FixedRow>().apply { addAll(fixed.map { FixedRow(it.name, it.amount.toString()) }); if (isEmpty()) add(FixedRow()) } }
+    val rows = remember(fixed) {
+        mutableStateListOf<FixedRow>().apply {
+            addAll(fixed.map { FixedRow(it.name, it.amount.toString(), it.day?.toString() ?: "", it.id, it.category, it.accountId) })
+            if (isEmpty()) add(FixedRow())
+        }
+    }
+    var payDay by remember(settings) { mutableStateOf(settings.payDay.toString()) }
+    var confirmRestore by remember { mutableStateOf(false) }
     var savings by remember(settings) { mutableStateOf(settings.savings.toString()) }
     var settlementDay by remember(settings) { mutableStateOf(DayOfWeek.of(settings.pendingSettlementDay ?: settings.settlementDay)) }
     var applyNow by remember { mutableStateOf(true) }
     var messagingWarning by remember { mutableStateOf<AppRule?>(null) }
     var showHidden by remember { mutableStateOf(false) }
 
+    Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
+    if (onBack != null) BackBar("설정", onBack)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ScreenTitle("설정", Modifier.padding(top = 8.dp))
+        if (onBack == null) ScreenTitle("설정", Modifier.padding(top = 8.dp))
+
+        RealCard("월급", trailing = { com.simbio.don.app.ui.kit.MoreButton("고치기", onSalary) }) {
+            Text(won(salary), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+            Text(salarySourceText(salarySource), fontSize = 13.sp, color = DonColors.InkSoft)
+            Text("월급날이 되면 새 달이 저절로 시작돼요. 월급이 들어오는 은행 앱을 '알림 읽을 앱'에 켜 두면 입금 알림으로 금액도 맞춰요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
 
         RealCard(
             "결제 알림 자동 기록",
@@ -186,6 +206,16 @@ fun SettingsScreen(
         }
 
         RealCard("예산") {
+            OutlinedTextField(
+                value = payDay,
+                onValueChange = { payDay = it.filter(Char::isDigit).take(2) },
+                label = { Text("월급날 (매달 며칠)") },
+                supportingText = { Text("바꾸면 이번 달은 새 월급날 전날까지예요.") },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                isError = payDay.toIntOrNull()?.let { it !in 1..31 } ?: true,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Text("고정비", fontWeight = FontWeight.Bold, color = DonColors.InkSoft, fontSize = 14.sp)
             FixedExpenseEditor(rows)
             MoneyField("매달 먼저 떼어둘 저축", savings, { savings = it })
@@ -196,7 +226,12 @@ fun SettingsScreen(
                 Text("고정비·저축은 이번 달 예산에도 바로 반영", fontSize = 13.sp)
             }
             Button(onClick = {
-                onSaveBudget(rows.mapNotNull { it.toFixed() }, savings.toLongOrNull() ?: 0, settlementDay, applyNow)
+                val list = rows.mapNotNull { r ->
+                    r.amount.toLongOrNull()?.takeIf { it > 0 }?.let {
+                        FixedExpenseEntity(id = r.id, name = r.name.ifBlank { "고정비" }, amount = it, day = r.dayValue(), accountId = r.accountId, category = r.category)
+                    }
+                }
+                onSaveBudget(list, savings.toLongOrNull() ?: 0, settlementDay, applyNow, payDay.toIntOrNull()?.takeIf { it in 1..31 })
             }, modifier = Modifier.fillMaxWidth()) { Text("예산 설정 저장") }
             SubButton(onClick = onBudgets, modifier = Modifier.fillMaxWidth()) { Text("카테고리별 예산 정하기") }
         }
@@ -207,8 +242,18 @@ fun SettingsScreen(
             if (learnedCount > 0) SubButton(onClick = onResetLearned) { Text("기억한 가게 지우기") }
         }
 
-        RealCard("백업") {
-            Text("모든 기록을 CSV 파일로 내보내요. 엑셀이나 구글 시트에서 열 수 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
+        RealCard("백업·복원") {
+            Text("백업 파일에는 모든 기록·설정·자산·내 방이 들어가요. 폰을 바꿀 때 파일을 옮겨서 복원하세요. 파일은 고른 곳에만 저장되고 어디로도 보내지 않아요.", fontSize = 13.sp, color = DonColors.InkSoft)
+            SubButton(onClick = onBackup, modifier = Modifier.fillMaxWidth()) {
+                Icon(UiIcon.UPLOAD, 18.dp, DonColors.InkSoft)
+                Text("백업 파일 만들기")
+            }
+            SubButton(onClick = { confirmRestore = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(UiIcon.RESTORE, 18.dp, DonColors.InkSoft)
+                Text("백업에서 복원")
+            }
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("엑셀이나 구글 시트에서 보려면 CSV로 내보내요.", fontSize = 13.sp, color = DonColors.InkSoft)
             SubButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) {
                 Icon(UiIcon.DOWNLOAD, 18.dp, DonColors.InkSoft)
                 Text("내역 내보내기 (CSV)")
@@ -222,6 +267,17 @@ fun SettingsScreen(
             modifier = Modifier.padding(horizontal = 4.dp),
         )
         Spacer(Modifier.height(80.dp))
+    }
+    }
+
+    if (confirmRestore) {
+        AlertDialog(
+            onDismissRequest = { confirmRestore = false },
+            title = { Text("백업에서 복원할까요?") },
+            text = { Text("지금 이 폰에 있는 기록은 모두 지워지고 백업 파일의 내용으로 바뀌어요.") },
+            confirmButton = { TextButton(onClick = { confirmRestore = false; onRestore() }, color = DonColors.Warn) { Text("파일 고르기") } },
+            dismissButton = { TextButton(onClick = { confirmRestore = false }) { Text("취소") } },
+        )
     }
 
     messagingWarning?.let { rule ->
@@ -263,7 +319,7 @@ fun RuleEditScreen(rule: AppRule, onSave: (AppRule) -> Unit, onDelete: () -> Uni
                         when (a) {
                             RuleAction.IGNORE -> "무시 (광고 등)"
                             RuleAction.REFUND -> "환불·취소"
-                            RuleAction.INCOME -> "입금 (월급 제안용)"
+                            RuleAction.INCOME -> "입금 (수입으로 기록, 월급 알아보기)"
                             RuleAction.SPEND -> "지출"
                         },
                     )

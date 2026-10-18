@@ -25,8 +25,9 @@ import com.simbio.don.budget.CategoryGuesser
         HouseEntity::class,
         CategoryBudgetEntity::class,
         SavingsGoalEntity::class,
+        AccountEntity::class,
     ],
-    version = 4,
+    version = 5,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -44,7 +45,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 }
                 ).build().also { instance = it }
         }
@@ -53,6 +54,26 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v5: 자산·이체, 기록 시각, 고정 지출 날짜(자동 기록), 월급 자동 처리 */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS account (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, " +
+                        "type TEXT NOT NULL, opening INTEGER NOT NULL, sortOrder INTEGER NOT NULL, hidden INTEGER NOT NULL, packageName TEXT)",
+                )
+                db.execSQL("ALTER TABLE entry ADD COLUMN accountId INTEGER")
+                db.execSQL("ALTER TABLE entry ADD COLUMN toAccountId INTEGER")
+                db.execSQL("ALTER TABLE entry ADD COLUMN minuteOfDay INTEGER")
+                db.execSQL("ALTER TABLE entry ADD COLUMN fixedId INTEGER")
+                db.execSQL("ALTER TABLE fixed_expense ADD COLUMN day INTEGER")
+                db.execSQL("ALTER TABLE fixed_expense ADD COLUMN accountId INTEGER")
+                db.execSQL("ALTER TABLE fixed_expense ADD COLUMN category TEXT NOT NULL DEFAULT 'LIVING'")
+                db.execSQL("ALTER TABLE fixed_expense ADD COLUMN doneNominal TEXT")
+                db.execSQL("ALTER TABLE cycle ADD COLUMN salarySource TEXT NOT NULL DEFAULT 'MANUAL'")
+                db.execSQL("ALTER TABLE cycle ADD COLUMN noticeShown INTEGER NOT NULL DEFAULT 1")
+            }
         }
 
         /** v4: 카테고리 예산, 저축 목표, 결산 결과 저장 (연속 기록·마일리지용) */

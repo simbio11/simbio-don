@@ -2,8 +2,14 @@ package com.simbio.don.app
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.simbio.don.app.data.AccountEntity
+import com.simbio.don.app.data.AccountType
+import com.simbio.don.app.data.Backup
 import com.simbio.don.app.data.DonDatabase
 import com.simbio.don.app.data.DonRepository
+import com.simbio.don.app.data.FixedExpenseEntity
+import com.simbio.don.app.data.SalarySource
+import com.simbio.don.budget.EntrySource
 import com.simbio.don.app.notify.DailyReminder
 import com.simbio.don.app.widget.WeekWidget
 import com.simbio.don.budget.Category
@@ -45,7 +51,7 @@ class DonRepositoryTest {
     fun setUp() = runTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DonDatabase::class.java)
             .allowMainThreadQueries().build()
-        repo = DonRepository(db.dao())
+        repo = DonRepository(db.dao(), db)
         repo.completeOnboarding(
             salary = 3_300_000,
             payDay = 25,
@@ -106,9 +112,9 @@ class DonRepositoryTest {
     }
 
     @Test
-    fun `달별 보기는 다음 주기 시작 전날까지이고 지난달 기록을 함께 준다`() = runTest {
+    fun `월급이 하루 일찍 들어오면 그날부터 새 달이고, 달별 보기는 다음 달 시작 전날까지`() = runTest {
         repo.addManual(LocalDate.of(2026, 10, 24), 10_000, "스타벅스", EntryType.SPEND)
-        repo.confirmSalary(3_300_000, LocalDate.of(2026, 11, 24), at(11, 24, 10)) // 하루 일찍 입금
+        repo.handleNotification(RawNotification("card.app", "", "급여 입금 3,300,000원", at(11, 24, 10))) // 하루 일찍 입금
         repo.addManual(LocalDate.of(2026, 11, 25), 20_000, "치킨", EntryType.SPEND)
 
         val oct = repo.month("2026-10", LocalDate.of(2026, 11, 25)).first()!!
@@ -116,7 +122,9 @@ class DonRepositoryTest {
         assertEquals(1, oct.entries.size)
         val nov = repo.month("2026-11", LocalDate.of(2026, 11, 25)).first()!!
         assertTrue(nov.isCurrent)
-        assertEquals(listOf(20_000L), nov.entries.map { it.amount })
+        assertEquals(LocalDate.of(2026, 11, 24), nov.cycle.start)
+        assertEquals(listOf(20_000L), nov.entries.filter { it.type == EntryType.SPEND }.map { it.amount })
+        assertEquals(Category.SALARY, nov.entries.single { it.type == EntryType.INCOME }.category)
         assertEquals(listOf(10_000L), nov.previousEntries.map { it.amount })
     }
 
@@ -124,8 +132,8 @@ class DonRepositoryTest {
     fun `CSV로 내보낸다`() = runTest {
         repo.addManual(LocalDate.of(2026, 10, 24), 10_000, "카페 \"별\"", EntryType.SPEND, memo = "친구, 둘")
         val csv = repo.exportCsv()
-        assertTrue(csv.startsWith("\uFEFF날짜,구분,카테고리,내용,금액,메모,기록 방식"))
-        assertTrue(csv.contains("2026-10-24,지출,카페·간식,\"카페 \"\"별\"\"\",10000,\"친구, 둘\",직접 입력"))
+        assertTrue(csv.startsWith("\uFEFF날짜,시각,구분,카테고리,내용,금액,자산,받은 자산,메모,기록 방식"))
+        assertTrue(csv, csv.contains("2026-10-24,,지출,카페·간식,\"카페 \"\"별\"\"\",10000,\"\",\"\",\"친구, 둘\",직접 입력"))
     }
 
     @Test
@@ -206,7 +214,7 @@ class DonRepositoryTest {
         repo.addManual(LocalDate.of(2026, 10, 29), 620_000, "장보기", EntryType.SPEND) // 20,000 초과
 
         val week = home(at(11, 2, 12)).settleable.single()
-        assertEquals(20_000, week.overspent)
+        assertEquals(20_000, week.result.overspent)
         repo.settle(week, at(11, 2, 12), returnIds = null)
         val items = db.dao().mockPurchasesNow().associate { it.name to it.status }
         assertEquals("DELIVERED", items["운동화"])
@@ -276,26 +284,63 @@ class DonRepositoryTest {
     }
 
     @Test
-    fun `월급이 예상보다 늦게 들어와도 사이 날의 지출과 모의 구매가 빠지지 않고, 두 번 눌러도 새 달은 하나`() = runTest {
-        repo.addManual(LocalDate.of(2026, 11, 25), 10_000, "국밥", EntryType.SPEND)
-        repo.buyMock("모자", 50_000, ItemKind.CLOTHES, null, LocalDate.of(2026, 11, 25), at(11, 25))
-        repo.confirmSalary(3_300_000, LocalDate.of(2026, 11, 26), at(11, 26, 10))
-        repo.confirmSalary(3_300_000, LocalDate.of(2026, 11, 26), at(11, 26, 10, 1))
-        val h = home(at(11, 26, 11))
-        assertEquals(LocalDate.of(2026, 11, 26), h.cycle.start)
-        assertTrue(h.shipping.isEmpty())
-        assertEquals(1_980_000L, h.wallet)
+    fun `월급날이 되면 저절로 새 달이고, 늦게 들어온 월급으로 금액을 맞춘다`() = runTest {
+        repo.addManual(LocalDate.of(2026, 11, 24), 10_000, "국밥", EntryType.SPEND)
+        repo.buyMock("모자", 50_000, ItemKind.CLOTHES, null, LocalDate.of(2026, 11, 24), at(11, 24))
+        // 월급날 아침: 입금은 아직 — 지난달 월급으로 새 달. 여러 번 불러도 새 달은 하나
+        repo.dailyUpkeep(at(11, 25, 0, 5))
+        repo.dailyUpkeep(at(11, 25, 9))
+        var h = home(at(11, 25, 9))
+        assertEquals(LocalDate.of(2026, 11, 25), h.cycle.start)
+        assertEquals(SalarySource.ESTIMATED, h.salarySource)
+        assertEquals(3_300_000, h.salaryNotice!!.salary)
         assertEquals(2, repo.cycles.first().size)
-        val last = repo.month("2026-10", LocalDate.of(2026, 11, 26)).first()!!
-        assertEquals(LocalDate.of(2026, 11, 25), last.cycle.end)
-        assertTrue(last.entities.any { it.label == "국밥" })
+        // 지난달 마지막 주는 결산 화면으로 남고, 그 전 주들은 자동 결산
+        assertEquals(3, db.dao().settledWeeksNow("2026-10").size)
+        val last = h.settleable.single()
+        assertEquals("2026-10", last.nominal)
+        assertEquals(LocalDate.of(2026, 11, 24), last.result.week.end)
+        assertEquals(1, h.shipping.size) // 모자는 마지막 주 결산 때 도착
+        repo.settle(last, at(11, 25, 12), emptySet())
+        assertEquals(4, db.dao().settledWeeksNow("2026-10").size)
+        assertTrue(home(at(11, 25, 12)).shipping.isEmpty())
+
+        // 다음 날 월급이 들어오면 그 금액으로 다시 짠다
+        repo.handleNotification(RawNotification("card.app", "", "급여 입금 3,500,000원", at(11, 26, 10)))
+        h = home(at(11, 26, 11))
+        assertEquals(LocalDate.of(2026, 11, 25), h.cycle.start)
+        assertEquals(SalarySource.NOTIFICATION, h.salarySource)
+        assertEquals(3_500_000 - 1_000_000 - 320_000L, h.plan.disposable)
+        val oct = repo.month("2026-10", LocalDate.of(2026, 11, 26)).first()!!
+        assertEquals(LocalDate.of(2026, 11, 24), oct.cycle.end)
+        assertTrue(oct.entities.any { it.label == "국밥" })
+        repo.dismissSalaryNotice()
+        assertEquals(null, home(at(11, 26, 11)).salaryNotice)
+    }
+
+    @Test
+    fun `몇 달 안 켜도 달마다 차례로 새 달이 생긴다`() = runTest {
+        repo.dailyUpkeep(at(1, 27).plusYears(1))
+        val cycles = repo.cycles.first()
+        assertEquals(listOf("2027-01", "2026-12", "2026-11", "2026-10"), cycles.map { it.nominal })
+        assertTrue(cycles.take(3).all { it.salarySource == SalarySource.ESTIMATED.name })
+    }
+
+    @Test
+    fun `월급을 직접 고치면 이번 달 예산이 바뀌고 알림으로 덮지 않는다`() = runTest {
+        repo.dailyUpkeep(at(11, 25, 1))
+        repo.updateSalary(3_000_000)
+        repo.handleNotification(RawNotification("card.app", "", "급여 입금 3,500,000원", at(11, 25, 10)))
+        val h = home(at(11, 25, 11))
+        assertEquals(3_000_000, h.salary)
+        assertEquals(SalarySource.MANUAL, h.salarySource)
     }
 
     @Test
     fun `한 달 중간에 시작한 첫 달도 저축을 바꾸면 남은 날 몫만큼 예산에 반영`() = runTest {
         repo.completeOnboarding(3_300_000, 25, listOf(FixedExpense("월세", 1_000_000)), 320_000, DayOfWeek.MONDAY, LocalDate.of(2026, 11, 10))
         assertEquals(900_000, home(at(11, 10)).plan.disposable)
-        repo.updateSettings(listOf(FixedExpense("월세", 1_000_000)), 900_000, DayOfWeek.MONDAY, applyNow = true)
+        repo.updateSettings(listOf(FixedExpenseEntity(name = "월세", amount = 1_000_000)), 900_000, DayOfWeek.MONDAY, applyNow = true)
         assertEquals(637_000, home(at(11, 10)).plan.disposable)
     }
 
@@ -366,25 +411,146 @@ class DonRepositoryTest {
     }
 
     @Test
-    fun `월급을 확인하면 지난 주기를 마무리하고 새 주기를 만든다`() = runTest {
-        val h = home(at(11, 25, 9))
-        assertTrue(h.needsSalaryConfirm)
+    fun `월급 입금 알림이 오면 그 금액으로 새 달을 시작한다`() = runTest {
         repo.handleNotification(RawNotification("card.app", "", "급여 입금 3,400,000원", at(11, 25, 9)))
-        assertEquals(3_400_000, repo.suggestedSalary(h.nextExpectedPayday))
-
-        repo.confirmSalary(3_400_000, LocalDate.of(2026, 11, 25), at(11, 25, 10))
         val next = home(at(11, 25, 10))
         assertEquals(LocalDate.of(2026, 11, 25), next.cycle.start)
+        assertEquals(SalarySource.NOTIFICATION, next.salarySource)
         assertEquals(3_400_000 - 1_000_000 - 320_000L, next.plan.disposable)
-        assertEquals(4, db.dao().settledWeeksNow("2026-10").size)
+        assertEquals(3, db.dao().settledWeeksNow("2026-10").size)
+        assertEquals(1, next.settleable.size)
+    }
+
+    @Test
+    fun `월급날 전 큰 입금이라도 월급이 아니면 새 달이 아니다`() = runTest {
+        repo.handleNotification(RawNotification("card.app", "", "홍길동 입금 50,000원", at(11, 23, 9)))
+        assertEquals(1, repo.cycles.first().size)
+        assertEquals(Category.OTHER_INCOME.name, db.dao().allEntriesNow().single().category)
     }
 
     @Test
     fun `결산 요일 변경은 다음 주기부터`() = runTest {
-        repo.updateSettings(listOf(FixedExpense("월세", 1_000_000)), 320_000, DayOfWeek.THURSDAY, applyNow = true)
+        repo.updateSettings(listOf(FixedExpenseEntity(name = "월세", amount = 1_000_000)), 320_000, DayOfWeek.THURSDAY, applyNow = true)
         assertEquals(DayOfWeek.MONDAY, home(at(10, 27)).plan.weeks[1].start.dayOfWeek)
-        repo.confirmSalary(3_300_000, LocalDate.of(2026, 11, 25), at(11, 25, 10))
+        repo.dailyUpkeep(at(11, 25, 10))
         val next = home(at(11, 26))
         assertEquals(DayOfWeek.THURSDAY, next.plan.weeks[1].start.dayOfWeek)
+    }
+
+    // ── 고정 지출 ──
+
+    @Test
+    fun `나가는 날을 정한 고정 지출은 그날 가계부에 저절로 적히고 주 예산은 그대로`() = runTest {
+        repo.updateSettings(
+            listOf(FixedExpenseEntity(name = "월세", amount = 1_000_000, day = 1), FixedExpenseEntity(name = "통신비", amount = 55_000, day = 15)),
+            320_000, DayOfWeek.MONDAY, applyNow = true, today = LocalDate.of(2026, 10, 24),
+        )
+        repo.dailyUpkeep(at(11, 1, 0, 1))
+        repo.dailyUpkeep(at(11, 1, 9)) // 두 번 불러도 한 번만
+        val fixed = db.dao().allEntriesNow().filter { it.type == EntryType.FIXED.name }
+        assertEquals(listOf("월세"), fixed.map { it.label })
+        assertEquals(LocalDate.of(2026, 11, 1).toEpochDay(), fixed.single().epochDay)
+        val h = home(at(11, 1, 10))
+        assertEquals(1_000_000, h.monthSpent)
+        assertEquals(0, h.monthLiving)
+        assertEquals(0, h.currentWeek!!.spent)
+
+        // 지운 고정 지출은 이번 달엔 다시 적지 않는다
+        repo.deleteEntry(db.dao().allEntriesNow().single())
+        repo.dailyUpkeep(at(11, 2, 9))
+        assertTrue(db.dao().allEntriesNow().isEmpty())
+        // 이미 지난 날짜로 새로 넣은 고정비는 이번 달은 건너뛴다
+        repo.updateSettings(
+            db.dao().fixedExpensesNow() + FixedExpenseEntity(name = "구독", amount = 10_000, day = 2),
+            320_000, DayOfWeek.MONDAY, applyNow = true, today = LocalDate.of(2026, 11, 3),
+        )
+        repo.dailyUpkeep(at(11, 3, 9))
+        assertTrue(db.dao().allEntriesNow().isEmpty())
+        // 다음 달엔 모두 적는다
+        repo.dailyUpkeep(at(12, 2, 9))
+        assertEquals(setOf("월세", "구독"), db.dao().allEntriesNow().map { it.label }.toSet())
+    }
+
+    @Test
+    fun `고정 지출 결제 알림은 자동으로 적어 둔 것을 실제 금액으로 고친다`() = runTest {
+        repo.updateSettings(listOf(FixedExpenseEntity(name = "통신비", amount = 55_000, day = 1)), 320_000, DayOfWeek.MONDAY, applyNow = true, today = LocalDate.of(2026, 10, 24))
+        repo.dailyUpkeep(at(11, 1, 0, 1))
+        repo.handleNotification(RawNotification("card.app", "", "OO카드 승인 56,100원 KT통신비", at(11, 2, 9)))
+        val fixed = db.dao().allEntriesNow().single()
+        assertEquals(EntryType.FIXED.name, fixed.type)
+        assertEquals(56_100, fixed.amount)
+        assertEquals(EntrySource.NOTIFICATION.name, fixed.source)
+        assertTrue(db.dao().reviewItemsNow().isEmpty())
+    }
+
+    @Test
+    fun `금액만 비슷한 결제는 나가는 날 근처일 때만 고정 지출`() = runTest {
+        repo.updateSettings(listOf(FixedExpenseEntity(name = "보험", amount = 80_000, day = 10)), 320_000, DayOfWeek.MONDAY, applyNow = true, today = LocalDate.of(2026, 10, 24))
+        // 날짜가 먼 같은 금액 결제 → 확인함
+        repo.handleNotification(RawNotification("card.app", "", "OO카드 승인 80,000원 레스토랑", at(10, 27, 19)))
+        assertEquals(ReviewReason.LOOKS_LIKE_FIXED_EXPENSE.name, db.dao().reviewItemsNow().single().reason)
+        // 나가는 날 하루 뒤 → 고정 지출로 바로
+        repo.handleNotification(RawNotification("card.app", "", "출금 80,000원 OO생명", at(11, 11, 9)))
+        assertEquals(EntryType.FIXED.name, db.dao().allEntriesNow().single().type)
+    }
+
+    // ── 자산 ──
+
+    @Test
+    fun `자산 잔액은 처음 잔액과 수입·지출·이체로 계산하고, 연결한 앱의 알림은 그 자산으로 적는다`() = runTest {
+        val bank = repo.saveAccount(AccountEntity(name = "생활비 통장", type = AccountType.BANK.name, opening = 500_000, sortOrder = 0))
+        val cash = repo.saveAccount(AccountEntity(name = "현금", type = AccountType.CASH.name, opening = 10_000, sortOrder = 0))
+        val card = repo.saveAccount(AccountEntity(name = "OO카드", type = AccountType.CARD.name, opening = 0, sortOrder = 0, packageName = "card.app"))
+        repo.handleNotification(RawNotification("card.app", "OO카드 승인", "OO카드 승인 30,000원 이마트", at(10, 27, 18)))
+        repo.addManual(LocalDate.of(2026, 10, 28), 50_000, "ATM", EntryType.TRANSFER, accountId = bank, toAccountId = cash)
+        repo.addManual(LocalDate.of(2026, 10, 28), 8_000, "김밥", EntryType.SPEND, accountId = cash)
+        repo.addManual(LocalDate.of(2026, 10, 29), 30_000, "카드값", EntryType.TRANSFER, accountId = bank, toAccountId = card)
+        repo.addManual(LocalDate.of(2026, 10, 30), 100_000, "중고 판매", EntryType.INCOME, Category.SIDE_INCOME, accountId = bank)
+        val b = home(at(10, 30)).accounts.associate { it.account.name to it.balance }
+        assertEquals(520_000L, b["생활비 통장"])
+        assertEquals(52_000L, b["현금"])
+        assertEquals(0L, b["OO카드"])
+        // 이체는 수입·지출이 아니다
+        val h = home(at(10, 30))
+        assertEquals(38_000, h.monthSpent)
+        assertEquals(100_000, h.monthIncome)
+        assertEquals(38_000, h.currentWeek!!.spent)
+
+        repo.deleteAccount(db.dao().accountsNow().first { it.id == cash })
+        assertTrue(db.dao().allEntriesNow().none { it.accountId == cash || it.toAccountId == cash })
+    }
+
+    @Test
+    fun `전체 기간에서 내용·메모·금액으로 찾는다`() = runTest {
+        repo.addManual(LocalDate.of(2026, 10, 24), 4_500, "스타벅스", EntryType.SPEND)
+        repo.addManual(LocalDate.of(2026, 10, 25), 9_000, "김밥", EntryType.SPEND, memo = "스타 친구랑")
+        repo.handleNotification(RawNotification("card.app", "", "급여 입금 3,300,000원", at(11, 25, 9)))
+        repo.addManual(LocalDate.of(2026, 11, 26), 4_500, "메가커피", EntryType.SPEND)
+        assertEquals(setOf("스타벅스", "김밥"), repo.search("스타").first().map { it.label }.toSet())
+        assertEquals(setOf("스타벅스", "메가커피"), repo.search("4,500원").first().map { it.label }.toSet())
+    }
+
+    @Test
+    fun `백업으로 모든 기록을 되살린다`() = runTest {
+        repo.saveAccount(AccountEntity(name = "통장", type = AccountType.BANK.name, opening = 100_000, sortOrder = 0))
+        repo.addManual(LocalDate.of(2026, 10, 24), 4_500, "스타벅스", EntryType.SPEND, memo = "\"따옴표\" 메모", minuteOfDay = 8 * 60 + 30)
+        repo.buyMock("모자", 50_000, ItemKind.CLOTHES, null, LocalDate.of(2026, 10, 24), at(10, 24))
+        repo.addGoal("여행", 1_000_000, "FLIGHT", LocalDate.of(2026, 10, 24))
+        val json = repo.exportBackup(at(10, 24))
+        val before = db.dao().allEntriesNow()
+
+        db.clearAllTables()
+        repo.completeOnboarding(2_000_000, 10, emptyList(), 0, DayOfWeek.FRIDAY, LocalDate.of(2026, 10, 24))
+        repo.restoreBackup(json)
+        assertEquals(before, db.dao().allEntriesNow())
+        assertEquals(25, db.dao().settingsNow()!!.payDay)
+        assertEquals(listOf("통장"), db.dao().accountsNow().map { it.name })
+        assertEquals(1, db.dao().mockPurchasesNow().size)
+        assertEquals(listOf("여행"), db.dao().goalsNow().map { it.name })
+
+        // 망가진 파일은 아무것도 바꾸지 않는다
+        val bad = runCatching { repo.restoreBackup("{\"format\":\"other\"}") }
+        assertTrue(bad.exceptionOrNull() is Backup.BadBackup)
+        assertEquals(before, db.dao().allEntriesNow())
     }
 }

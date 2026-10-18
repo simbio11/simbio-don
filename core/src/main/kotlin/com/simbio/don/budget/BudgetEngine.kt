@@ -4,8 +4,8 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 
-/** 금액 단위는 모두 원(KRW) 정수. */
-data class FixedExpense(val name: String, val amount: Long) {
+/** 금액 단위는 모두 원(KRW) 정수. [day]는 매달 나가는 날 (모르면 null). */
+data class FixedExpense(val name: String, val amount: Long, val day: Int? = null) {
     init {
         require(amount >= 0) { "고정비는 0원 이상이어야 합니다: $name=$amount" }
     }

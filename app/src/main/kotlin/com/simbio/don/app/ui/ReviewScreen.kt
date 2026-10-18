@@ -85,8 +85,9 @@ private fun ReviewCard(
                     SubButton(onClick = { onResolve(item, both) }) { Text("둘 다 반영") }
                 }
                 ReviewReason.LOOKS_LIKE_FIXED_EXPENSE -> {
-                    Button(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("고정비라 제외") }
-                    SubButton(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("지출로 반영") }
+                    Button(onClick = { onResolve(item, ReviewResolution.APPLY_FIXED) }) { Text("고정 지출로 기록") }
+                    SubButton(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("생활비 지출로") }
+                    SubButton(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("무시") }
                 }
                 ReviewReason.REFUND -> {
                     Button(onClick = { onResolve(item, ReviewResolution.APPLY_REFUND) }) { Text("환불로 반영") }

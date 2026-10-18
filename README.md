@@ -2,8 +2,9 @@
 
 > 쓰는 척은 마음껏, 진짜 돈은 차곡차곡
 
-예산형 소비 시뮬레이션 + 아이템 창고. 월급을 입력하면 주 단위 예산을 짜주고,
-그 예산(게임 재화)으로 모의 쇼핑·배달을 하며 남은 돈이 곧 절약액이 되는 게임.
+가계부 + 예산형 소비 시뮬레이션. 결제·입금 알림으로 가계부(일일·달력·주별·월별, 자산·이체)를 저절로 적고,
+월급을 주 단위 예산으로 나눠 매주 결산한다. 사고 싶을 땐 가짜 돈으로 모의 쇼핑 — 산 물건이 내 방을 채운다.
+월급은 처음 한 번만 넣으면 월급날마다 새 달이 저절로 시작되고 입금 알림으로 금액을 맞춘다.
 
 - **형태**: Android 네이티브 앱 (Google Play 목표, 초기엔 개인용 APK)
 - **실제 돈 연결 없음**: 계좌·결제 API 연동 없이 순수 모의 (규제 이슈 0)
@@ -18,7 +19,7 @@
 ## 구조
 
 - `core/` — 순수 Kotlin 로직 (Android 의존 없음, 단위 테스트)
-  - `budget/` — 월급날 기준 한 달(`PayCycle`), 주 예산 배분(`BudgetEngine`), 이월·예외 지출·결산 판정(`CycleLedger`, `Settlement`)
+  - `budget/` — 월급날 기준 한 달(`PayCycle`), 주 예산 배분(`BudgetEngine`), 이월·예외 지출·결산 판정(`CycleLedger`, `Settlement`), 월급 입금 판별·고정 지출 날짜(`Payday`)
   - `notify/` — 결제 알림 규칙(앱 선택 → 키워드), 금액 추출, 중복·고정비 의심 판정(`ReviewPolicy`)
 - `app/` — Android 앱 (Kotlin · Jetpack Compose · Room), 쇼핑앱식 UI (`ui/kit`) + 게임 속 도트 그림 (`tools/pixelart`)
 - `tools/pixelart/` — 도트 그림 생성기 (`python3 tools/pixelart/make_art.py`) — [docs/art-spec.md](docs/art-spec.md)
@@ -26,7 +27,7 @@
   - `notify/DailyReminder` — 매일 밤 9시 지출 요약·결산 알림 (설정에서 켤 때만)
   - `widget/WeekWidget` — 홈 화면 위젯 (이번 주 남은 돈 + 지출 입력)
   - `weather/WeatherService` — 창밖 날씨 (Open-Meteo, 고른 도시 좌표만 보냄. 설정에서 끌 수 있음)
-  - `data/` — Room 저장소, `ui/` — 화면
+  - `data/` — Room 저장소(월급날 자동 새 달·고정 지출 자동 기록·자산 잔액·백업), `ui/` — 화면
 
 ```sh
 ./gradlew :core:test :app:testDebugUnitTest   # 테스트

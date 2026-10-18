@@ -52,6 +52,8 @@ fun HomeScreen(
     onReview: () -> Unit,
     onSettle: () -> Unit,
     onSalary: () -> Unit,
+    onDismissSalary: () -> Unit = {},
+    onSettings: () -> Unit = {},
     onOpenEntry: (EntryEntity) -> Unit,
     onAllEntries: () -> Unit,
     onStats: () -> Unit,
@@ -76,18 +78,18 @@ fun HomeScreen(
             Box(Modifier.size(48.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
                 CharacterSprite(home.mood, 34.dp)
             }
+            Spacer(Modifier.width(4.dp))
+            RoundIconButton(UiIcon.GEAR, "설정", true, onSettings)
         }
 
         if (!listenerEnabled) {
             Banner("결제 알림 자동 기록이 꺼져 있어요", "알림 접근을 허용하면 결제할 때마다 자동으로 기록돼요.", "켜러 가기", onOpenListenerSettings)
         }
-        if (home.needsSalaryConfirm) {
-            Banner("월급날이에요", "이번 달 월급을 확인하면 새 달 예산을 짜요.", "월급 확인", onSalary, UiIcon.PAYMENTS, DonColors.Real)
-        }
+        home.salaryNotice?.let { n -> SalaryNoticeCard(n, home.plan.disposable, onSalary, onDismissSalary) }
         if (home.settleable.isNotEmpty()) {
             Banner(
                 "지난주 결산이 준비됐어요",
-                home.settleable.first().let { "${shortDate(it.week.start)} ~ ${shortDate(it.week.end)}" },
+                home.settleable.first().result.let { "${shortDate(it.week.start)} ~ ${shortDate(it.week.end)}" },
                 "결산 보기",
                 onSettle,
                 UiIcon.TROPHY,
@@ -144,7 +146,7 @@ fun HomeScreen(
         }
 
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("이번 달 쓴 돈", won(home.monthSpent), null, Modifier.weight(1f))
+            StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))
             StatTile("이번 달 수입", won(home.monthIncome), null, Modifier.weight(1f))
             StatTile("아낀 돈", won(home.savedSoFar), "지난 주들 합계", Modifier.weight(1f))
         }
@@ -187,7 +189,9 @@ fun HomeScreen(
             if (home.entries.isEmpty()) {
                 Text("아직 기록이 없어요. 결제하면 알림으로 자동 기록되고, + 버튼으로 직접 넣을 수도 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
             }
-            home.entries.take(5).forEach { EntryRow(it, onOpenEntry) }
+            val names = home.accounts.associate { it.account.id to it.account.name }
+            home.entries.sortedWith(compareByDescending<EntryEntity> { it.epochDay }.thenByDescending { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
+                .take(5).forEach { LedgerRow(it, names, onOpenEntry) }
         }
         Spacer(Modifier.height(88.dp))
     }
@@ -218,6 +222,38 @@ fun Banner(
         }
         Spacer(Modifier.width(8.dp))
         SmallButton(onClick = onAction, containerColor = tint) { Text(action) }
+    }
+}
+
+/** 새 달이 저절로 시작됐다는 안내 */
+@Composable
+fun SalaryNoticeCard(n: com.simbio.don.app.data.SalaryNotice, disposable: Long, onFix: () -> Unit, onDismiss: () -> Unit) {
+    Column(Modifier.fillMaxWidth().card(DonColors.RealSurface).padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBubble(UiIcon.PAYMENTS, DonColors.Real)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (n.source == com.simbio.don.app.data.SalarySource.NOTIFICATION) "월급 ${won(n.salary)} 들어왔어요" else "새 달이 시작됐어요",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = DonColors.Ink,
+                )
+                Text(
+                    if (n.source == com.simbio.don.app.data.SalarySource.NOTIFICATION) {
+                        "${shortDate(n.start)}부터 새 달이에요. 이번 달 생활비는 ${won(disposable)}이에요."
+                    } else {
+                        "${shortDate(n.start)}부터 새 달이에요. 월급 입금을 아직 못 봐서 지난달 월급 ${won(n.salary)}으로 짰어요. 입금 알림이 오면 저절로 맞춰요."
+                    },
+                    fontSize = 12.sp,
+                    color = DonColors.InkSoft,
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            SubButton(onClick = onFix, modifier = Modifier.weight(1f), containerColor = DonColors.Surface) { Text("월급 고치기") }
+            SmallButton(onClick = onDismiss, modifier = Modifier.weight(1f).height(48.dp)) { Text("확인") }
+        }
     }
 }
 

@@ -38,12 +38,15 @@ fun StatsScreen(
     onBudgets: () -> Unit = {},
 ) {
     val spent = Stats.total(view.entries)
+    val living = Stats.livingTotal(view.entries)
     val income = Stats.income(view.entries)
     val prevSpent = Stats.total(view.previousEntries)
+    val incomeByCategory = Stats.incomeByCategory(view.entries)
+    var showIncome by remember { mutableStateOf(false) }
     val pace = Stats.pace(view.entries, view.cycle.start, view.cycle.end, view.plan.disposable, view.today)
     val byCategory = Stats.byCategory(view.entries)
     val prevByCategory = Stats.byCategory(view.previousEntries).associate { it.category to it.amount }
-    val dailyAvg = if (pace.elapsedDays == 0) 0 else spent / pace.elapsedDays
+    val dailyAvg = if (pace.elapsedDays == 0) 0 else living / pace.elapsedDays
     var paceTable by remember { mutableStateOf(false) }
 
     Column(
@@ -54,6 +57,18 @@ fun StatsScreen(
 
         RealCard("이번 달 가계부") { MonthSummaryRow(income, spent) }
 
+        SectionCard("카테고리별") {
+            SegmentedToggle(listOf("지출", "수입"), if (showIncome) 1 else 0) { showIncome = it == 1 }
+            val totals = if (showIncome) incomeByCategory else byCategory
+            if (totals.isEmpty()) {
+                Text("아직 기록이 없어요.", color = ChartColors.InkSecondary, modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                DonutChart(donutParts(totals), if (showIncome) "수입" else "지출")
+                DonutLegend(totals, onClick = onCategory)
+                Text("도넛을 누르면 그 조각 금액이, 목록을 누르면 그 카테고리 내역이 보여요.", fontSize = 11.sp, color = ChartColors.InkMuted)
+            }
+        }
+
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile(
                 "쓴 돈",
@@ -61,17 +76,17 @@ fun StatsScreen(
                 if (view.previousEntries.isNotEmpty()) "지난달 ${won(prevSpent)}" else null,
                 Modifier.weight(1f),
             )
-            StatTile("하루 평균", won(dailyAvg), "${pace.elapsedDays}일 기준", Modifier.weight(1f))
+            StatTile("하루 평균 생활비", won(dailyAvg), "${pace.elapsedDays}일 기준", Modifier.weight(1f))
         }
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("생활비 예산", won(view.plan.disposable), null, Modifier.weight(1f))
-            StatTile("남은 생활비", won(view.plan.disposable - spent), null, Modifier.weight(1f))
+            StatTile("생활비 예산", won(view.plan.disposable), "고정 지출 ${won(Stats.fixedTotal(view.entries))} 별도", Modifier.weight(1f))
+            StatTile("남은 생활비", won(view.plan.disposable - living), null, Modifier.weight(1f))
         }
 
-        SectionCard("지출 속도") {
+        SectionCard("생활비 쓰는 속도") {
             Text(
                 when {
-                    !view.isCurrent -> if (spent <= view.plan.disposable) "예산보다 ${won(view.plan.disposable - spent)} 덜 썼어요" else "예산보다 ${won(spent - view.plan.disposable)} 더 썼어요"
+                    !view.isCurrent -> if (living <= view.plan.disposable) "예산보다 ${won(view.plan.disposable - living)} 덜 썼어요" else "예산보다 ${won(living - view.plan.disposable)} 더 썼어요"
                     pace.projectedLeft >= 0 -> "이 속도면 월말에 ${won(pace.projectedLeft)} 남아요"
                     else -> "이 속도면 월말에 ${won(-pace.projectedLeft)} 모자라요"
                 },
@@ -110,10 +125,10 @@ fun StatsScreen(
             }
         }
 
-        SectionCard("카테고리별") {
-            if (byCategory.isEmpty()) Text("아직 기록이 없어요.", color = ChartColors.InkSecondary)
-            CategoryBars(byCategory, prevByCategory, onClick = onCategory)
-            if (byCategory.isNotEmpty()) Text("누르면 그 카테고리 내역을 봐요.", fontSize = 11.sp, color = ChartColors.InkMuted)
+        if (byCategory.isNotEmpty() && view.previousEntries.isNotEmpty()) {
+            SectionCard("지난달과 비교") {
+                CategoryBars(byCategory, prevByCategory, onClick = onCategory)
+            }
         }
 
         SectionCard("주별 예산") { WeekMeters(view.results, view.today) }
