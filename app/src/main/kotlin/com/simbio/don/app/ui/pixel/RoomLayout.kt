@@ -6,7 +6,7 @@ import com.simbio.don.game.Slot
 
 // 생성된 파일: tools/pixelart/make_art.py — 직접 고치지 말고 스크립트를 고친 뒤 다시 돌린다.
 
-/** 원룸 그림(px_room_one_room) 안의 좌표. 단위는 그림 원본 픽셀. */
+/** 방 그림(px_room_*) 안의 좌표 — 세 집 모두 가구 자리가 같다. 단위는 그림 원본 픽셀. */
 object RoomLayout {
     const val WIDTH = 160
     const val HEIGHT = 136
@@ -47,4 +47,11 @@ object RoomLayout {
     /** 하늘이 비치는 유리창. 하늘 그림(px_sky_*)은 가로 64px로 이어 붙여 흘린다. */
     val glass = IntRect(69, 9, 95, 29)
     const val SKY_W = 64
+
+    /** 집 단계(HouseLevel 이름)마다 유리창 — 투룸·아파트는 창이 더 넓다 */
+    val glassByLevel: Map<String, IntRect> = mapOf(
+        "ONE_ROOM" to IntRect(69, 9, 95, 29),
+        "TWO_ROOM" to IntRect(61, 9, 104, 29),
+        "APARTMENT" to IntRect(54, 8, 110, 28),
+    )
 }

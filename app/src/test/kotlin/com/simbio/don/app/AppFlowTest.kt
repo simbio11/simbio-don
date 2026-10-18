@@ -270,6 +270,22 @@ class AppFlowTest {
         rule.onNodeWithText("모의 지갑").performScrollTo()
         shot("20b_house_bottom")
         rule.onAllNodesWithText("모의 쇼핑").onFirst().performScrollTo().performClick()
+        // 돈't 몰: 둘러보고 장바구니에 담아 결제
+        waitText("많이 담는 물건")
+        shot("47_mall")
+        rule.onAllNodesWithText("무선 이어폰").onFirst().performScrollTo().performClick()
+        waitText("실제로 산다면")
+        shot("48_product")
+        rule.onNodeWithText("장바구니").performClick()
+        waitText("장바구니에 담았어요")
+        rule.onNodeWithContentDescription("장바구니 1개").performClick()
+        waitText("결제 후 모의 지갑")
+        shot("49_cart")
+        rule.onNodeWithText("199,000원 모의 결제하기").performClick()
+        waitText("모의 결제 완료!")
+        rule.onNodeWithText("계속 둘러보기").performClick()
+        // 찾는 게 없으면 직접 적기
+        rule.onNodeWithText("찾는 게 없으면 직접 적어서 모의로 사기").performScrollTo().performClick()
         waitText("뭘 사고 싶어요?")
         rule.onNodeWithText("물건 이름").performTextReplacement("나이키 덩크 로우")
         rule.onNode(hasSetTextAction() and hasText("가격")).performTextReplacement("139000")
@@ -281,8 +297,8 @@ class AppFlowTest {
         waitText("결제 완료!")
         shot("23_paid")
         rule.onNodeWithText("내 집 보기").performClick()
-        waitText("배송 중 2개")
-        rule.onNodeWithText("배송 중 2개").performScrollTo()
+        waitText("배송 중 3개")
+        rule.onNodeWithText("배송 중 3개").performScrollTo()
         shot("24_house_shipping")
     }
 
@@ -353,7 +369,7 @@ class AppFlowTest {
         waitText("찜 목록 2개")
         rule.onNodeWithText("찜 목록 2개").performScrollTo()
         shot("31_wishlist")
-        rule.onAllNodesWithText("안 살래요").onFirst().performClick()
+        rule.onAllNodesWithText("안 살래요").onFirst().performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         waitText("안 산 돈 899,000원")
 
         rule.onNodeWithText("가계부").performClick()
@@ -373,6 +389,9 @@ class AppFlowTest {
 
         rule.onNodeWithText("내 집").performClick()
         rule.onAllNodesWithText("모의 쇼핑").onFirst().performScrollTo().performClick()
+        waitText("많이 담는 물건")
+        rule.onNodeWithText("찾는 게 없으면 직접 적어서 모의로 사기").performScrollTo().performClick()
+        waitText("뭘 사고 싶어요?")
         rule.onNodeWithText("물건 이름").performTextReplacement("에어팟 맥스")
         rule.onNode(hasSetTextAction() and hasText("가격")).performTextReplacement("769000")
         rule.onNodeWithText("찜하기").performClick()
@@ -497,9 +516,18 @@ class AppFlowTest {
         shot("43_furniture_move")
         rule.onNodeWithText("투룸으로 이사하기").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         rule.waitUntil(5_000) { readDb { houseNow() }?.level == "TWO_ROOM" }
+        // 아파트 미리보기
+        rule.onNodeWithText("아파트").performScrollTo().performClick()
+        shot("43b_furniture_apartment")
         rule.onNodeWithText("수납 가구").performClick()
         waitText("+3칸 · 800마일")
         shot("44_furniture_storage")
+        // 인테리어: 색을 눌러 미리보기
+        rule.onNodeWithText("인테리어").performClick()
+        rule.onNodeWithContentDescription("벽지 민트").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithContentDescription("러그 빨강").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        waitText("1,500마일로 민트 사기")
+        shot("44b_furniture_interior")
         rule.onNodeWithContentDescription("뒤로").performClick()
 
         // 카드

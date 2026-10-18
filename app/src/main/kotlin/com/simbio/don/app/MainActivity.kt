@@ -53,6 +53,7 @@ import com.simbio.don.app.data.toRule
 import com.simbio.don.app.lock.AppLock
 import com.simbio.don.app.lock.LockScreen
 import com.simbio.don.app.lock.SetPinScreen
+import com.simbio.don.app.mall.NaverShopping
 import com.simbio.don.app.notify.DailyReminder
 import com.simbio.don.app.ui.AccountDetailScreen
 import com.simbio.don.app.ui.AccountEditScreen
@@ -74,6 +75,7 @@ import com.simbio.don.app.ui.HouseScreen
 import com.simbio.don.app.ui.LedgerMode
 import com.simbio.don.app.ui.LedgerScreen
 import com.simbio.don.app.ui.MainViewModel
+import com.simbio.don.app.ui.MallScreen
 import com.simbio.don.app.ui.MilesScreen
 import com.simbio.don.app.ui.MockShopScreen
 import com.simbio.don.app.ui.OnboardingScreen
@@ -87,12 +89,12 @@ import com.simbio.don.app.ui.SearchScreen
 import com.simbio.don.app.ui.SettingsScreen
 import com.simbio.don.app.ui.SettlementScreen
 import com.simbio.don.app.ui.StatsScreen
-import com.simbio.don.app.ui.ro
 import com.simbio.don.app.ui.kit.AddFab
 import com.simbio.don.app.ui.kit.LocalCharacterLook
 import com.simbio.don.app.ui.kit.TabBar
 import com.simbio.don.app.ui.kit.TabItem
 import com.simbio.don.app.ui.kit.UiIcon
+import com.simbio.don.app.ui.ro
 import com.simbio.don.app.weather.WeatherService
 import com.simbio.don.app.widget.WeekWidget
 import com.simbio.don.budget.Category
@@ -128,6 +130,7 @@ private sealed interface Overlay {
     data object Miles : Overlay
     data object Cards : Overlay
     data object Furniture : Overlay
+    data object Mall : Overlay
     data object Categories : Overlay
     data object RecurringIncome : Overlay
 
@@ -320,14 +323,14 @@ class MainActivity : ComponentActivity() {
                         onAllEntries = { vm.resetMonth(); ledgerDate = null; ledgerCategory = null; ledgerMode = LedgerMode.DAILY; tab = Tab.Ledger },
                         onStats = { vm.resetMonth(); tab = Tab.Stats },
                         onHouse = { tab = Tab.House },
-                        onShop = { overlay = Overlay.Shop(null) },
+                        onShop = { overlay = Overlay.Mall },
                         onBudgets = { overlay = Overlay.Budgets },
                         onGoals = { overlay = Overlay.Goals },
                         weather = weather,
                     )
                     Tab.House -> HouseScreen(
                         home = home,
-                        onShop = { overlay = Overlay.Shop(null) },
+                        onShop = { overlay = Overlay.Mall },
                         onDress = { overlay = Overlay.Dress },
                         onMiles = { overlay = Overlay.Miles },
                         onFurniture = { overlay = Overlay.Furniture },
@@ -414,6 +417,7 @@ class MainActivity : ComponentActivity() {
         val seen by vm.seenApps.collectAsStateWithLifecycle()
         val learned by vm.learned.collectAsStateWithLifecycle()
         val incomes by vm.recurringIncomes.collectAsStateWithLifecycle()
+        var naverOn by remember { mutableStateOf(NaverShopping.isOn(this)) }
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
         var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
         val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -489,6 +493,9 @@ class MainActivity : ComponentActivity() {
                 onCategories = { open(Overlay.Categories) },
                 onRecurringIncome = { open(Overlay.RecurringIncome) },
                 recurringCount = incomes.size,
+                naverOn = naverOn,
+                onNaverKeys = { id, secret -> NaverShopping.save(this, id, secret); naverOn = true },
+                onNaverClear = { NaverShopping.clear(this); naverOn = false },
                 lockOn = AppLock.isOn(this),
                 onLock = { on -> open(if (on) Overlay.SetPin else Overlay.UnlockToTurnOff) },
                 onChangePin = { open(Overlay.SetPin) },
@@ -695,6 +702,25 @@ class MainActivity : ComponentActivity() {
                 },
                 onBack = close,
             )
+            Overlay.Mall -> {
+                val cart by vm.cart.collectAsStateWithLifecycle()
+                MallScreen(
+                    wallet = home.wallet,
+                    salary = home.salary,
+                    cart = cart,
+                    naverOn = NaverShopping.isOn(this),
+                    onSearchNaver = { q -> NaverShopping.search(this, q) },
+                    onCart = { vm.cart.value = it },
+                    onBuy = { n, p, k, st -> vm.buyMock(n, p, k, st) },
+                    onWish = { n, p, k, st ->
+                        vm.wishMock(n, p, k, st)
+                        Toast.makeText(this, "찜했어요. 하루 뒤에 다시 물어볼게요", Toast.LENGTH_SHORT).show()
+                    },
+                    onManual = { open(Overlay.Shop(null)) },
+                    onHouse = goHouse,
+                    onBack = close,
+                )
+            }
             Overlay.Miles -> MilesScreen(home.miles, onDeposit = { vm.depositMiles(it) }, onWithdraw = { vm.withdrawMiles(it) }, onBack = close)
             Overlay.Cards -> CardsScreen(home.mockItems, home.salary, onBack = close)
             Overlay.Goals -> {

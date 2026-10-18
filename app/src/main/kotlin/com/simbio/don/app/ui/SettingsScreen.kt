@@ -83,6 +83,9 @@ fun SettingsScreen(
     onCategories: () -> Unit = {},
     onRecurringIncome: () -> Unit = {},
     recurringCount: Int = 0,
+    naverOn: Boolean = false,
+    onNaverKeys: (String, String) -> Unit = { _, _ -> },
+    onNaverClear: () -> Unit = {},
     lockOn: Boolean = false,
     onLock: (Boolean) -> Unit = {},
     onChangePin: () -> Unit = {},
@@ -255,6 +258,25 @@ fun SettingsScreen(
             SubButton(onClick = onCategories, modifier = Modifier.fillMaxWidth()) {
                 Icon(UiIcon.TAG, 18.dp, DonColors.InkSoft)
                 Text("분류 관리 (소분류 · 직접 만들기)")
+            }
+        }
+
+        GameCard("네이버 쇼핑 검색 (선택)") {
+            Text(
+                "돈't 몰에서 실제 상품 이름·값을 찾아 모의로 살 수 있어요. 네이버 개발자센터에서 '검색' API 애플리케이션을 만들고 " +
+                    "Client ID·Secret을 넣어 주세요. 검색어만 네이버로 보내고, 가계부 기록은 보내지 않아요. 키는 이 폰에만 저장돼요.",
+                fontSize = 12.sp,
+                color = DonColors.InkSoft,
+            )
+            if (naverOn) {
+                Text("켜져 있어요", fontSize = 14.sp, color = DonColors.Good, fontWeight = FontWeight.Bold)
+                SubButton(onClick = onNaverClear, modifier = Modifier.fillMaxWidth()) { Text("키 지우기") }
+            } else {
+                var id by remember { mutableStateOf("") }
+                var secret by remember { mutableStateOf("") }
+                OutlinedTextField(value = id, onValueChange = { id = it.trim() }, label = { Text("Client ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = secret, onValueChange = { secret = it.trim() }, label = { Text("Client Secret") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                SubButton(onClick = { onNaverKeys(id, secret) }, enabled = id.isNotBlank() && secret.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("저장") }
             }
         }
 

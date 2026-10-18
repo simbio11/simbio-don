@@ -161,7 +161,9 @@ fun PixelRoom(
     /** 고른 인테리어 색 (없으면 기본) */
     interior: Map<com.simbio.don.game.Shop.Interior, String> = emptyMap(),
 ) {
-    val room = ImageBitmap.imageResource(R.drawable.px_room_one_room)
+    val level = house.level
+    val roomContext = LocalContext.current
+    val room = remember(level, interior) { RoomArt.base(roomContext, level, interior) }
     val overcast = weather.overcast
     val sky = ImageBitmap.imageResource(
         when (phase) {
@@ -173,12 +175,12 @@ fun PixelRoom(
     // 흐린 날엔 바닥에 햇빛이 들지 않는다
     val light = when {
         overcast -> null
-        phase == DayPhase.DAY -> ImageBitmap.imageResource(R.drawable.px_light_day)
-        phase == DayPhase.SUNSET -> ImageBitmap.imageResource(R.drawable.px_light_sunset)
+        phase == DayPhase.DAY -> ImageBitmap.imageResource(RoomArt.lightDay(level))
+        phase == DayPhase.SUNSET -> ImageBitmap.imageResource(RoomArt.lightSunset(level))
         else -> null
     }
-    val nightShade = if (phase == DayPhase.NIGHT) ImageBitmap.imageResource(R.drawable.px_night_shade) else null
-    val nightLights = if (phase == DayPhase.NIGHT) ImageBitmap.imageResource(R.drawable.px_night_lights) else null
+    val nightShade = if (phase == DayPhase.NIGHT) ImageBitmap.imageResource(RoomArt.nightShade(level)) else null
+    val nightLights = if (phase == DayPhase.NIGHT) ImageBitmap.imageResource(RoomArt.nightLights(level)) else null
     val shadow = ImageBitmap.imageResource(R.drawable.px_shadow)
     val items = ItemKind.entries.associateWith { ImageBitmap.imageResource(it.icon()) }
     val trash = ItemKind.entries.filter { it.isFood }.associateWith { ImageBitmap.imageResource(it.icon(trash = true)) }
@@ -227,7 +229,7 @@ fun PixelRoom(
                 drawRect(Color.Black)
 
                 // 하늘은 유리창 안에서만 흐른다
-                val g = RoomLayout.glass
+                val g = RoomLayout.glassByLevel[level.name] ?: RoomLayout.glass
                 clipRect(g.left.toFloat(), g.top.toFloat(), g.right.toFloat(), g.bottom.toFloat()) {
                     val off = skyOffset.toInt()
                     put(sky, g.left - off, g.top)

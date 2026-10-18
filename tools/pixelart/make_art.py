@@ -17,15 +17,16 @@ import sys
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from palette import PALETTE  # noqa: E402
+from palette import MARKERS, PALETTE, THEMES  # noqa: E402
 import room  # noqa: E402
 import sprites  # noqa: E402
-from v3 import char3, export3, lib as lib3  # noqa: E402
+from v3 import char3, export3, items16, lib as lib3  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "app/src/main/res/drawable-nodpi")
 LAYOUT_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/RoomLayout.kt")
 PARTS_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/CharacterParts.kt")
+COLORS_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/RoomColors.kt")
 
 
 def grid_image(rows, name="?"):
@@ -53,15 +54,84 @@ def build():
     ImageDraw.Draw(shadow).ellipse([0, 0, 15, 3], fill=(43, 34, 52, 70))
     outputs["px_shadow"] = shadow
 
-    outputs["px_room_one_room"] = room.draw_base()
+    # 카드·가게용 16×16 (방 안의 물건은 12×12 그대로)
+    outputs.update(items16.outputs())
+
+    # 집 단계마다 방 바탕과 시간대 레이어 (벽지·바닥·러그·커튼·이불은 표식 색 — 앱이 바꾼다)
+    for level in room.LEVELS:
+        outputs[f"px_room_{level}"] = room.draw_base(level)
+        outputs[f"px_light_day_{level}"] = room.sunlight("day", level)
+        outputs[f"px_light_sunset_{level}"] = room.sunlight("sunset", level)
+        outputs[f"px_night_shade_{level}"] = room.night_shade(level)
+        outputs[f"px_night_lights_{level}"] = room.night_lights(level)
+    check_markers(outputs)
     for phase in room.PHASES:
         outputs[f"px_sky_{phase}"] = room.sky(phase)
         outputs[f"px_sky_{phase}_overcast"] = room.sky(phase, overcast=True)
-    outputs["px_light_day"] = room.sunlight("day")
-    outputs["px_light_sunset"] = room.sunlight("sunset")
-    outputs["px_night_shade"] = room.night_shade()
-    outputs["px_night_lights"] = room.night_lights()
     return outputs
+
+
+def _pixels(img):
+    return list(img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata())
+
+
+def check_markers(outputs):
+    """표식 색은 서로 달라야 하고, 방 바탕에서 표식 아닌 곳에 쓰이면 안 된다 (앱이 그 색만 찾아 바꾸므로)"""
+    flat = [c.lower() for cs in MARKERS.values() for c in cs]
+    assert len(flat) == len(set(flat)), "표식 색이 겹쳐요"
+    for k, themes in THEMES.items():
+        for name, ramp in themes:
+            assert len(ramp) == len(MARKERS[k]), f"{k} {name}: 색 수가 표식과 달라요"
+    marks = {room.rgba(c)[:3] for c in flat}
+    for level in room.LEVELS:
+        data = _pixels(outputs[f"px_room_{level}"])
+        used = {p[:3] for p in data if p[3] == 255}
+        for k, cs in MARKERS.items():
+            assert any(room.rgba(c)[:3] in used for c in cs), f"{level}: {k} 표식이 안 쓰였어요"
+        # 반투명 칸은 표식과 같은 색이면 안 됨
+        semi = {p[:3] for p in data if 0 < p[3] < 255}
+        assert not (semi & marks), f"{level}: 반투명 칸에 표식 색"
+
+
+def write_colors_kt():
+    def arr(cs):
+        return "intArrayOf(" + ", ".join(f"0xFF{c.lstrip('#').upper()}.toInt()" for c in cs) + ")"
+
+    def themes(k):
+        return ",\n".join(f'        "{n}" to {arr(cs)}' for n, cs in THEMES[k])
+
+    kt = f"""package com.simbio.don.app.ui.pixel
+
+// 생성된 파일: tools/pixelart/make_art.py (palette.MARKERS·THEMES) — 직접 고치지 말고 스크립트를 고친 뒤 다시 돌린다.
+
+/** 방 인테리어 색 바꾸기: 방 그림(px_room_*)에서 표식 색을 찾아 고른 색 묶음으로 바꾼다 (밝음 → 어둠). */
+object RoomColors {{
+    val WALL = {arr(MARKERS["WALL"])}
+    val FLOOR = {arr(MARKERS["FLOOR"])}
+    val RUG = {arr(MARKERS["RUG"])}
+    val CURTAIN = {arr(MARKERS["CURTAIN"])}
+    val BEDDING = {arr(MARKERS["BEDDING"])}
+
+    /** 고를 수 있는 색 (첫째가 기본) */
+    val walls: List<Pair<String, IntArray>> = listOf(
+{themes("WALL")},
+    )
+    val floors: List<Pair<String, IntArray>> = listOf(
+{themes("FLOOR")},
+    )
+    val rugs: List<Pair<String, IntArray>> = listOf(
+{themes("RUG")},
+    )
+    val curtains: List<Pair<String, IntArray>> = listOf(
+{themes("CURTAIN")},
+    )
+    val beddings: List<Pair<String, IntArray>> = listOf(
+{themes("BEDDING")},
+    )
+}}
+"""
+    with open(COLORS_KT, "w") as f:
+        f.write(kt)
 
 
 MIPMAP_SCALES = {"mdpi": 2, "hdpi": 3, "xhdpi": 4, "xxhdpi": 6, "xxxhdpi": 8}
@@ -105,6 +175,7 @@ def write_layout_kt():
     slots = "\n".join(f"        Slot.{k} to listOf({pts(v)})," for k, v in room.SLOTS.items())
     hits = "\n".join(f"        Slot.{k} to {rect(v)}," for k, v in room.HITS.items())
     cx, cy = room.CHARACTER_POS
+    glass_by_level = "\n".join(f'        "{lv.upper()}" to {rect(g)},' for lv, g in room.GLASS_BY_LEVEL.items())
     kt = f"""package com.simbio.don.app.ui.pixel
 
 import androidx.compose.ui.unit.IntOffset
@@ -113,7 +184,7 @@ import com.simbio.don.game.Slot
 
 // 생성된 파일: tools/pixelart/make_art.py — 직접 고치지 말고 스크립트를 고친 뒤 다시 돌린다.
 
-/** 원룸 그림(px_room_one_room) 안의 좌표. 단위는 그림 원본 픽셀. */
+/** 방 그림(px_room_*) 안의 좌표 — 세 집 모두 가구 자리가 같다. 단위는 그림 원본 픽셀. */
 object RoomLayout {{
     const val WIDTH = {room.W}
     const val HEIGHT = {room.H}
@@ -148,6 +219,11 @@ object RoomLayout {{
     /** 하늘이 비치는 유리창. 하늘 그림(px_sky_*)은 가로 {room.SKY_W}px로 이어 붙여 흘린다. */
     val glass = {rect(room.GLASS)}
     const val SKY_W = {room.SKY_W}
+
+    /** 집 단계(HouseLevel 이름)마다 유리창 — 투룸·아파트는 창이 더 넓다 */
+    val glassByLevel: Map<String, IntRect> = mapOf(
+{glass_by_level}
+    )
 }}
 """
     with open(LAYOUT_KT, "w") as f:
@@ -165,6 +241,7 @@ def main():
     for name, img in outputs.items():
         save(img, name)
     write_layout_kt()
+    write_colors_kt()
     with open(PARTS_KT, "w") as f:
         f.write(export3.kotlin(export3.parts()))
     icon = write_launcher_icon()
@@ -178,9 +255,10 @@ def main():
         bg = Image.new("RGBA", icon.size, room.rgba("#346AFF"))
         bg.alpha_composite(icon)
         bg.resize((54 * 6, 54 * 6), Image.NEAREST).save(os.path.join(preview, "icon.png"))
-        for phase in room.PHASES:
-            make_scene(outputs, phase).resize((room.W * 5, room.H * 5), Image.NEAREST).save(
-                os.path.join(preview, f"scene_{phase}.png"))
+        for level in room.LEVELS:
+            for phase in room.PHASES:
+                make_scene(outputs, phase, level).resize((room.W * 5, room.H * 5), Image.NEAREST).save(
+                    os.path.join(preview, f"scene_{level}_{phase}.png"))
 
 
 def make_sheet(outputs, path, scale=6):
@@ -203,14 +281,22 @@ def lib_img(rows):
     return img(rows)
 
 
-def make_scene(outputs, phase):
+def make_scene(outputs, phase, level="one_room"):
     """앱과 같은 순서로 겹친 미리보기 (칸을 채워서)"""
     out = Image.new("RGBA", (room.W, room.H), (0, 0, 0, 255))
-    gx, gy, gw, gh = room.GLASS
-    out.alpha_composite(outputs[f"px_sky_{phase}"].crop((8, 0, 8 + gw, gh)), (gx, gy))
-    out.alpha_composite(outputs["px_room_one_room"])
+    gx, gy, gw, gh = room.GLASS_BY_LEVEL[level]
+    sky = outputs[f"px_sky_{phase}"]
+    x = gx - 8
+    while x < gx + gw:
+        layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
+        layer.alpha_composite(sky, (x, gy)) if x >= 0 else layer.alpha_composite(sky.crop((-x, 0, sky.width, sky.height)), (0, gy))
+        mask = Image.new("L", out.size, 0)
+        mask.paste(255, (gx, gy, gx + gw, gy + gh))
+        out.paste(layer, (0, 0), mask)
+        x += sky.width
+    out.alpha_composite(outputs[f"px_room_{level}"])
     if phase != "night":
-        out.alpha_composite(outputs[f"px_light_{phase}"])
+        out.alpha_composite(outputs[f"px_light_{phase}_{level}"])
     fill = {
         "WARDROBE": ["clothes", "clothes", "bag", "clothes", "bag", "clothes"],
         "SHELF": ["book", "beauty", "toy", "living", "book", "etc"],
@@ -231,8 +317,8 @@ def make_scene(outputs, phase):
     if phase == "sunset":
         out.alpha_composite(Image.new("RGBA", out.size, (255, 140, 80, 34)))
     if phase == "night":
-        out.alpha_composite(outputs["px_night_shade"])
-        out.alpha_composite(outputs["px_night_lights"])
+        out.alpha_composite(outputs[f"px_night_shade_{level}"])
+        out.alpha_composite(outputs[f"px_night_lights_{level}"])
     return out
 
 

@@ -43,7 +43,6 @@ import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Badge
 import com.simbio.don.app.ui.kit.Button
 import com.simbio.don.app.ui.kit.FilterChip
-import com.simbio.don.app.ui.kit.ItemIcon
 import com.simbio.don.app.ui.kit.SubButton
 import com.simbio.don.app.ui.kit.card
 import com.simbio.don.game.CardGrade
@@ -71,7 +70,7 @@ fun MilesScreen(state: MileState, onDeposit: (Long) -> Unit, onWithdraw: (Long) 
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            GameCard("지갑") {
+            GameCard("지갑", icon = { com.simbio.don.app.ui.kit.PixelImage(com.simbio.don.app.R.drawable.px16_mile, 20.dp) }) {
                 Text(miles(state.wallet), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
                 Text(
                     "주말 결산 때 그 주 실제 예산에서 아낀 비율만큼 쌓여요. 아낀 1% = 100마일, 연속으로 지키면 최대 +50%. " +
@@ -80,7 +79,7 @@ fun MilesScreen(state: MileState, onDeposit: (Long) -> Unit, onWithdraw: (Long) 
                     color = DonColors.InkSoft,
                 )
             }
-            GameCard("마일 키우기") {
+            GameCard("마일 키우기", icon = { com.simbio.don.app.ui.kit.PixelImage(com.simbio.don.app.R.drawable.px16_grow, 20.dp) }) {
                 Text(miles(state.grow), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
                 Text("맡긴 마일은 한 주마다 0.5%씩 붙어요 (복리). 언제든 넣고 뺄 수 있어요.", fontSize = 12.sp, color = DonColors.InkSoft)
                 if (state.grow > 0) {
@@ -193,7 +192,7 @@ fun ItemCard(item: MockItem, salary: Long, modifier: Modifier = Modifier) {
             Modifier.fillMaxWidth().aspectRatio(1.3f).clip(RoundedCornerShape(10.dp)).background(DonColors.GameSurface)
                 .let { m -> grade.foil()?.let { m.background(it) } ?: m },
             contentAlignment = Alignment.Center,
-        ) { ItemIcon(item.kind, 64.dp) }
+        ) { com.simbio.don.app.ui.kit.ItemIcon16(item.kind, 64.dp) }
         Text(item.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, maxLines = 1)
         Text(won(item.price), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
         val share = Cards.salaryShareBps(item.price, salary)
@@ -257,10 +256,10 @@ fun MilesCard(state: MileState, cardCount: Int, onMiles: () -> Unit, onFurniture
         Text("실제로 아낀 비율만큼 쌓여요. 이사·가구·옷을 살 수 있어요.", fontSize = 12.sp, color = DonColors.InkSoft)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MenuTile("마일 키우기", com.simbio.don.app.R.drawable.ic_savings_fill, Modifier.weight(1f), onMiles)
-            MenuTile("가구점·이사", com.simbio.don.app.R.drawable.ic_weekend_fill, Modifier.weight(1f), onFurniture)
-            MenuTile("카드 $cardCount", com.simbio.don.app.R.drawable.ic_emoji_events_fill, Modifier.weight(1f), onCards)
-            MenuTile("옷장·뷰티샵", com.simbio.don.app.R.drawable.ic_checkroom_fill, Modifier.weight(1f), onDress)
+            MenuTile("마일 키우기", com.simbio.don.app.R.drawable.px16_grow, Modifier.weight(1f), onMiles)
+            MenuTile("가구점·이사", com.simbio.don.app.R.drawable.px16_move, Modifier.weight(1f), onFurniture)
+            MenuTile("카드 $cardCount", com.simbio.don.app.R.drawable.px16_card, Modifier.weight(1f), onCards)
+            MenuTile("옷장·뷰티샵", com.simbio.don.app.R.drawable.px16_closet, Modifier.weight(1f), onDress)
         }
     }
 }
@@ -273,7 +272,7 @@ private fun MenuTile(label: String, icon: Int, modifier: Modifier, onClick: () -
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(icon), contentDescription = null, tint = DonColors.Game, modifier = Modifier.padding(bottom = 4.dp))
+        com.simbio.don.app.ui.kit.PixelImage(icon, 32.dp, Modifier.padding(bottom = 4.dp))
         Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, maxLines = 1)
     }
 }

@@ -90,6 +90,7 @@ fun HouseScreen(
                 modifier = Modifier.clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                 phase = DayPhase.of(home.now.toLocalTime()),
                 weather = weather ?: Weather.CLEAR,
+                interior = home.setup.interior,
                 onTap = { hit ->
                     when (hit) {
                         is RoomHit.OfSlot -> picking = hit.slot.label to house.slots[hit.slot].orEmpty()
@@ -265,7 +266,7 @@ fun HomeGameCard(home: HomeState, onHouse: () -> Unit, onShop: () -> Unit, weath
             }
             MoreButton("내 집 보기", onHouse)
         }
-        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)), DayPhase.of(home.now.toLocalTime()), weather ?: Weather.CLEAR)
+        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)), DayPhase.of(home.now.toLocalTime()), weather ?: Weather.CLEAR, interior = home.setup.interior)
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

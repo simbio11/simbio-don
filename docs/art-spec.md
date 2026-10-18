@@ -12,8 +12,9 @@
   - `palette.py`: 색 (글자 하나 = 색 하나, 외곽선은 짙은 자두색 `#2b2234`, 1~9·d·M·V·Z 등은 밝은/어두운 단계)
   - `sprites.py`: 물건·아이콘 격자 (글자 하나 = 픽셀 하나). 빛은 왼쪽 위에서
   - `v3/`: 캐릭터 v3 (부위를 겹쳐 그리는 24×36 캐릭터) — 아래 "캐릭터 v3"
-  - `room.py`: 원룸 장면과 시간대 레이어 (하늘·햇빛·밤 그늘·밤 불빛)
-  - `make_art.py`: 전부 PNG로 저장하고 방 좌표 `RoomLayout.kt` 생성
+  - `room.py`: 집 세 채(원룸·투룸·아파트) 장면과 시간대 레이어 (하늘·햇빛·밤 그늘·밤 불빛). 벽지·바닥·러그·커튼·이불은 표식 색(`palette.MARKERS`)으로 그리고 앱이 고른 색(`THEMES`)으로 바꾼다
+  - `v3/items16.py`: 카드·몰·가게용 16×16 아이콘 (물건 13 + 가구·인테리어·이사·마일 등)
+  - `make_art.py`: 전부 PNG로 저장하고 방 좌표 `RoomLayout.kt`(집마다 유리창 포함)·인테리어 색 `RoomColors.kt` 생성. 표식 색이 겹치거나 방에서 빠지면 멈춘다
 - **결과물** `app/src/main/res/drawable-nodpi/px_*.png` — 원본 픽셀 크기
   - 방은 `RoomScene.kt`가 원본 크기 버퍼(160×136)에 겹쳐 그린 뒤 통째로 키운다 (레이어 격자가 어긋나지 않음)
   - 작은 그림(물건·캐릭터)은 기기 픽셀의 정수배로만 키운다
@@ -41,7 +42,7 @@
 ## 다시 만들기
 
 ```sh
-python3 tools/pixelart/make_art.py /tmp/preview   # 미리보기: sheet.png, characters.png, scene_{day,sunset,night}.png
+python3 tools/pixelart/make_art.py /tmp/preview   # 미리보기: sheet.png, characters.png, scene_{one_room,two_room,apartment}_{day,sunset,night}.png
 ```
 
 격자나 방 그리는 코드를 고친 뒤 다시 돌리면 PNG와 `RoomLayout.kt`가 함께 바뀐다 (안 쓰는 옛 `px_*.png`는 지운다).
@@ -58,12 +59,13 @@ python3 tools/pixelart/make_art.py /tmp/preview   # 미리보기: sheet.png, cha
 | 물건 | `px_item_{clothes,bag,shoes,electronics,book,beauty,living,toy,meal,drink,etc}` | 12 × 12 |
 | 먹고 남은 쓰레기 | `px_item_meal_trash`, `px_item_drink_trash` | 12 × 12 |
 | 캐릭터 그림자 | `px_shadow` | 16 × 4 |
-| 원룸 바탕 (유리창은 비어 있음) | `px_room_one_room` | 160 × 136 |
+| 집 바탕 (유리창은 비어 있음, 인테리어는 표식 색) | `px_room_{one_room,two_room,apartment}` | 160 × 136 |
 | 창밖 하늘 (가로로 이어 붙여 흘림) | `px_sky_{day,sunset,night}` | 64 × 20 |
-| 바닥 햇빛 | `px_light_{day,sunset}` | 160 × 136 |
-| 밤 그늘 / 밤 불빛 | `px_night_shade`, `px_night_lights` | 160 × 136 |
+| 바닥 햇빛 (집마다) | `px_light_{day,sunset}_{집}` | 160 × 136 |
+| 밤 그늘 / 밤 불빛 (집마다) | `px_night_shade_{집}`, `px_night_lights_{집}` | 160 × 136 |
+| 카드·몰·가게 아이콘 | `px16_*` | 16 × 16 |
 
-원룸 바탕을 새로 그릴 때는 가구 칸 위치가 `RoomLayout.kt`의 좌표와 맞아야 한다 (옷장 x 6–47, 책장 x 62–101, 책상 x 112–155, 신발장 x 6–33).
+집 바탕을 새로 그릴 때는 가구 칸 위치가 `RoomLayout.kt`의 좌표와 맞아야 하고(세 집 모두 같음), 인테리어 부분은 표식 색으로 칠해야 색 바꾸기가 된다 (옷장 x 6–47, 책장 x 62–101, 책상 x 112–155, 신발장 x 6–33).
 
 ## 이미지 생성 AI로 그릴 때 프롬프트 예시
 

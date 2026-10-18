@@ -114,6 +114,8 @@ fun FurnitureScreen(
                         val used = house.slots[slot].orEmpty().size
                         Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                com.simbio.don.app.ui.kit.PixelImage(storageIcon(slot), 32.dp)
+                                Spacer(Modifier.size(10.dp))
                                 Text(slot.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink, modifier = Modifier.weight(1f))
                                 Text("${lv}/${Shop.MAX_STORAGE_LEVEL}단계", fontSize = 13.sp, color = DonColors.GameDeep, fontWeight = FontWeight.SemiBold)
                             }
@@ -140,6 +142,8 @@ fun FurnitureScreen(
                         val owned = pick == default || "${part.name}:$pick" in setup.ownedInterior
                         Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                com.simbio.don.app.ui.kit.PixelImage(interiorIcon(part), 32.dp)
+                                Spacer(Modifier.size(10.dp))
                                 Text(part.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink, modifier = Modifier.weight(1f))
                                 Text(now, fontSize = 13.sp, color = DonColors.InkSoft)
                             }
@@ -176,4 +180,19 @@ fun FurnitureScreen(
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+private fun storageIcon(slot: com.simbio.don.game.Slot): Int = when (slot) {
+    com.simbio.don.game.Slot.WARDROBE -> com.simbio.don.app.R.drawable.px16_wardrobe
+    com.simbio.don.game.Slot.SHOE_RACK -> com.simbio.don.app.R.drawable.px16_shoe_rack
+    com.simbio.don.game.Slot.DESK -> com.simbio.don.app.R.drawable.px16_desk
+    else -> com.simbio.don.app.R.drawable.px16_shelf
+}
+
+private fun interiorIcon(part: Shop.Interior): Int = when (part) {
+    Shop.Interior.WALL -> com.simbio.don.app.R.drawable.px16_wallpaper
+    Shop.Interior.FLOOR -> com.simbio.don.app.R.drawable.px16_floor
+    Shop.Interior.RUG -> com.simbio.don.app.R.drawable.px16_rug
+    Shop.Interior.CURTAIN -> com.simbio.don.app.R.drawable.px16_curtain
+    Shop.Interior.BEDDING -> com.simbio.don.app.R.drawable.px16_bedding
 }

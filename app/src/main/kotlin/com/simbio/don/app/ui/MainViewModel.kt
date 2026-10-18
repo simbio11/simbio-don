@@ -236,6 +236,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteInstallment(id: Long) = viewModelScope.launch { repo.deleteInstallment(id) }
     fun saveRecurringIncomes(items: List<com.simbio.don.app.data.RecurringIncomeEntity>) = viewModelScope.launch { repo.saveRecurringIncomes(items) }
 
+    // ── 돈't 몰 ──
+    /** 장바구니 (앱을 닫으면 비워진다) */
+    val cart = MutableStateFlow<List<com.simbio.don.game.CartLine>>(emptyList())
+
     // ── 마일·가게 ──
     fun depositMiles(n: Long) = viewModelScope.launch { repo.depositMiles(n) }
     fun withdrawMiles(n: Long) = viewModelScope.launch { repo.withdrawMiles(n) }

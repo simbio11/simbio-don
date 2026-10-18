@@ -66,11 +66,30 @@ fun ItemKind.icon(trash: Boolean = false): Int = when (this) {
 fun ItemIcon(kind: ItemKind, size: Dp, trash: Boolean = false, modifier: Modifier = Modifier) =
     PixelImage(kind.icon(trash), size, modifier)
 
+/** 카드·가게용 16×16 큰 그림 (방 안은 12×12) */
+@DrawableRes
+fun ItemKind.icon16(trash: Boolean = false): Int = when (this) {
+    ItemKind.CLOTHES -> R.drawable.px16_item_clothes
+    ItemKind.BAG -> R.drawable.px16_item_bag
+    ItemKind.SHOES -> R.drawable.px16_item_shoes
+    ItemKind.ELECTRONICS -> R.drawable.px16_item_electronics
+    ItemKind.BOOK -> R.drawable.px16_item_book
+    ItemKind.BEAUTY -> R.drawable.px16_item_beauty
+    ItemKind.LIVING -> R.drawable.px16_item_living
+    ItemKind.TOY -> R.drawable.px16_item_toy
+    ItemKind.MEAL -> if (trash) R.drawable.px16_item_meal_trash else R.drawable.px16_item_meal
+    ItemKind.DRINK -> if (trash) R.drawable.px16_item_drink_trash else R.drawable.px16_item_drink
+    ItemKind.ETC -> R.drawable.px16_item_etc
+}
+
+@Composable
+fun ItemIcon16(kind: ItemKind, size: Dp, modifier: Modifier = Modifier) = PixelImage(kind.icon16(), size, modifier)
+
 /** 상품 사진 자리: 옅은 회색 둥근 칸 가운데 도트 물건 */
 @Composable
 fun ItemThumb(kind: ItemKind, size: Dp, modifier: Modifier = Modifier, fill: Color = Color(0xFFF2F4F6)) {
     Box(modifier.size(size).clip(RoundedCornerShape(size / 5)).background(fill), contentAlignment = Alignment.Center) {
-        ItemIcon(kind, size * 0.62f)
+        ItemIcon16(kind, size * 0.62f)
     }
 }
 
