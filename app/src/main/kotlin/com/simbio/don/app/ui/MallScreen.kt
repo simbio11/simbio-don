@@ -66,7 +66,12 @@ private sealed interface MallPage {
     data object Home : MallPage
     data class Detail(val product: Product, val store: String) : MallPage
     data object Cart : MallPage
-    data object Paying : MallPage
+
+    /** 바로 사기: 장바구니는 그대로 두고 이 물건만 결제 */
+    data class BuyNow(val lines: List<CartLine>) : MallPage
+
+    /** 결제 중 ([fromCart]면 끝나고 장바구니를 비운다) */
+    data class Paying(val lines: List<CartLine>, val fromCart: Boolean) : MallPage
     data class Done(val count: Int, val total: Long) : MallPage
 }
 
@@ -99,14 +104,13 @@ fun MallScreen(
         if (naverQuery.isNotBlank()) naver = onSearchNaver(naverQuery)
     }
     LaunchedEffect(page) {
-        if (page == MallPage.Paying) {
-            delay(1_200)
-            cart.forEach { l ->
-                repeat(l.qty) { onBuy(l.product.name + (l.option?.let { " ($it)" } ?: ""), l.product.price, l.product.kind, MALL_NAME) }
-            }
-            page = MallPage.Done(cartCount, cart.sumOf { it.total })
-            onCart(emptyList())
+        val paying = page as? MallPage.Paying ?: return@LaunchedEffect
+        delay(1_200)
+        paying.lines.forEach { l ->
+            repeat(l.qty) { onBuy(l.product.name + (l.option?.let { " ($it)" } ?: ""), l.product.price, l.product.kind, MALL_NAME) }
         }
+        if (paying.fromCart) onCart(emptyList())
+        page = MallPage.Done(paying.lines.sumOf { it.qty }, paying.lines.sumOf { it.total })
     }
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
@@ -114,6 +118,7 @@ fun MallScreen(
             MallPage.Home -> BackBar(MALL_NAME, onBack, trailing = { CartButton(cartCount) { page = MallPage.Cart } })
             is MallPage.Detail -> BackBar("", { page = MallPage.Home }, trailing = { CartButton(cartCount) { page = MallPage.Cart } })
             MallPage.Cart -> BackBar("장바구니", { page = MallPage.Home })
+            is MallPage.BuyNow -> BackBar("주문 / 결제", { page = MallPage.Home })
             else -> Spacer(Modifier.height(8.dp))
         }
         MockBadge()
@@ -127,11 +132,12 @@ fun MallScreen(
             is MallPage.Detail -> ProductDetail(
                 p.product, p.store, wallet, salary,
                 onAdd = { option -> onCart(Catalog.add(cart, p.product, option)) },
-                onBuyNow = { option -> onCart(Catalog.add(emptyList(), p.product, option)); page = MallPage.Cart },
+                onBuyNow = { option -> page = MallPage.BuyNow(Catalog.add(emptyList(), p.product, option)) },
                 onWish = { onWish(p.product.name, p.product.price, p.product.kind, p.store); page = MallPage.Home },
             )
-            MallPage.Cart -> CartPage(cart, wallet, onCart, onPay = { page = MallPage.Paying })
-            MallPage.Paying -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            MallPage.Cart -> CartPage(cart, wallet, onCart, onPay = { page = MallPage.Paying(cart, fromCart = true) })
+            is MallPage.BuyNow -> CartPage(p.lines, wallet, { page = MallPage.BuyNow(it) }, onPay = { page = MallPage.Paying(p.lines, fromCart = false) })
+            is MallPage.Paying -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("모의 결제 중…", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DonColors.GameDeep)
             }
             is MallPage.Done -> Column(

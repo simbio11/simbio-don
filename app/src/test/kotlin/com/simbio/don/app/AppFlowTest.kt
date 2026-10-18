@@ -284,6 +284,15 @@ class AppFlowTest {
         rule.onNodeWithText("199,000원 모의 결제하기").performClick()
         waitText("모의 결제 완료!")
         rule.onNodeWithText("계속 둘러보기").performClick()
+        // 바로 사기는 장바구니를 건드리지 않는다
+        rule.onAllNodesWithText("오버핏 맨투맨").onFirst().performScrollTo().performClick()
+        rule.onNodeWithText("장바구니").performClick()
+        rule.onNodeWithText("바로 사기").performClick()
+        waitText("주문 / 결제")
+        rule.onNodeWithText("39,000원 모의 결제하기").performClick()
+        waitText("모의 결제 완료!")
+        rule.onNodeWithText("계속 둘러보기").performClick()
+        rule.onNodeWithContentDescription("장바구니 1개").assertExists()
         // 찾는 게 없으면 직접 적기
         rule.onNodeWithText("찾는 게 없으면 직접 적어서 모의로 사기").performScrollTo().performClick()
         waitText("뭘 사고 싶어요?")
@@ -297,8 +306,8 @@ class AppFlowTest {
         waitText("결제 완료!")
         shot("23_paid")
         rule.onNodeWithText("내 집 보기").performClick()
-        waitText("배송 중 3개")
-        rule.onNodeWithText("배송 중 3개").performScrollTo()
+        waitText("배송 중 4개")
+        rule.onNodeWithText("배송 중 4개").performScrollTo()
         shot("24_house_shipping")
     }
 
