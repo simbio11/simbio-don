@@ -1,7 +1,6 @@
 package com.simbio.don.app.ui
 
 import androidx.compose.foundation.background
-import com.simbio.don.app.ui.kit.pressable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -92,7 +91,7 @@ fun AssetsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ScreenTitle("자산", trailing = { SmallButton(onClick = onAdd) { Text("+ 자산 추가") } })
-        NetWorthCard(balances, shown.size >= 2, onTransfer, onAddPot)
+        NetWorthCard(balances, shown.size >= 2, onTransfer)
         WealthCard(wealth, checkDue, onCheck, onAddPot)
         if (shown.isEmpty()) {
             SectionCard("자산이 없어요") {
@@ -339,7 +338,7 @@ fun AccountEditScreen(
  * 생활비 통장만 넣으면 이번 달 쓸 돈과 다를 게 없으니, 모으는 돈이 없을 때는 넣어 보라고 권한다.
  */
 @Composable
-private fun NetWorthCard(balances: List<AccountBalance>, canTransfer: Boolean, onTransfer: () -> Unit, onAddPot: () -> Unit) {
+private fun NetWorthCard(balances: List<AccountBalance>, canTransfer: Boolean, onTransfer: () -> Unit) {
     val net = AccountBalances.net(balances)
     val spend = AccountBalances.spending(balances)
     val grow = AccountBalances.growing(balances)
@@ -359,16 +358,12 @@ private fun NetWorthCard(balances: List<AccountBalance>, canTransfer: Boolean, o
             NetPart("부채", "카드값 등", "−" + won(debt), DonColors.Expense)
         }
         if (grow == 0L) {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(DonColors.GoodSurface).pressable(onClick = onAddPot).padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("지금은 쓰는 돈만 들어 있어요", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
-                    Text("적금·주식·보증금처럼 모아 둔 돈도 넣어야 진짜 순자산이에요.", fontSize = 12.sp, color = DonColors.InkSoft)
-                }
-                Text("넣기", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Good)
-            }
+            Text(
+                "지금은 쓰는 돈만 들어 있어요. 적금·주식·보증금처럼 모아 둔 돈도 아래 \"모으는 돈\"에 넣어야 진짜 순자산이에요.",
+                fontSize = 12.sp,
+                color = DonColors.Good,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
         if (canTransfer) SubButton(onClick = onTransfer, modifier = Modifier.fillMaxWidth()) { Text("이체 적기 (통장 → 현금, 카드값 내기)") }
     }
