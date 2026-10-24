@@ -31,8 +31,9 @@ import com.simbio.don.budget.CategoryGuesser
         InstallmentEntity::class,
         RecurringIncomeEntity::class,
         MileTxEntity::class,
+        GamePlayEntity::class,
     ],
-    version = 8,
+    version = 9,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -50,7 +51,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 }
                 ).build().also { instance = it }
         }
@@ -59,6 +60,17 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v9: 칭호, 미니게임 기록 */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE house ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS game_play (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, game TEXT NOT NULL, " +
+                        "epochDay INTEGER NOT NULL, score INTEGER NOT NULL, miles INTEGER NOT NULL)",
+                )
+            }
         }
 
         /** v8: 마일리지·마일 키우기, 집 꾸밈(수납·인테리어·옷장), 뷰티샵 예약, 카드 반짝이 */

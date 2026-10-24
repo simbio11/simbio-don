@@ -255,6 +255,8 @@ data class HouseEntity(
     @ColumnInfo(defaultValue = "") val owned: String = "",
     /** 첫 꾸미기는 공짜 (얼굴·머리 바꾸기 한 번) */
     @ColumnInfo(defaultValue = "1") val freeMakeover: Boolean = true,
+    /** 집 화면에 다는 칭호 (세트·도감으로 얻음, 비면 없음) */
+    @ColumnInfo(defaultValue = "") val title: String = "",
 )
 
 /** 직접 만든 카테고리. [name]은 "U" + 번호 (기록에는 이 이름이 저장된다) */
@@ -312,11 +314,22 @@ data class MileTxEntity(
     val epochDay: Long,
     /** 들어오면 +, 나가면 − */
     val amount: Long,
-    /** EARN · BONUS · BUY · DEPOSIT · WITHDRAW · INTEREST */
+    /** EARN · BONUS · BUY · DEPOSIT · WITHDRAW · INTEREST · GAME */
     val kind: String,
     /** WALLET · GROW */
     val account: String = "WALLET",
     val memo: String = "",
     /** 같은 결산을 두 번 적립하지 않게 ("2026-10#2:EARN"), 그 밖엔 null */
     val refKey: String? = null,
+)
+
+/** 미니게임 한 판 ([miles]는 상한 안에서 실제로 받은 마일) */
+@Entity(tableName = "game_play")
+data class GamePlayEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** com.simbio.don.game.MiniGame 이름 */
+    val game: String,
+    val epochDay: Long,
+    val score: Int,
+    val miles: Long,
 )

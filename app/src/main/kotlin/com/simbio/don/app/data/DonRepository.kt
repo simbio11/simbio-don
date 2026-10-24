@@ -6,6 +6,10 @@ import com.simbio.don.game.Miles
 import com.simbio.don.game.MileGrowth
 import com.simbio.don.game.HouseSetup
 import com.simbio.don.game.CardGrade
+import com.simbio.don.game.Dex
+import com.simbio.don.game.MiniGame
+import com.simbio.don.game.MiniGameRewards
+import com.simbio.don.game.Sets
 import com.simbio.don.budget.Subcategories
 import com.simbio.don.budget.RecurringIncomes
 import com.simbio.don.budget.Installments
@@ -127,6 +131,10 @@ data class HomeState(
     val owned: Set<String> = emptySet(),
     /** 첫 꾸미기(얼굴·머리)는 공짜 */
     val freeMakeover: Boolean = true,
+    // ── M3 ──
+    /** 집 화면에 다는 칭호 (없으면 빈 칸) */
+    val title: String = "",
+    val game: GameState = GameState(),
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
 
@@ -170,6 +178,36 @@ data class MileState(
             grow = tx.filter { it.account == "GROW" }.sumOf { it.amount },
             history = tx.take(100),
         )
+    }
+}
+
+/**
+ * 이번 주 미니게임 마일: 이번 주에 들어온 결산 마일의 10%까지 ([cap]), 그중 이미 받은 것 ([earned]).
+ * 결산 마일이 0이면 미니게임은 마일 없이 논다.
+ */
+data class GameState(
+    val settled: Long = 0,
+    val cap: Long = 0,
+    val earned: Long = 0,
+    /** 지금까지 한 판들 (새 것 먼저) */
+    val plays: List<GamePlayEntity> = emptyList(),
+) {
+    val left: Long get() = (cap - earned).coerceAtLeast(0)
+
+    /** 가장 잘한 판: 얼마일까는 많이 맞힐수록, 짝 맞추기는 적게 뒤집을수록 */
+    fun best(game: MiniGame): Int? {
+        val mine = plays.filter { it.game == game.name }.map { it.score }
+        return if (game == MiniGame.MEMORY) mine.minOrNull() else mine.maxOrNull()
+    }
+
+    companion object {
+        fun of(tx: List<MileTxEntity>, plays: List<GamePlayEntity>, week: com.simbio.don.budget.Week?): GameState {
+            if (week == null) return GameState(plays = plays)
+            val range = week.start.toEpochDay()..week.end.toEpochDay()
+            val settled = tx.filter { (it.kind == "EARN" || it.kind == "BONUS") && it.epochDay in range }.sumOf { it.amount }
+            val earned = tx.filter { it.kind == "GAME" && it.epochDay in range }.sumOf { it.amount }
+            return GameState(settled, MiniGameRewards.weeklyCap(settled), earned, plays)
+        }
     }
 }
 
@@ -250,11 +288,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun home(now: Flow<LocalDateTime>): Flow<HomeState?> =
-        combine(homeBase(now), extras, summaries(now), accountBalances, dao.mileTx()) { h, x, sums, accounts, miles ->
+        combine(homeBase(now), extras, summaries(now), accountBalances, combine(dao.mileTx(), dao.gamePlays()) { m, g -> m to g }) { h, x, sums, accounts, mg ->
             h?.let {
                 val total = sums.sumOf { s -> s.saved }
+                val (miles, plays) = mg
                 it.copy(
                     miles = MileState.of(miles),
+                    game = GameState.of(miles, plays, it.currentWeek?.week),
                     categoryBudgets = x.budgets,
                     savedTotal = total,
                     savedThisMonth = sums.firstOrNull()?.saved ?: 0,
@@ -355,6 +395,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             setup = HouseSetup.decode(house?.setup),
             owned = house?.owned.orEmpty().split(',').filter { it.isNotBlank() }.toSet(),
             freeMakeover = house?.freeMakeover ?: true,
+            title = house?.title.orEmpty(),
             mood = Moods.of(current, today, wallet, plan.disposable, cycle),
         )
     }
@@ -1004,6 +1045,31 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 캐릭터 모습 저장 (집 단계·이름은 그대로) */
     suspend fun saveLook(look: CharacterLook) = writeLock.withLock { saveLookLocked(look) }
+
+    // ── 도감·세트·미니게임 ─────────────────────────────────────
+
+    /** 칭호 달기 (세트·도감으로 얻은 것만, 빈 칸이면 떼기) */
+    suspend fun chooseTitle(title: String): Boolean = writeLock.withLock {
+        val got = Dex.gotIds(dao.mockPurchasesNow().map { it.toItem() })
+        if (title.isNotEmpty() && title !in Sets.titles(got)) return@withLock false
+        dao.saveHouse(houseLocked().copy(title = title))
+        true
+    }
+
+    /**
+     * 미니게임 한 판 기록. [reward]는 점수로 정한 마일이고, 이번 주 상한(결산 마일의 10%) 안에서만 지갑에 넣는다.
+     * 실제로 받은 마일을 돌려준다.
+     */
+    suspend fun playGame(game: MiniGame, score: Int, reward: Long, today: LocalDate = LocalDate.now()): Long = writeLock.withLock {
+        val week = cycleAt(today)?.let { (c, cycle) -> planFor(c, cycle).let { plan -> plan.weekIndexOf(today)?.let(plan.weeks::get) } }
+        val state = GameState.of(dao.mileTxNow(), emptyList(), week)
+        val miles = MiniGameRewards.grant(reward, state.cap, state.earned)
+        transaction {
+            dao.insertGamePlay(GamePlayEntity(game = game.name, epochDay = today.toEpochDay(), score = score, miles = miles))
+            if (miles > 0) dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = miles, kind = "GAME", memo = game.label))
+        }
+        miles
+    }
 
     private suspend fun saveLookLocked(look: CharacterLook) {
         val h = dao.houseNow() ?: HouseEntity()
@@ -1726,6 +1792,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             installments = dao.allInstallments(),
             recurringIncomes = dao.recurringIncomesNow(),
             mileTx = dao.mileTxNow(),
+            gamePlays = dao.gamePlaysNow(),
         ),
         now,
     )
@@ -1739,12 +1806,14 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.wipeRules(); dao.wipeSeen(); dao.wipeSettled(); dao.wipeCategoryRules(); dao.wipeMocks(); dao.wipeHouses()
                 dao.wipeCategoryBudgets(); dao.wipeGoals(); dao.wipeAccounts()
                 dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes(); dao.wipeMileTx()
+                dao.wipeGamePlays()
                 dao.putSettings(d.settings); dao.putFixed(d.fixed); dao.putCycles(d.cycles); dao.putEntries(d.entries)
                 dao.putReviews(d.reviews); dao.putRules(d.rules); dao.putSettled(d.settled); dao.putCategoryRules(d.categoryRules)
                 dao.putMocks(d.mocks); dao.putHouses(d.houses); dao.putCategoryBudgets(d.categoryBudgets); dao.putGoals(d.goals)
                 dao.putAccounts(d.accounts)
                 dao.putCategoryDefs(d.categoryDefs); dao.putSubcategories(d.subcategories); dao.putInstallments(d.installments)
                 dao.putRecurringIncomes(d.recurringIncomes); dao.putMileTx(d.mileTx)
+                dao.putGamePlays(d.gamePlays)
             }
             Category.register(dao.categoryDefsNow().map { it.toCategory() })
         }

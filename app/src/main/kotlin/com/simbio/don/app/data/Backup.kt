@@ -10,8 +10,8 @@ import java.time.LocalDateTime
  */
 object Backup {
     const val FORMAT = "dont-backup"
-    /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11) */
-    const val VERSION = 3
+    /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12) */
+    const val VERSION = 4
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -32,6 +32,7 @@ object Backup {
         val installments: List<InstallmentEntity> = emptyList(),
         val recurringIncomes: List<RecurringIncomeEntity> = emptyList(),
         val mileTx: List<MileTxEntity> = emptyList(),
+        val gamePlays: List<GamePlayEntity> = emptyList(),
     )
 
     class BadBackup(message: String) : Exception(message)
@@ -85,6 +86,7 @@ object Backup {
         put("houses", arr(d.houses) { o, x ->
             o.put("level", x.level); o.put("characterName", x.characterName); o.put("look", x.look)
             o.put("setup", x.setup); o.put("owned", x.owned); o.put("freeMakeover", x.freeMakeover)
+            o.put("title", x.title)
         })
         put("categoryBudgets", arr(d.categoryBudgets) { o, x -> o.put("category", x.category); o.put("amount", x.amount) })
         put("goals", arr(d.goals) { o, x ->
@@ -114,6 +116,9 @@ object Backup {
         put("mileTx", arr(d.mileTx) { o, x ->
             o.put("id", x.id); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("kind", x.kind)
             o.put("account", x.account); o.put("memo", x.memo); o.putOpt("refKey", x.refKey)
+        })
+        put("gamePlays", arr(d.gamePlays) { o, x ->
+            o.put("id", x.id); o.put("game", x.game); o.put("epochDay", x.epochDay); o.put("score", x.score); o.put("miles", x.miles)
         })
     }.toString()
 
@@ -167,7 +172,8 @@ object Backup {
                 },
                 houses = list(root, "houses") { o ->
                     HouseEntity(level = o.getString("level"), characterName = o.getString("characterName"), look = o.optString("look", ""),
-                        setup = o.optString("setup", ""), owned = o.optString("owned", ""), freeMakeover = o.optBoolean("freeMakeover", true))
+                        setup = o.optString("setup", ""), owned = o.optString("owned", ""), freeMakeover = o.optBoolean("freeMakeover", true),
+                        title = o.optString("title", ""))
                 },
                 categoryBudgets = list(root, "categoryBudgets") { o -> CategoryBudgetEntity(o.getString("category"), o.getLong("amount")) },
                 goals = list(root, "goals") { o ->
@@ -196,6 +202,9 @@ object Backup {
                 mileTx = list(root, "mileTx") { o ->
                     MileTxEntity(o.getLong("id"), o.getLong("epochDay"), o.getLong("amount"), o.getString("kind"), o.optString("account", "WALLET"),
                         o.optString("memo", ""), o.strOrNull("refKey"))
+                },
+                gamePlays = list(root, "gamePlays") { o ->
+                    GamePlayEntity(o.getLong("id"), o.getString("game"), o.getLong("epochDay"), o.getInt("score"), o.getLong("miles"))
                 },
             ).also {
                 if (it.settings.isEmpty() || it.cycles.isEmpty()) throw BadBackup("백업에 설정이 없어요")

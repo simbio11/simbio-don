@@ -361,6 +361,16 @@ interface DonDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertMileTx(x: MileTxEntity): Long
 
+    // ── 미니게임 ──
+    @Query("SELECT * FROM game_play ORDER BY id DESC")
+    fun gamePlays(): Flow<List<GamePlayEntity>>
+
+    @Query("SELECT * FROM game_play")
+    suspend fun gamePlaysNow(): List<GamePlayEntity>
+
+    @Insert
+    suspend fun insertGamePlay(x: GamePlayEntity): Long
+
     // ── 백업·복원 ──
     @Query("SELECT * FROM fixed_expense") suspend fun allFixed(): List<FixedExpenseEntity>
     @Query("SELECT * FROM cycle") suspend fun allCycles(): List<CycleEntity>
@@ -389,6 +399,7 @@ interface DonDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putInstallments(x: List<InstallmentEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putRecurringIncomes(x: List<RecurringIncomeEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putMileTx(x: List<MileTxEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putGamePlays(x: List<GamePlayEntity>)
 
     @Query("DELETE FROM settings") suspend fun wipeSettings()
     @Query("DELETE FROM fixed_expense") suspend fun wipeFixed()
@@ -410,4 +421,5 @@ interface DonDao {
     @Query("DELETE FROM installment") suspend fun wipeInstallments()
     @Query("DELETE FROM recurring_income") suspend fun wipeRecurringIncomes()
     @Query("DELETE FROM mile_tx") suspend fun wipeMileTx()
+    @Query("DELETE FROM game_play") suspend fun wipeGamePlays()
 }
