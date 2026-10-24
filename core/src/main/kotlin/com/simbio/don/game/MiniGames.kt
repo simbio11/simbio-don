@@ -1,5 +1,6 @@
 package com.simbio.don.game
 
+import kotlin.math.roundToLong
 import kotlin.random.Random
 
 /** 미니게임 종류 */
@@ -30,26 +31,52 @@ object PriceQuiz {
     const val ROUNDS = 5
     const val MILES_PER_RIGHT = 10L
 
-    data class Question(val product: Product, val choices: List<Long>) {
+    /** [source]는 실제 상품이면 쇼핑몰 이름 (네이버 쇼핑 최저가) */
+    data class Question(val product: Product, val choices: List<Long>, val source: String? = null) {
         val answer: Long get() = product.price
     }
 
     fun questions(seed: Long, rounds: Int = ROUNDS): List<Question> {
         val r = Random(seed)
-        return Catalog.products.shuffled(r).take(rounds).map { p -> Question(p, (distractors(p.price, r) + p.price).shuffled(r)) }
+        return Catalog.products.shuffled(r).take(rounds).map { p -> questionOf(p, r) }
     }
+
+    fun questionOf(p: Product, r: Random, source: String? = null): Question = Question(p, (distractors(p.price, r) + p.price).shuffled(r), source)
+
+    /**
+     * 실제 상품 문제에 쓸 검색어 (흔히 사는 물건). 이 검색어만 네이버 쇼핑 검색 API로 보낸다.
+     * 문제 수보다 조금 더 뽑아 둔다 (검색 결과가 없는 것에 대비).
+     */
+    val REAL_QUERIES = listOf(
+        "무선 이어폰", "운동화", "백팩", "텀블러", "전기포트", "블루투스 스피커", "기계식 키보드", "향수", "레고", "에어프라이어",
+        "가습기", "후드티", "롱패딩", "스마트워치", "보조배터리", "캠핑 의자", "캡슐 커피머신", "무선 마우스", "전동칫솔", "헤어드라이어",
+        "보드게임", "다이어리", "선글라스", "러닝화", "니트 가디건", "무드등", "공기청정기", "태블릿 거치대", "립스틱", "곰 인형",
+    )
+
+    fun realQueries(seed: Long, n: Int = ROUNDS + 3): List<String> = REAL_QUERIES.shuffled(Random(seed)).take(n)
 
     private val FACTORS = listOf(0.5, 0.6, 0.75, 1.3, 1.6, 2.0)
 
-    /** 그럴듯한 틀린 값 두 개 (진짜 값과 겹치지 않게, 하나는 싸고 하나는 비싸거나 둘 다 한쪽) */
+    /**
+     * 그럴듯한 틀린 값 두 개 (진짜 값과 겹치지 않게). 진짜 값과 같은 자릿수로 끊어 (23,450원이면 10원 단위)
+     * 끝자리만 보고 정답을 알 수 없게 한다.
+     */
     fun distractors(price: Long, r: Random): List<Long> {
         val out = mutableListOf<Long>()
+        val g = granularity(price)
         for (f in FACTORS.shuffled(r)) {
-            val v = nice((price * f).toLong())
+            val v = ((price * f / g).roundToLong() * g).coerceAtLeast(g)
             if (v != price && v !in out && v > 0) out += v
             if (out.size == 2) break
         }
         return out
+    }
+
+    /** 값의 끝자리 단위: 23,457 → 1, 23,450 → 10, 29,900 → 100, 39,000 → 1,000 (1만 원까지) */
+    fun granularity(price: Long): Long {
+        var g = 1L
+        while (g < 10_000 && price % (g * 10) == 0L) g *= 10
+        return g
     }
 
     /** 값처럼 보이게 반올림: 1만 원 아래 100원, 10만 원 아래 1,000원, 그 위 1만 원 */

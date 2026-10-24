@@ -257,8 +257,6 @@ private fun MallHome(
     }
 }
 
-private fun NaverItem.toProduct() = Product("naver:$title", title.take(40), price, ItemKind.guess("$title $category"))
-
 @Composable
 private fun NaverRow(n: NaverItem, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

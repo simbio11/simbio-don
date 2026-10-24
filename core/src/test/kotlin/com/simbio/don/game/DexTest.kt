@@ -108,6 +108,14 @@ class DexTest {
         assertEquals(39_000L, PriceQuiz.nice(38_700))
         assertEquals(1_550_000L, PriceQuiz.nice(1_548_000))
         assertTrue(PriceQuiz.distractors(9_900, Random(1)).none { it == 9_900L })
+        // 끝자리로 정답을 알 수 없게 같은 단위로
+        assertEquals(1L, PriceQuiz.granularity(23_457))
+        assertEquals(10L, PriceQuiz.granularity(23_450))
+        assertEquals(100L, PriceQuiz.granularity(29_900))
+        assertEquals(1_000L, PriceQuiz.granularity(39_000))
+        assertEquals(10_000L, PriceQuiz.granularity(1_550_000))
+        repeat(20) { seed -> assertTrue(PriceQuiz.distractors(23_450, Random(seed)).all { it % 10 == 0L && it != 23_450L }) }
+        assertEquals(PriceQuiz.ROUNDS + 3, PriceQuiz.realQueries(1).toSet().size)
         assertEquals(50L, PriceQuiz.reward(5))
     }
 

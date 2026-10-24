@@ -1,6 +1,8 @@
 package com.simbio.don.app.mall
 
 import android.content.Context
+import com.simbio.don.game.ItemKind
+import com.simbio.don.game.Product
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -9,7 +11,9 @@ import java.net.URL
 import java.net.URLEncoder
 
 /** 네이버 쇼핑 검색 결과 한 줄 (사진은 받지 않고 도트 아이콘으로 보여준다) */
-data class NaverItem(val title: String, val price: Long, val mall: String, val category: String)
+data class NaverItem(val title: String, val price: Long, val mall: String, val category: String) {
+    fun toProduct() = Product("naver:$title", title.take(40), price, ItemKind.guess("$title $category"))
+}
 
 /**
  * 네이버 쇼핑 검색 API (선택). 사용자가 직접 발급한 애플리케이션 키가 있을 때만 쓴다.

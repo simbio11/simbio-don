@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.GameState
+import com.simbio.don.app.mall.RealQuiz
 import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Badge
 import com.simbio.don.app.ui.kit.Button
@@ -62,13 +64,15 @@ import kotlin.random.Random
 
 private sealed interface GamePage {
     data object Menu : GamePage
-    data class Play(val game: MiniGame, val seed: Long) : GamePage
-    data class Result(val game: MiniGame, val score: Int, val reward: Long) : GamePage
+    /** [real]: 얼마일까?를 네이버 쇼핑 실제 상품으로 */
+    data class Play(val game: MiniGame, val seed: Long, val real: Boolean = false) : GamePage
+    data class Result(val game: MiniGame, val score: Int, val reward: Long, val real: Boolean = false) : GamePage
 }
 
 /**
  * 미니게임: 얼마일까?(값 맞히기) · 짝 맞추기. 마일은 이번 주 결산 마일의 10%까지만 (실제로 아낀 만큼만 쌓이게).
  * [onPlay]는 한 판을 기록하고 실제로 받은 마일을 돌려준다.
+ * [realQuiz]는 네이버 쇼핑 키가 있을 때만 — 실제 상품 문제를 불러온다 (실패하면 몰 상품으로).
  */
 @Composable
 fun MiniGameScreen(
@@ -77,9 +81,12 @@ fun MiniGameScreen(
     start: MiniGame?,
     onPlay: (game: MiniGame, score: Int, reward: Long, granted: (Long) -> Unit) -> Unit,
     onBack: () -> Unit,
+    realQuiz: (suspend (seed: Long) -> RealQuiz.Load)? = null,
     seed: () -> Long = { Random.nextLong() },
 ) {
-    var page by remember { mutableStateOf<GamePage>(start?.let { GamePage.Play(it, seed()) } ?: GamePage.Menu) }
+    var real by rememberSaveable { mutableStateOf(realQuiz != null) }
+    fun play(g: MiniGame) = GamePage.Play(g, seed(), g == MiniGame.QUIZ && real && realQuiz != null)
+    var page by remember { mutableStateOf<GamePage>(start?.let { play(it) } ?: GamePage.Menu) }
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
         val title = when (val p = page) {
             GamePage.Menu -> "미니게임"
@@ -102,12 +109,14 @@ fun MiniGameScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (p) {
-                GamePage.Menu -> GameMenu(state) { page = GamePage.Play(it, seed()) }
+                GamePage.Menu -> GameMenu(state, realOn = realQuiz != null, real = real, onReal = { real = it }) { page = play(it) }
                 is GamePage.Play -> when (p.game) {
-                    MiniGame.QUIZ -> QuizGame(p.seed, salary) { right -> page = GamePage.Result(p.game, right, PriceQuiz.reward(right)) }
+                    MiniGame.QUIZ -> QuizLoader(p.seed, p.real, realQuiz) { qs, fromReal ->
+                        QuizGame(p.seed, qs, salary) { right -> page = GamePage.Result(p.game, right, PriceQuiz.reward(right), fromReal) }
+                    }
                     MiniGame.MEMORY -> MemoryGameView(p.seed) { moves -> page = GamePage.Result(p.game, moves, MemoryGame.reward(moves)) }
                 }
-                is GamePage.Result -> GameResult(p, state, onPlay, again = { page = GamePage.Play(p.game, seed()) }, menu = { page = GamePage.Menu })
+                is GamePage.Result -> GameResult(p, state, onPlay, again = { page = play(p.game) }, menu = { page = GamePage.Menu })
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -116,7 +125,7 @@ fun MiniGameScreen(
 }
 
 @Composable
-private fun GameMenu(state: GameState, onStart: (MiniGame) -> Unit) {
+private fun GameMenu(state: GameState, realOn: Boolean, real: Boolean, onReal: (Boolean) -> Unit, onStart: (MiniGame) -> Unit) {
     GameCard("이번 주 미니게임 마일") {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(miles(state.left), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
@@ -143,7 +152,11 @@ private fun GameMenu(state: GameState, onStart: (MiniGame) -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(g.label, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
                 Text(
-                    if (g == MiniGame.QUIZ) "몰 물건 값을 맞혀요 · 한 문제 ${PriceQuiz.MILES_PER_RIGHT}마일" else "같은 그림 두 장 찾기 · 적게 뒤집을수록 많이 (최대 50마일)",
+                    when {
+                        g == MiniGame.MEMORY -> "같은 그림 두 장 찾기 · 적게 뒤집을수록 많이 (최대 50마일)"
+                        realOn && real -> "실제 쇼핑몰 상품의 최저가를 맞혀요 · 한 문제 ${PriceQuiz.MILES_PER_RIGHT}마일"
+                        else -> "몰 물건 값을 맞혀요 · 한 문제 ${PriceQuiz.MILES_PER_RIGHT}마일"
+                    },
                     fontSize = 12.sp,
                     color = DonColors.InkSoft,
                 )
@@ -154,14 +167,68 @@ private fun GameMenu(state: GameState, onStart: (MiniGame) -> Unit) {
             Spacer(Modifier.width(10.dp))
             Text("하기", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Game)
         }
+        if (g == MiniGame.QUIZ) QuizModes(realOn, real, onReal)
+    }
+}
+
+/** 얼마일까? 상품 고르기: 실제 상품(네이버 쇼핑) · 돈't 몰 상품 */
+@Composable
+private fun QuizModes(realOn: Boolean, real: Boolean, onReal: (Boolean) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.simbio.don.app.ui.kit.FilterChip(realOn && real, { onReal(true) }, { Text("실제 상품") }, enabled = realOn)
+            com.simbio.don.app.ui.kit.FilterChip(!realOn || !real, { onReal(false) }, { Text("돈't 몰 상품") })
+        }
+        Text(
+            if (realOn) "실제 상품은 네이버 쇼핑 검색으로 지금 최저가를 불러와요. 보내는 건 \"운동화\" 같은 검색어뿐이에요."
+            else "설정 › 네이버 쇼핑 검색에 키를 넣으면 실제 쇼핑몰 상품의 값으로 문제를 내요.",
+            fontSize = 12.sp,
+            color = DonColors.InkMuted,
+        )
     }
 }
 
 // ── 얼마일까? ──────────────────────────────────────────────
 
+/**
+ * 문제 준비: 실제 상품이면 네이버 쇼핑에서 불러오고 (불러오는 동안 기다림),
+ * 못 불러오면 까닭을 보여주고 몰 상품으로 낸다.
+ */
 @Composable
-private fun QuizGame(seed: Long, salary: Long, onDone: (right: Int) -> Unit) {
-    val qs = remember(seed) { PriceQuiz.questions(seed) }
+private fun QuizLoader(
+    seed: Long,
+    real: Boolean,
+    load: (suspend (Long) -> RealQuiz.Load)?,
+    content: @Composable (questions: List<PriceQuiz.Question>, real: Boolean) -> Unit,
+) {
+    var result by remember(seed) { mutableStateOf<RealQuiz.Load?>(null) }
+    if (real && load != null) {
+        LaunchedEffect(seed) { result = load(seed) }
+        when (val r = result) {
+            null -> {
+                Column(
+                    Modifier.fillMaxWidth().card().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(color = DonColors.Game, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+                    Text("실제 상품을 고르는 중…", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+                    Text("네이버 쇼핑에서 지금 최저가를 불러와요", fontSize = 12.sp, color = DonColors.InkSoft)
+                }
+                return
+            }
+            is RealQuiz.Load.Ok -> {
+                content(r.questions, true)
+                return
+            }
+            is RealQuiz.Load.Failed -> com.simbio.don.app.ui.kit.WarnLine("실제 상품을 불러오지 못해 몰 상품으로 내요 · ${r.message}", fontSize = 12)
+        }
+    }
+    content(remember(seed) { PriceQuiz.questions(seed) }, false)
+}
+
+@Composable
+private fun QuizGame(seed: Long, qs: List<PriceQuiz.Question>, salary: Long, onDone: (right: Int) -> Unit) {
     var i by remember(seed) { mutableIntStateOf(0) }
     var right by remember(seed) { mutableIntStateOf(0) }
     var picked by remember(seed) { mutableStateOf<Long?>(null) }
@@ -176,8 +243,16 @@ private fun QuizGame(seed: Long, salary: Long, onDone: (right: Int) -> Unit) {
         Box(Modifier.size(120.dp).clip(RoundedCornerShape(20.dp)).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
             PixelImage(q.product.icon16(), 96.dp)
         }
-        Text(q.product.name, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
-        Text("이 물건은 얼마일까요?", fontSize = 14.sp, color = DonColors.InkSoft)
+        q.source?.let { Badge("네이버 쇼핑 · $it", DonColors.Good) }
+        Text(
+            q.product.name,
+            fontSize = if (q.source != null) 16.sp else 19.sp,
+            fontWeight = FontWeight.Bold,
+            color = DonColors.Ink,
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+        )
+        Text(if (q.source != null) "이 상품의 지금 최저가는 얼마일까요?" else "이 물건은 얼마일까요?", fontSize = 14.sp, color = DonColors.InkSoft)
     }
     q.choices.forEach { c ->
         val done = picked != null
@@ -200,6 +275,7 @@ private fun QuizGame(seed: Long, salary: Long, onDone: (right: Int) -> Unit) {
     picked?.let { p ->
         Column(Modifier.fillMaxWidth().popIn(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(if (p == q.answer) "정답이에요!" else "아쉬워요! 정답은 ${won(q.answer)}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (p == q.answer) DonColors.Good else DonColors.Warn)
+            if (q.source != null) Text("${q.source} · 네이버 쇼핑 최저가 (불러온 때 기준)", fontSize = 12.sp, color = DonColors.InkMuted, textAlign = TextAlign.Center)
             val share = Cards.salaryShareBps(q.answer, salary)
             val hours = Cards.workHours(q.answer, salary)
             if (share != null && hours != null) {
@@ -302,6 +378,7 @@ private fun GameResult(
         Row(Modifier.popIn(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             repeat(3) { k -> com.simbio.don.app.ui.kit.Icon(com.simbio.don.app.ui.kit.UiIcon.STAR, 36.dp, if (k < stars) DonColors.Highlight else DonColors.Line) }
         }
+        if (r.real) Badge("실제 상품", DonColors.Good)
         Text(
             if (r.game == MiniGame.QUIZ) "${PriceQuiz.ROUNDS}문제 중 ${r.score}개 맞혔어요" else "${r.score}번 만에 다 맞췄어요",
             fontSize = 20.sp,

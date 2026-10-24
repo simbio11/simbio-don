@@ -817,6 +817,7 @@ class MainActivity : ComponentActivity() {
                 start = o.start,
                 onPlay = { g, score, reward, granted -> vm.playGame(g, score, reward, granted) },
                 onBack = close,
+                realQuiz = if (NaverShopping.isOn(this)) { seed -> com.simbio.don.app.mall.RealQuiz.load(seed) { q -> NaverShopping.search(this, q) } } else null,
             )
             Overlay.Goals -> {
                 val all by vm.goals.collectAsStateWithLifecycle()
