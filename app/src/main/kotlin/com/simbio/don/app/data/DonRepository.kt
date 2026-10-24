@@ -360,7 +360,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
         return HomeInsights(
             forecast = com.simbio.don.budget.Forecast.month(entries, h.cycle.start, h.cycle.end, h.plan.disposable, h.today),
-            noSpend = com.simbio.don.budget.NoSpendDays.of(entries, h.cycle.start, h.today),
+            // 무지출은 이번 달에 처음 적은 날부터 센다 (기록을 안 한 날까지 "안 쓴 날"로 치지 않게)
+            noSpend = entries.minOfOrNull { it.date }?.let { first ->
+                com.simbio.don.budget.NoSpendDays.of(entries, maxOf(h.cycle.start, first), h.today)
+            } ?: com.simbio.don.budget.NoSpend(emptySet(), 0),
             insights = com.simbio.don.budget.Insights.of(recentEntries, h.currentWeek?.week?.start ?: h.today, h.today),
             subscriptions = com.simbio.don.budget.Subscriptions.detect(recentEntries, known = fixed.map { it.name }),
             upcoming = upcoming.sortedBy { it.date },

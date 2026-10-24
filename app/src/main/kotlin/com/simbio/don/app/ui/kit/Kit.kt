@@ -455,19 +455,35 @@ fun TabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp)) {
             items.forEachIndexed { i, item ->
                 val on = i == selected
+                val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+                val interaction = remember { MutableInteractionSource() }
+                val pressed by interaction.collectIsPressedAsState()
+                // 고르면 아이콘이 톡 튀어 오른다
+                val bump by animateFloatAsState(
+                    when {
+                        pressed -> 0.88f
+                        on -> 1.08f
+                        else -> 1f
+                    },
+                    spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium),
+                    label = "tab",
+                )
                 Column(
                     Modifier
                         .weight(1f)
                         .clickable(
-                            remember { MutableInteractionSource() },
+                            interaction,
                             indication = null,
                             role = Role.Tab,
-                            onClick = { onSelect(i) },
+                            onClick = {
+                                if (!on) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                onSelect(i)
+                            },
                         )
                         .padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Icon(if (on) item.selectedIcon else item.icon, 26.dp, if (on) DonColors.Ink else DonColors.InkFaint)
+                    Icon(if (on) item.selectedIcon else item.icon, 26.dp, if (on) DonColors.Ink else DonColors.InkFaint, Modifier.scale(bump))
                     Spacer(Modifier.height(2.dp))
                     Text(
                         item.label,
