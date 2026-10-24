@@ -121,4 +121,31 @@ class WealthRepoTest {
         assertTrue(rules.getValue("com.example.mybank").enabled)
         assertFalse(rules.getValue("com.kakaopay.app").enabled)
     }
+    /** 0.15: 자산 고치기의 "지금 잔액"은 처음 잔액이 아니라 지금 잔액 — 기록은 그대로 두고 잔액만 맞춘다 */
+    @Test
+    fun `지금 잔액을 고치면 기록은 그대로 두고 잔액만 맞춘다`() = runTest {
+        val bank = db.dao().accountsNow().single { it.name == "생활비 통장" }
+        repo.addManual(d(10, 23), 200_000, "장보기", EntryType.SPEND, com.simbio.don.budget.Category.LIVING, accountId = bank.id)
+        assertEquals(800_000L, repo.accountBalances.first().single { it.account.id == bank.id }.balance)
+
+        repo.saveAccount(bank, balance = 1_250_000)
+        val fixed = repo.accountBalances.first().single { it.account.id == bank.id }
+        assertEquals(1_250_000L, fixed.balance)
+        assertEquals(1_450_000L, fixed.account.opening) // 처음 잔액이 옮겨짐
+        assertEquals(1, db.dao().allEntriesNow().count { it.label == "장보기" })
+
+        // 점검한 적 있는 모으는 통장은 오늘 점검으로: 넣은 돈은 그대로, 불어난 돈이 생긴다
+        val stock = db.dao().accountsNow().single { it.name == "주식" }
+        repo.saveAccount(stock, balance = 3_400_000)
+        val s = repo.accountBalances.first().single { it.account.id == stock.id }
+        assertEquals(3_400_000L, s.balance)
+        assertEquals(3_000_000L, s.principal)
+        assertEquals(400_000L, s.gain)
+
+        // 순자산 = 쓰는 돈 + 모으는 돈 − 부채
+        val all = repo.accountBalances.first()
+        assertEquals(1_250_000L, com.simbio.don.app.data.AccountBalances.spending(all))
+        assertEquals(8_400_000L, com.simbio.don.app.data.AccountBalances.growing(all))
+        assertEquals(9_650_000L, com.simbio.don.app.data.AccountBalances.net(all))
+    }
 }

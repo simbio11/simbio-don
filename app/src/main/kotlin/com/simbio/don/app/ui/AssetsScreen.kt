@@ -1,6 +1,8 @@
 package com.simbio.don.app.ui
 
 import androidx.compose.foundation.background
+import com.simbio.don.app.ui.kit.pressable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -90,21 +92,7 @@ fun AssetsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ScreenTitle("자산", trailing = { SmallButton(onClick = onAdd) { Text("+ 자산 추가") } })
-        RealCard("순자산") {
-            val net = AccountBalances.net(balances)
-            Text((if (net < 0) "−" else "") + won(kotlin.math.abs(net)), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
-            Row(Modifier.fillMaxWidth().card(DonColors.SurfaceAlt, 12.dp).padding(vertical = 12.dp)) {
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("자산", fontSize = 12.sp, color = DonColors.InkMuted)
-                    Text(won(AccountBalances.assets(balances)), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Income)
-                }
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("부채 (카드값 등)", fontSize = 12.sp, color = DonColors.InkMuted)
-                    Text(won(AccountBalances.debts(balances)), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Expense)
-                }
-            }
-            if (shown.size >= 2) SubButton(onClick = onTransfer, modifier = Modifier.fillMaxWidth()) { Text("이체 적기 (통장 → 현금, 카드값 내기)") }
-        }
+        NetWorthCard(balances, shown.size >= 2, onTransfer, onAddPot)
         WealthCard(wealth, checkDue, onCheck, onAddPot)
         if (shown.isEmpty()) {
             SectionCard("자산이 없어요") {
@@ -185,7 +173,7 @@ fun AccountDetailScreen(
                         Text(balance.type.label, fontSize = 13.sp, color = DonColors.InkMuted)
                     }
                     Text(balanceText(balance), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = if (balance.balance < 0) DonColors.Expense else DonColors.Ink)
-                    Text("처음 잔액 ${won(balance.account.opening)}에서 시작해 아래 기록으로 계산했어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    Text("처음 잔액 ${won(balance.account.opening)}에서 시작해 아래 기록으로 계산했어요. 실제와 다르면 \"수정\"에서 지금 잔액을 맞춰요.", fontSize = 12.sp, color = DonColors.InkMuted)
                     SubButton(onClick = onTransfer, modifier = Modifier.fillMaxWidth()) {
                         Text(if (balance.type == AccountType.CARD) "카드값 내기 (이체)" else "이체 적기")
                     }
@@ -223,15 +211,20 @@ fun AccountDetailScreen(
 fun AccountEditScreen(
     existing: AccountEntity?,
     rules: List<AppRuleEntity>,
-    onSave: (AccountEntity) -> Unit,
+    /** 저장: 새 자산은 처음 잔액을 담아서, 있던 자산은 [current]와 다르면 맞출 지금 잔액과 함께 */
+    onSave: (AccountEntity, balance: Long?) -> Unit,
     onDelete: (() -> Unit)?,
     onBack: () -> Unit,
     initialType: AccountType = AccountType.BANK,
+    /** 있던 자산의 지금 잔액 (처음 잔액 + 기록) */
+    current: Long? = null,
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var type by remember { mutableStateOf(existing?.let { enumOr(it.type, AccountType.ETC) } ?: initialType) }
-    var opening by remember { mutableStateOf(existing?.opening?.let { kotlin.math.abs(it).toString() }?.takeIf { it != "0" } ?: "") }
-    var debt by remember { mutableStateOf((existing?.opening ?: 0) < 0) }
+    // 고칠 때는 처음 잔액이 아니라 지금 잔액을 보여주고 고친다
+    val shownBalance = if (existing != null) current ?: existing.opening else null
+    var opening by remember { mutableStateOf(shownBalance?.let { kotlin.math.abs(it).toString() }?.takeIf { it != "0" } ?: "") }
+    var debt by remember { mutableStateOf((shownBalance ?: 0) < 0) }
     var pkg by remember { mutableStateOf(existing?.packageName) }
     var hidden by remember { mutableStateOf(existing?.hidden ?: false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -277,7 +270,12 @@ fun AccountEditScreen(
                         Switch(checked = debt, onCheckedChange = { debt = it })
                     }
                 }
-                Text("잔액은 오늘 기준으로 한 번만 넣으면 돼요. 이 자산으로 적는 수입·지출·이체로 저절로 바뀌어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                Text(
+                    if (existing == null) "잔액은 오늘 기준으로 한 번만 넣으면 돼요. 이 자산으로 적는 수입·지출·이체로 저절로 바뀌어요."
+                    else "실제 잔액과 다르면 지금 잔액을 고쳐요. 지금까지 적은 기록은 그대로 두고 잔액만 맞춰요.",
+                    fontSize = 12.sp,
+                    color = DonColors.InkMuted,
+                )
             }
             if (rules.isNotEmpty()) {
                 FormCard("결제 알림 연결") {
@@ -312,10 +310,11 @@ fun AccountEditScreen(
                         (existing ?: AccountEntity(name = "", type = type.name, opening = 0, sortOrder = 0)).copy(
                             name = name.trim(),
                             type = type.name,
-                            opening = signed,
+                            opening = if (existing == null) signed else existing.opening,
                             packageName = pkg,
                             hidden = hidden,
                         ),
+                        if (existing == null) null else signed,
                     )
                     onBack()
                 },
@@ -332,5 +331,54 @@ fun AccountEditScreen(
             confirmButton = { TextButton(onClick = { onDelete(); onBack() }, color = DonColors.Warn) { Text("지우기") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("취소") } },
         )
+    }
+}
+
+/**
+ * 순자산 = 쓰는 돈(현금·통장) + 모으는 돈(저축·투자) − 부채(카드값 등).
+ * 생활비 통장만 넣으면 이번 달 쓸 돈과 다를 게 없으니, 모으는 돈이 없을 때는 넣어 보라고 권한다.
+ */
+@Composable
+private fun NetWorthCard(balances: List<AccountBalance>, canTransfer: Boolean, onTransfer: () -> Unit, onAddPot: () -> Unit) {
+    val net = AccountBalances.net(balances)
+    val spend = AccountBalances.spending(balances)
+    val grow = AccountBalances.growing(balances)
+    val debt = AccountBalances.debts(balances)
+    RealCard("순자산") {
+        Text((if (net < 0) "−" else "") + won(kotlin.math.abs(net)), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+        // 쓰는 돈과 모으는 돈의 몫
+        if (spend + grow > 0) {
+            Row(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(DonColors.Line)) {
+                if (spend > 0) Box(Modifier.weight(spend.toFloat()).fillMaxSize().background(DonColors.Real))
+                if (grow > 0) Box(Modifier.weight(grow.toFloat()).fillMaxSize().background(DonColors.Good))
+            }
+        }
+        Row(Modifier.fillMaxWidth().card(DonColors.SurfaceAlt, 12.dp).padding(vertical = 12.dp)) {
+            NetPart("쓰는 돈", "현금·통장", "+" + won(spend), DonColors.Real)
+            NetPart("모으는 돈", "저축·투자", "+" + won(grow), DonColors.Good)
+            NetPart("부채", "카드값 등", "−" + won(debt), DonColors.Expense)
+        }
+        if (grow == 0L) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(DonColors.GoodSurface).pressable(onClick = onAddPot).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("지금은 쓰는 돈만 들어 있어요", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+                    Text("적금·주식·보증금처럼 모아 둔 돈도 넣어야 진짜 순자산이에요.", fontSize = 12.sp, color = DonColors.InkSoft)
+                }
+                Text("넣기", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Good)
+            }
+        }
+        if (canTransfer) SubButton(onClick = onTransfer, modifier = Modifier.fillMaxWidth()) { Text("이체 적기 (통장 → 현금, 카드값 내기)") }
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.NetPart(label: String, sub: String, amount: String, color: androidx.compose.ui.graphics.Color) {
+    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 12.sp, color = DonColors.InkSoft, fontWeight = FontWeight.SemiBold)
+        Text(sub, fontSize = 10.sp, color = DonColors.InkMuted)
+        Text(amount, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1)
     }
 }

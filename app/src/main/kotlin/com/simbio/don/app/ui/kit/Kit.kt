@@ -33,7 +33,15 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
+import android.view.View
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -73,19 +81,61 @@ fun Modifier.popIn(): Modifier {
 
 // ── 버튼 ───────────────────────────────────────────────────
 
+/** 누름 느낌: 짧은 진동 (설정에서 끌 수 있고, 폰의 "터치할 때 진동"을 따른다) */
+object Feedback {
+    var haptics by mutableStateOf(true)
+
+    fun tap(view: View) {
+        if (haptics) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    }
+}
+
 /**
- * 카드·타일을 누를 때: 물결(ripple)과 함께 살짝 줄어들었다가 통통 돌아온다.
+ * 누르면 통통 튀는 크기. 스크롤 화면에서는 빨리 톡 누르면 "누르는 중" 상태가 거의 안 생겨
+ * 누르는 동안 줄어드는 효과만으로는 안 보이므로, 누른 뒤에 한 번 쏙 들어갔다 튀어나온다.
+ */
+class Bounce(private val scope: CoroutineScope) {
+    val value = Animatable(1f)
+
+    fun play(depth: Float = 0.93f) {
+        scope.launch {
+            value.snapTo(depth)
+            value.animateTo(1f, spring(dampingRatio = 0.38f, stiffness = 520f))
+        }
+    }
+}
+
+@Composable
+fun rememberBounce(): Bounce {
+    val scope = rememberCoroutineScope()
+    return remember { Bounce(scope) }
+}
+
+/**
+ * 카드·타일을 누를 때: 물결(ripple)과 함께 쏙 들어갔다 통통 돌아오고, 짧게 진동한다.
  * 그냥 clickable보다 "눌렀다"는 느낌이 분명하다.
  */
 fun Modifier.pressable(enabled: Boolean = true, role: Role? = Role.Button, onClick: () -> Unit): Modifier = composed {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val s by animateFloatAsState(
+    val hold by animateFloatAsState(
         if (pressed && enabled) 0.96f else 1f,
         if (pressed) spring(stiffness = Spring.StiffnessHigh) else spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
         label = "pressable",
     )
-    this.scale(s).clickable(interaction, androidx.compose.material3.ripple(), enabled = enabled, role = role, onClick = onClick)
+    val bounce = rememberBounce()
+    val view = LocalView.current
+    this
+        .graphicsLayer {
+            val k = hold * bounce.value.value
+            scaleX = k
+            scaleY = k
+        }
+        .clickable(interaction, androidx.compose.material3.ripple(), enabled = enabled, role = role) {
+            Feedback.tap(view)
+            bounce.play(0.95f)
+            onClick()
+        }
 }
 
 /** 누르는 동안 살짝 줄어드는 바탕 버튼 */
@@ -110,14 +160,20 @@ private fun BaseButton(
         if (pressed) spring(stiffness = Spring.StiffnessHigh) else spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMedium),
         label = "press",
     )
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val view = LocalView.current
+    val bounce = rememberBounce()
     Box(
         modifier
-            .scale(s)
+            .graphicsLayer {
+                val k = s * bounce.value.value
+                scaleX = k
+                scaleY = k
+            }
             .clip(shape)
             .background(if (!enabled) DonColors.Line else if (pressed) androidx.compose.ui.graphics.lerp(fill, Color.Black, 0.08f) else fill)
-            .clickable(interaction, indication = null, enabled = enabled, role = Role.Button) {
-                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+            .clickable(interaction, androidx.compose.material3.ripple(color = content), enabled = enabled, role = Role.Button) {
+                Feedback.tap(view)
+                bounce.play()
                 onClick()
             }
             .defaultMinSize(minHeight = minHeight),
@@ -177,12 +233,22 @@ fun TextButton(
     color: Color = DonColors.InkSoft,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val view = LocalView.current
+    val bounce = rememberBounce()
     ProvideTextStyle(TextStyle(color = if (enabled) color else DonColors.InkFaint, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)) {
         Row(
             modifier
                 .defaultMinSize(minHeight = 40.dp)
+                .graphicsLayer {
+                    scaleX = bounce.value.value
+                    scaleY = bounce.value.value
+                }
                 .clip(RoundedCornerShape(8.dp))
-                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .clickable(enabled = enabled, role = Role.Button) {
+                    Feedback.tap(view)
+                    bounce.play(0.92f)
+                    onClick()
+                }
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = content,
@@ -223,12 +289,22 @@ fun FilterChip(
     enabled: Boolean = true,
 ) {
     val shape = RoundedCornerShape(50)
+    val view = LocalView.current
+    val bounce = rememberBounce()
     Box(
         modifier
+            .graphicsLayer {
+                scaleX = bounce.value.value
+                scaleY = bounce.value.value
+            }
             .clip(shape)
             .background(if (selected) DonColors.Ink else DonColors.Surface)
             .let { if (selected) it else it.border(1.dp, DonColors.Line, shape) }
-            .selectable(selected = selected, enabled = enabled, role = Role.Checkbox, onClick = onClick)
+            .selectable(selected = selected, enabled = enabled, role = Role.Checkbox) {
+                Feedback.tap(view)
+                bounce.play(0.9f)
+                onClick()
+            }
             .padding(horizontal = 14.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -236,7 +312,7 @@ fun FilterChip(
             TextStyle(
                 color = when {
                     !enabled -> DonColors.InkFaint
-                    selected -> Color.White
+                    selected -> DonColors.OnInk
                     else -> DonColors.InkSoft
                 },
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
@@ -455,7 +531,7 @@ fun TabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit) {
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp)) {
             items.forEachIndexed { i, item ->
                 val on = i == selected
-                val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+                val view = LocalView.current
                 val interaction = remember { MutableInteractionSource() }
                 val pressed by interaction.collectIsPressedAsState()
                 // 고르면 아이콘이 톡 튀어 오른다
@@ -476,7 +552,7 @@ fun TabBar(items: List<TabItem>, selected: Int, onSelect: (Int) -> Unit) {
                             indication = null,
                             role = Role.Tab,
                             onClick = {
-                                if (!on) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                if (!on) Feedback.tap(view)
                                 onSelect(i)
                             },
                         )

@@ -14,6 +14,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import kotlinx.coroutines.launch
+import com.simbio.don.app.ui.kit.Feedback
+import androidx.lifecycle.lifecycleScope
+import androidx.compose.ui.platform.compositionContext
+import androidx.compose.ui.graphics.toArgb
+import androidx.activity.SystemBarStyle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
@@ -64,7 +70,7 @@ import com.simbio.don.app.ui.CardsScreen
 import com.simbio.don.app.ui.AssetCheckScreen
 import com.simbio.don.app.ui.PlanScreen
 import com.simbio.don.app.ui.CollectionScreen
-import com.simbio.don.app.ui.FadeThrough
+import com.simbio.don.app.ui.TabSwitch
 import com.simbio.don.app.ui.ScreenHost
 import com.simbio.don.app.ui.ScreenStack
 import com.simbio.don.app.ui.MiniGameScreen
@@ -194,9 +200,52 @@ class MainActivity : ComponentActivity() {
         readShare(intent)
     }
 
+    /** 밝게·어둡게: 색 벌, 상태바·내비게이션바 글자색, 창 바탕 */
+    private fun applyTheme() {
+        val p = UiPrefs.palette(this)
+        DonColors.palette = p
+        val clear = android.graphics.Color.TRANSPARENT
+        val lightScrim = android.graphics.Color.argb(0xE6, 0xFF, 0xFF, 0xFF)
+        val darkScrim = android.graphics.Color.argb(0x80, 0x1B, 0x1B, 0x1B)
+        enableEdgeToEdge(
+            statusBarStyle = if (p.dark) SystemBarStyle.dark(clear) else SystemBarStyle.light(clear, clear),
+            navigationBarStyle = if (p.dark) SystemBarStyle.dark(darkScrim) else SystemBarStyle.light(lightScrim, darkScrim),
+        )
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(p.bg.toArgb()))
+    }
+
+    /**
+     * 폰에서 애니메이션을 꺼 둬도(애니메이션 효과 제거 등) 사용자가 "이 앱에서는 효과 보이기"를 켰으면
+     * 이 화면의 움직임 배율을 1로 둔 재구성기를 쓴다. 앱이 안 보일 때는 화면 시계를 멈춘다.
+     */
+    private fun installFullMotion() {
+        val ui = androidx.compose.ui.platform.AndroidUiDispatcher.CurrentThread
+        val clock = androidx.compose.runtime.PausableMonotonicFrameClock(ui[androidx.compose.runtime.MonotonicFrameClock]!!)
+        val context = ui + clock + FullMotion
+        val recomposer = androidx.compose.runtime.Recomposer(context)
+        window.decorView.compositionContext = recomposer
+        lifecycleScope.launch(context) { recomposer.runRecomposeAndApplyChanges() }
+        lifecycle.addObserver(
+            androidx.lifecycle.LifecycleEventObserver { _, event ->
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_START -> clock.resume()
+                    androidx.lifecycle.Lifecycle.Event.ON_STOP -> clock.pause()
+                    androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> recomposer.cancel()
+                    else -> Unit
+                }
+            },
+        )
+    }
+
+    private object FullMotion : androidx.compose.ui.MotionDurationScale {
+        override val scaleFactor: Float get() = 1f
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        applyTheme()
+        Feedback.haptics = UiPrefs.haptics(this)
+        if (UiPrefs.effectsAlways(this) && UiPrefs.systemAnimationsOff(this)) runCatching { installFullMotion() }
         readShare(intent)
         if (DailyReminder.isOn(this)) DailyReminder.schedule(this)
         locked = AppLock.isOn(this)
@@ -339,7 +388,7 @@ class MainActivity : ComponentActivity() {
                     Snackbar(
                         data,
                         shape = RoundedCornerShape(14.dp),
-                        containerColor = DonColors.Ink,
+                        containerColor = DonColors.Toast,
                         contentColor = Color.White,
                         actionColor = Color(0xFF8FB0FF),
                     )
@@ -369,7 +418,7 @@ class MainActivity : ComponentActivity() {
                 }
             },
         ) { padding ->
-            FadeThrough(tab, Modifier.padding(padding)) { t ->
+            TabSwitch(tab, { it.ordinal }, Modifier.padding(padding)) { t ->
                 when (t) {
                     Tab.Home -> HomeScreen(
                         home = home,
@@ -428,7 +477,7 @@ class MainActivity : ComponentActivity() {
                         val cycles by vm.cycles.collectAsStateWithLifecycle()
                         val summaries by vm.summaries.collectAsStateWithLifecycle()
                         val yearView by vm.yearView.collectAsStateWithLifecycle()
-                        val v = view ?: return@FadeThrough
+                        val v = view ?: return@TabSwitch
                         val i = cycles.indexOfFirst { it.nominal == v.nominal }
                         val hasPrev = i in 0 until cycles.lastIndex
                         val hasNext = i > 0
@@ -495,6 +544,9 @@ class MainActivity : ComponentActivity() {
         val learned by vm.learned.collectAsStateWithLifecycle()
         val incomes by vm.recurringIncomes.collectAsStateWithLifecycle()
         var naverOn by remember { mutableStateOf(NaverShopping.isOn(this)) }
+        var themeMode by remember { mutableStateOf(UiPrefs.themeMode(this)) }
+        var effectsAlways by remember { mutableStateOf(UiPrefs.effectsAlways(this)) }
+        var haptics by remember { mutableStateOf(UiPrefs.haptics(this)) }
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
         var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
         // 앱 잠금은 위에 연 화면(암호 정하기)에서 바뀌므로 이 화면으로 돌아올 때 다시 읽는다
@@ -554,6 +606,30 @@ class MainActivity : ComponentActivity() {
                         DailyReminder.setOn(this, on)
                         reminderOn = on
                     }
+                },
+                themeMode = themeMode,
+                onThemeMode = { m ->
+                    UiPrefs.setThemeMode(this, m)
+                    themeMode = m
+                    applyTheme()
+                    Widgets.refresh(this)
+                },
+                animationsOff = UiPrefs.systemAnimationsOff(this),
+                effectsAlways = effectsAlways,
+                onEffectsAlways = { on ->
+                    UiPrefs.setEffectsAlways(this, on)
+                    effectsAlways = on
+                    // 재구성기를 바꾸려면 화면을 다시 만든다
+                    if (UiPrefs.systemAnimationsOff(this)) recreate()
+                },
+                onOpenAnimationSettings = {
+                    runCatching { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                },
+                haptics = haptics,
+                onHaptics = { on ->
+                    UiPrefs.setHaptics(this, on)
+                    Feedback.haptics = on
+                    haptics = on
                 },
                 onPinWidget = if (widgets.isRequestPinAppWidgetSupported) {
                     { k -> widgets.requestPinAppWidget(ComponentName(this, k.cls), null, null) }
@@ -686,8 +762,9 @@ class MainActivity : ComponentActivity() {
                 val existing = o.id?.let { id -> home.accounts.firstOrNull { it.account.id == id }?.account }
                 AccountEditScreen(
                     existing = existing,
+                    current = existing?.let { a -> home.accounts.firstOrNull { it.account.id == a.id }?.balance },
                     rules = rules,
-                    onSave = { vm.saveAccount(it) },
+                    onSave = { a, balance -> vm.saveAccount(a, balance) },
                     onDelete = existing?.let { a -> { vm.deleteAccount(a) } },
                     initialType = o.type ?: com.simbio.don.app.data.AccountType.BANK,
                     onBack = close,

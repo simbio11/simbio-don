@@ -73,6 +73,14 @@ fun SettingsScreen(
     reminderOn: Boolean = false,
     onReminder: (Boolean) -> Unit = {},
     onPinWidget: ((com.simbio.don.app.widget.WidgetKind) -> Unit)? = null,
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    onThemeMode: (ThemeMode) -> Unit = {},
+    animationsOff: Boolean = false,
+    effectsAlways: Boolean = false,
+    onEffectsAlways: (Boolean) -> Unit = {},
+    onOpenAnimationSettings: () -> Unit = {},
+    haptics: Boolean = true,
+    onHaptics: (Boolean) -> Unit = {},
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -154,6 +162,37 @@ fun SettingsScreen(
                 com.simbio.don.app.ui.kit.SmallButton(onClick = { onOwnerName(owner) }) { Text("저장") }
             }
             Text("이름은 이 폰에만 저장되고, 송금·입금 알림을 볼 때만 써요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
+
+        RealCard("화면") {
+            Text("밝기", fontSize = 15.sp, color = DonColors.Ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ThemeMode.entries.forEach { m -> FilterChip(selected = themeMode == m, onClick = { onThemeMode(m) }, label = { Text(m.label) }) }
+            }
+            Text("어둡게는 밤에 눈이 덜 부셔요. 위젯 색은 아래 위젯에서 따로 골라요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            Divider(Modifier.padding(vertical = 4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("누를 때 진동", fontSize = 15.sp, color = DonColors.Ink)
+                    Text("버튼·카드를 누르면 톡 하고 짧게 떨려요. 폰의 \"터치할 때 진동\"이 켜져 있어야 해요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                }
+                Switch(checked = haptics, onCheckedChange = onHaptics)
+            }
+            if (animationsOff) {
+                Divider(Modifier.padding(vertical = 4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("이 앱에서는 화면 효과 보이기", fontSize = 15.sp, color = DonColors.Ink)
+                        Text(
+                            "폰에서 애니메이션이 꺼져 있어(애니메이션 효과 제거·절전 등) 화면 넘김·누름 효과가 안 보여요. 켜면 이 앱에서만 보여요.",
+                            fontSize = 12.sp,
+                            color = DonColors.Warn,
+                        )
+                    }
+                    Switch(checked = effectsAlways, onCheckedChange = onEffectsAlways)
+                }
+                TextButton(onClick = onOpenAnimationSettings) { Text("폰 접근성 설정 열기") }
+            }
         }
 
         RealCard("알림·위젯") {

@@ -2,5 +2,6 @@
 <resources>
     <style name="Theme.Don" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/window_bg</item>
     </style>
 </resources>

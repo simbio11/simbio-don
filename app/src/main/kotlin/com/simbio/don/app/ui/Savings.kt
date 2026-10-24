@@ -171,12 +171,12 @@ fun CelebrationCard(title: String, body: String, onDismiss: () -> Unit) {
 fun StreakBadge(weeks: Int, modifier: Modifier = Modifier) {
     if (weeks <= 0) return
     Row(
-        modifier.clip(RoundedCornerShape(50)).background(Color(0xFFFFF1E6)).padding(horizontal = 10.dp, vertical = 5.dp),
+        modifier.clip(RoundedCornerShape(50)).background(DonColors.FireSurface).padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Icon(UiIcon.FIRE, 16.dp, Color(0xFFFF6B1A))
-        Text("${weeks}주 연속 예산 지킴", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE8590C))
+        Text("${weeks}주 연속 예산 지킴", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DonColors.Fire)
     }
 }
 

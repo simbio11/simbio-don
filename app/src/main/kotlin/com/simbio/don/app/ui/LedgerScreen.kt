@@ -368,7 +368,7 @@ fun LedgerCalendar(
                                 fontSize = 12.sp,
                                 fontWeight = if (isToday || on) FontWeight.Bold else FontWeight.Normal,
                                 color = when {
-                                    isToday -> Color.White
+                                    isToday -> DonColors.OnInk
                                     !inside -> DonColors.InkFaint
                                     d.dayOfWeek == DayOfWeek.SUNDAY -> DonColors.Expense
                                     d.dayOfWeek == DayOfWeek.SATURDAY -> DonColors.Income

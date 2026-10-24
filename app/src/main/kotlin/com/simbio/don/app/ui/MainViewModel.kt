@@ -172,7 +172,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── 자산 ──
     val accountBalances = repo.accountBalances.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun saveAccount(a: com.simbio.don.app.data.AccountEntity) = viewModelScope.launch { repo.saveAccount(a) }
+    fun saveAccount(a: com.simbio.don.app.data.AccountEntity, balance: Long? = null) = viewModelScope.launch { repo.saveAccount(a, balance) }
 
     fun deleteAccount(a: com.simbio.don.app.data.AccountEntity) = viewModelScope.launch { repo.deleteAccount(a) }
 

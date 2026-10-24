@@ -128,6 +128,14 @@ object AccountBalances {
     /** 자산 (0보다 큰 잔액 합) */
     fun assets(list: List<AccountBalance>): Long = list.filter { !it.account.hidden && it.balance > 0 }.sumOf { it.balance }
 
+    /** 쓰는 돈: 현금·통장 등 모으는 통장이 아닌 자산 (0보다 큰 잔액) */
+    fun spending(list: List<AccountBalance>): Long =
+        list.filter { !it.account.hidden && !it.type.grows && it.balance > 0 }.sumOf { it.balance }
+
+    /** 모으는 돈: 저축·예금·투자 (0보다 큰 잔액) */
+    fun growing(list: List<AccountBalance>): Long =
+        list.filter { !it.account.hidden && it.type.grows && it.balance > 0 }.sumOf { it.balance }
+
     /** 부채 (갚을 돈, 양수로) */
     fun debts(list: List<AccountBalance>): Long = list.filter { !it.account.hidden && it.balance < 0 }.sumOf { -it.balance }
 }

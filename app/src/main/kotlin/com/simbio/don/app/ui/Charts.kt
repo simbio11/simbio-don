@@ -62,19 +62,24 @@ import kotlin.math.roundToInt
  * 상태색(초과)은 아이콘·문구와 함께만 쓴다.
  */
 object ChartColors {
-    val Series = DonColors.Real
-    val Reference = Color(0xFFB0B8C1)
-    val Grid = Color(0xFFF0F2F4)
-    val Baseline = Color(0xFFD1D6DB)
-    val Track = Color(0xFFF0F2F4)
-    val Surface = DonColors.Surface
-    val InkPrimary = DonColors.Ink
-    val InkSecondary = DonColors.InkSoft
-    val InkMuted = DonColors.InkMuted
-    val Critical = Color(0xFFD03B3B)
+    val Series: Color get() = DonColors.Real
+    val Reference: Color get() = if (DonColors.dark) Color(0xFF6B7480) else Color(0xFFB0B8C1)
+    val Grid: Color get() = DonColors.Track
+    val Baseline: Color get() = if (DonColors.dark) Color(0xFF454A52) else Color(0xFFD1D6DB)
+    val Track: Color get() = DonColors.Track
+    val Surface: Color get() = DonColors.Surface
+    val InkPrimary: Color get() = DonColors.Ink
+    val InkSecondary: Color get() = DonColors.InkSoft
+    val InkMuted: Color get() = DonColors.InkMuted
+    val Critical: Color get() = if (DonColors.dark) Color(0xFFFF6B6B) else Color(0xFFD03B3B)
 
-    /** 달력 칸: 하루 지출 크기 (한 색, 옅음 → 진함) */
-    val Ramp = listOf(Color(0xFFDCE6FF), Color(0xFFA9C1FF), Color(0xFF6A93FF), Color(0xFF2F5FE6))
+    /** 달력 칸: 하루 지출 크기 (한 색, 옅음 → 진함. 어둡게 모드는 어두움 → 밝음) */
+    val Ramp: List<Color>
+        get() = if (DonColors.dark) {
+            listOf(Color(0xFF1C2A4D), Color(0xFF26407F), Color(0xFF3A63C9), Color(0xFF6E97FF))
+        } else {
+            listOf(Color(0xFFDCE6FF), Color(0xFFA9C1FF), Color(0xFF6A93FF), Color(0xFF2F5FE6))
+        }
 }
 
 /** 10,000원 이상은 "1.8만"처럼 줄여 쓴다 (축 눈금·달력 칸). */

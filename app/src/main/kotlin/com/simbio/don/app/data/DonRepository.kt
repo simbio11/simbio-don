@@ -1985,7 +1985,24 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     val accounts: Flow<List<AccountEntity>> = dao.accounts()
 
-    suspend fun saveAccount(a: AccountEntity): Long {
+    /**
+     * 자산 저장. 있던 자산을 고치며 [balance](지금 잔액)를 주면 지금까지 적은 기록은 그대로 두고 잔액만 그 금액으로 맞춘다:
+     * 점검한 적 있는 모으는 통장은 오늘 점검으로(넣은 돈은 그대로), 다른 자산은 처음 잔액을 그만큼 옮겨서.
+     */
+    suspend fun saveAccount(input: AccountEntity, balance: Long? = null): Long {
+        val stored = if (input.id != 0L) dao.accountsNow().firstOrNull { it.id == input.id } else null
+        var a = input
+        var checkToday: Long? = null
+        if (stored != null && balance != null) {
+            val checks = dao.assetChecksNow().filter { it.accountId == stored.id }
+            val current = AccountBalances.compute(listOf(stored), dao.allEntriesNow(), checks).single().balance
+            val grows = enumOr(input.type, AccountType.ETC).grows
+            a = when {
+                current == balance -> input.copy(opening = stored.opening)
+                grows && checks.isNotEmpty() -> input.copy(opening = stored.opening).also { checkToday = balance }
+                else -> input.copy(opening = stored.opening + (balance - current)).also { if (grows) checkToday = balance }
+            }
+        }
         val order = if (a.id == 0L) (dao.accountsNow().maxOfOrNull { it.sortOrder } ?: -1) + 1 else a.sortOrder
         // 한 앱의 알림은 한 자산으로만
         if (a.packageName != null) {
@@ -1996,6 +2013,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         if (a.id == 0L && enumOr(a.type, AccountType.ETC).grows) {
             dao.insertAssetCheck(AssetCheckEntity(accountId = id, epochDay = LocalDate.now().toEpochDay(), value = a.opening))
         }
+        // 고칠 때 upsert는 -1을 돌려주므로 원래 id로
+        checkToday?.let { dao.insertAssetCheck(AssetCheckEntity(accountId = a.id, epochDay = LocalDate.now().toEpochDay(), value = it)) }
         return id
     }
 

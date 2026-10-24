@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.Dp
 import com.simbio.don.app.R
+import com.simbio.don.app.ui.DonColors
 import com.simbio.don.app.ui.pixel.ProductIcons
 import com.simbio.don.game.Dex
 import com.simbio.don.game.ItemKind
@@ -103,7 +104,7 @@ fun icon16For(name: String?, kind: ItemKind): Int = name?.let { Dex.productOf(it
 
 /** 상품 사진 자리: 옅은 회색 둥근 칸 가운데 도트 물건 ([name]이 몰 상품이면 그 그림) */
 @Composable
-fun ItemThumb(kind: ItemKind, size: Dp, modifier: Modifier = Modifier, fill: Color = Color(0xFFF2F4F6), name: String? = null) {
+fun ItemThumb(kind: ItemKind, size: Dp, modifier: Modifier = Modifier, fill: Color = DonColors.SurfaceAlt, name: String? = null) {
     Box(modifier.size(size).clip(RoundedCornerShape(size / 5)).background(fill), contentAlignment = Alignment.Center) {
         PixelImage(icon16For(name, kind), size * 0.62f)
     }

@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -25,6 +26,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -89,45 +92,58 @@ private fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
 
 /**
  * [base](탭 화면들) 위에 [stack]의 화면을 오른쪽에서 밀려 들어오게 쌓는다.
- * 닫을 때는 오른쪽으로 빠지고 바로 아래 화면이 보인다. 다 들어온 화면 아래는 그리지 않는다.
+ * 들어오는 동안 바로 아래 화면은 왼쪽으로 조금 밀리며 어두워지고, 닫을 때는 거꾸로.
+ * 다 들어온 화면 아래는 그리지 않는다.
  */
 @Composable
 fun <T : Any> ScreenHost(stack: ScreenStack<T>, base: @Composable () -> Unit, screen: @Composable (value: T, close: () -> Unit) -> Unit) {
     // 다 들어와 멈춘 화면 (그 아래는 가려져 있다)
     val settled = remember { mutableStateMapOf<Long, Boolean>() }
+    // 화면마다 들어온 정도 (1 = 오른쪽 밖, 0 = 다 들어옴)
+    val slides = remember { mutableMapOf<Long, Animatable<Float, AnimationVector1D>>() }
     val coverFrom = stack.entries.indexOfLast { settled[it.id] == true }
+    val all = stack.entries + stack.leaving
+    // 바로 위 화면이 들어온 만큼 (0 = 위 화면 없음)
+    fun coverOf(index: Int): () -> Float {
+        val above = all.getOrNull(index + 1) ?: return { 0f }
+        return { 1f - (slides[above.id]?.value ?: 1f) }
+    }
     Box(Modifier.fillMaxSize()) {
+        val baseCover = coverOf(-1)
         Box(
             Modifier.fillMaxSize().unplacedIf(coverFrom >= 0)
+                .underneath(baseCover)
                 .let { if (stack.isEmpty) it else it.clearAndSetSemantics {} },
         ) {
             CompositionLocalProvider(LocalScreenActive provides stack.isEmpty) { base() }
         }
-        val all = stack.entries + stack.leaving
         all.forEachIndexed { i, e ->
             key(e.id) {
                 val isLeaving = e in stack.leaving
                 val isTop = !isLeaving && i == stack.entries.lastIndex
-                val slide = remember { Animatable(1f) }
+                val slide = remember { Animatable(1f).also { slides[e.id] = it } }
                 LaunchedEffect(isLeaving) {
                     if (isLeaving) {
                         settled.remove(e.id)
-                        slide.animateTo(1f, tween(200, easing = FastOutLinearInEasing))
+                        slide.animateTo(1f, tween(240, easing = FastOutSlowInEasing))
                         stack.leaving.remove(e)
+                        slides.remove(e.id)
                     } else {
-                        slide.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
+                        slide.animateTo(0f, tween(300, easing = FastOutSlowInEasing))
                         settled[e.id] = true
                     }
                 }
+                val cover = coverOf(i)
                 Box(
                     Modifier.fillMaxSize()
                         .unplacedIf(!isLeaving && i < coverFrom)
                         .graphicsLayer {
                             translationX = slide.value * size.width
-                            // 밀려 들어오는 동안 살짝 투명하게
-                            alpha = 1f - slide.value * 0.35f
+                            // 들어오는 화면 왼쪽 끝에 그림자
+                            shadowElevation = if (slide.value > 0f) 24f else 0f
                         }
                         .background(DonColors.Bg)
+                        .underneath(cover)
                         .blockTouches()
                         .let { if (isTop) it else it.clearAndSetSemantics {} },
                 ) {
@@ -139,6 +155,15 @@ fun <T : Any> ScreenHost(stack: ScreenStack<T>, base: @Composable () -> Unit, sc
     }
 }
 
+/** 위에 화면이 덮이는 만큼([cover] 0→1) 왼쪽으로 조금 밀리고 어두워진다 */
+private fun Modifier.underneath(cover: () -> Float): Modifier = this
+    .graphicsLayer { translationX = -cover() * size.width * 0.25f }
+    .drawWithContent {
+        drawContent()
+        val k = cover()
+        if (k > 0f) drawRect(Color.Black, alpha = k * 0.32f)
+    }
+
 /** 화면 안 단계 바꾸기: 앞으로 가면 오른쪽에서, 뒤로 가면 왼쪽에서 */
 fun <S> AnimatedContentTransitionScope<S>.stepTransition(forward: Boolean): ContentTransform =
     if (forward) {
@@ -149,7 +174,22 @@ fun <S> AnimatedContentTransitionScope<S>.stepTransition(forward: Boolean): Cont
             (slideOutHorizontally(tween(220)) { it / 6 } + fadeOut(tween(160)))
     }
 
-/** 탭 바꾸기: 살짝 떠오르며 바뀜 */
+/** 탭 바꾸기: 고른 탭 쪽으로 밀리며 바뀜 (오른쪽 탭이면 오른쪽에서 들어온다) */
+@Composable
+fun <S> TabSwitch(target: S, order: (S) -> Int, modifier: Modifier = Modifier, content: @Composable (S) -> Unit) {
+    AnimatedContent(
+        target,
+        modifier,
+        transitionSpec = {
+            val forward = order(targetState) > order(initialState)
+            (slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { if (forward) it / 3 else -it / 3 } + fadeIn(tween(220))) togetherWith
+                (slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { if (forward) -it / 4 else it / 4 } + fadeOut(tween(160)))
+        },
+        label = "tab",
+    ) { content(it) }
+}
+
+/** 살짝 떠오르며 바뀜 */
 @Composable
 fun <S> FadeThrough(target: S, modifier: Modifier = Modifier, content: @Composable (S) -> Unit) {
     AnimatedContent(
