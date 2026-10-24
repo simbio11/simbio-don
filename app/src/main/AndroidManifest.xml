@@ -73,6 +73,58 @@
                 android:resource="@xml/widget_week_info" />
         </receiver>
 
+        <!-- 위젯: 무지출 잔디 (깃허브 잔디처럼) -->
+        <receiver
+            android:name=".widget.GrassWidget"
+            android:exported="false"
+            android:label="@string/widget_grass_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_grass_info" />
+        </receiver>
+
+        <!-- 위젯: 이번 달 달력 -->
+        <receiver
+            android:name=".widget.CalendarWidget"
+            android:exported="false"
+            android:label="@string/widget_calendar_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_calendar_info" />
+        </receiver>
+
+        <!-- 위젯: 모은 돈 -->
+        <receiver
+            android:name=".widget.SavedWidget"
+            android:exported="false"
+            android:label="@string/widget_saved_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_saved_info" />
+        </receiver>
+
+        <!-- 위젯: 내 캐릭터 -->
+        <receiver
+            android:name=".widget.BuddyWidget"
+            android:exported="false"
+            android:label="@string/widget_buddy_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_buddy_info" />
+        </receiver>
+
         <receiver
             android:name=".notify.DailyReminder$Receiver"
             android:exported="false" />

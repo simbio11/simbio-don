@@ -1609,6 +1609,17 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /**
+     * 위젯 잔디: 최근 [weeks]주 생활비를 하루 몫([dailyPlan])과 견준다.
+     * 앱을 쓰기 시작한 첫 달 전은 기록이 없으니 빈칸.
+     */
+    suspend fun grass(today: LocalDate, weeks: Int, dailyPlan: Long): com.simbio.don.budget.Grass {
+        val since = dao.cyclesNow().lastOrNull()?.let { LocalDate.ofEpochDay(it.startEpochDay) }
+        val from = today.minusWeeks(weeks.toLong() + 1)
+        val entries = dao.entriesBetweenNow(from.toEpochDay(), today.toEpochDay()).map { it.toEntry() }
+        return com.simbio.don.budget.Grasses.of(entries, today, weeks, dailyPlan, since)
+    }
+
+    /**
      * 기록 고치기. 카테고리를 바꾸면 그 가게를 기억하고,
      * [applyToSameLabel]이면 같은 가게의 다른 기록도 같이 바꾼다.
      */

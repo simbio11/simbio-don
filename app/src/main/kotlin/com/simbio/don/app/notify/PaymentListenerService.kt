@@ -11,7 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import com.simbio.don.app.widget.WeekWidget
+import com.simbio.don.app.widget.Widgets
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -77,7 +77,7 @@ class PaymentListenerService : NotificationListenerService() {
             if (watched == null && pkg !in repo.watchedPackages()) return@launch
             val before = repo.salarySnapshot()
             repo.handleNotification(RawNotification(pkg, title, text, postedAt))
-            WeekWidget.refresh(this@PaymentListenerService)
+            Widgets.refresh(this@PaymentListenerService)
             // 입금 알림으로 월급이 바뀌었으면 알려준다
             val after = repo.salarySnapshot()
             if (after != null && after != before && after.third == com.simbio.don.app.data.SalarySource.NOTIFICATION) {

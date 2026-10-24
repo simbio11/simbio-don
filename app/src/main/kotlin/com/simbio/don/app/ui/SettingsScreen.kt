@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -71,7 +72,7 @@ fun SettingsScreen(
     onExport: () -> Unit,
     reminderOn: Boolean = false,
     onReminder: (Boolean) -> Unit = {},
-    onPinWidget: (() -> Unit)? = null,
+    onPinWidget: ((com.simbio.don.app.widget.WidgetKind) -> Unit)? = null,
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -165,13 +166,21 @@ fun SettingsScreen(
             }
             Divider(Modifier.padding(vertical = 4.dp))
             Text("홈 화면 위젯", fontSize = 15.sp, color = DonColors.Ink)
-            Text("이번 주 남은 돈이 홈 화면에 보이고, + 버튼으로 바로 지출을 적어요.", fontSize = 12.sp, color = DonColors.InkMuted)
-            if (onPinWidget != null) {
-                SubButton(onClick = onPinWidget, modifier = Modifier.fillMaxWidth()) {
-                    Icon(UiIcon.WIDGET, 18.dp, DonColors.InkSoft)
-                    Text("홈 화면에 위젯 추가")
+            Text("기록이 바뀌면 바로 다시 그려요. 이 폰 안의 기록만 읽어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            com.simbio.don.app.widget.WidgetKind.entries.forEach { k ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(UiIcon.WIDGET, 18.dp, DonColors.InkMuted)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(k.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+                        Text(k.description, fontSize = 11.sp, color = DonColors.InkMuted)
+                    }
+                    if (onPinWidget != null) {
+                        com.simbio.don.app.ui.kit.SmallButton(onClick = { onPinWidget(k) }) { Text("추가") }
+                    }
                 }
-            } else {
+            }
+            if (onPinWidget == null) {
                 Text("홈 화면을 길게 눌러 위젯 → '돈't'를 고르세요.", fontSize = 12.sp, color = DonColors.InkSoft)
             }
         }

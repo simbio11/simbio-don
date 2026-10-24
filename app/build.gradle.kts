@@ -89,4 +89,9 @@ tasks.withType<Test>().configureEach {
         systemProperty("screenshotDir", layout.buildDirectory.dir("screenshots").get().asFile.path)
         outputs.upToDateWhen { false }
     }
+    // ./gradlew :app:testDebugUnitTest --tests '*WidgetsTest*' -PwidgetSamples → 위젯 고르기 미리보기 그림을 다시 만든다
+    if (project.hasProperty("widgetSamples")) {
+        systemProperty("widgetSamples", file("src/main/res/drawable-nodpi").path)
+        outputs.upToDateWhen { false }
+    }
 }

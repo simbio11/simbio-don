@@ -103,7 +103,7 @@ import com.simbio.don.app.ui.kit.TabItem
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.ro
 import com.simbio.don.app.weather.WeatherService
-import com.simbio.don.app.widget.WeekWidget
+import com.simbio.don.app.widget.Widgets
 import com.simbio.don.budget.Category
 import com.simbio.don.budget.EntryType
 import com.simbio.don.game.SharedProduct
@@ -156,6 +156,12 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** 위젯 + 버튼 → 지출 입력 */
         const val ACTION_ADD = "com.simbio.don.action.ADD"
+
+        /** 잔디·달력 위젯 → 가계부 달력 */
+        const val ACTION_CALENDAR = "com.simbio.don.action.CALENDAR"
+
+        /** 모은 돈 위젯 → 자산 */
+        const val ACTION_ASSETS = "com.simbio.don.action.ASSETS"
     }
 
     private val vm: MainViewModel by viewModels()
@@ -171,8 +177,12 @@ class MainActivity : ComponentActivity() {
     /** 위젯의 + 버튼 — 지출 입력을 바로 연다 */
     private var addRequested by mutableStateOf(false)
 
+    /** 위젯을 눌러 열 탭 (가계부 달력·자산) */
+    private var openRequested by mutableStateOf<String?>(null)
+
     private fun readShare(intent: Intent?) {
         if (intent?.action == ACTION_ADD) addRequested = true
+        if (intent?.action == ACTION_CALENDAR || intent?.action == ACTION_ASSETS) openRequested = intent.action
         if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
             val text = listOfNotNull(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getStringExtra(Intent.EXTRA_TEXT)).joinToString("\n")
             if (text.isNotBlank()) shared = SharedTextParser.parse(text)
@@ -210,7 +220,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         leftAt = System.currentTimeMillis()
-        WeekWidget.refresh(this)
+        Widgets.refresh(this)
     }
 
     override fun onResume() {
@@ -270,6 +280,20 @@ class MainActivity : ComponentActivity() {
                 screens.push(Overlay.Edit(null))
                 addRequested = false
             }
+        }
+        LaunchedEffect(openRequested) {
+            when (openRequested) {
+                ACTION_CALENDAR -> {
+                    screens.clear()
+                    ledgerMode = LedgerMode.CALENDAR
+                    tab = Tab.Ledger
+                }
+                ACTION_ASSETS -> {
+                    screens.clear()
+                    tab = Tab.Assets
+                }
+            }
+            openRequested = null
         }
         val weather by vm.weather.collectAsStateWithLifecycle()
         // 지운 기록 되돌리기
@@ -532,7 +556,7 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onPinWidget = if (widgets.isRequestPinAppWidgetSupported) {
-                    { widgets.requestPinAppWidget(ComponentName(this, WeekWidget::class.java), null, null) }
+                    { k -> widgets.requestPinAppWidget(ComponentName(this, k.cls), null, null) }
                 } else {
                     null
                 },
