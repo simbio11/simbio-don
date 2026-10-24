@@ -173,6 +173,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteAccount(a: com.simbio.don.app.data.AccountEntity) = viewModelScope.launch { repo.deleteAccount(a) }
 
+    fun checkAssets(inputs: List<com.simbio.don.app.data.DonRepository.AssetCheckInput>, from: Long?) =
+        viewModelScope.launch { repo.checkAssets(inputs, from, LocalDate.now()) }
+
     fun entriesOfAccount(id: Long) = repo.entriesOfAccount(id)
 
     // ── 전체 검색 ──
@@ -216,7 +219,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun completeOnboarding(setup: OnboardingResult) = viewModelScope.launch {
         repo.completeOnboarding(
             setup.salary, setup.payDay, setup.fixed, setup.savings, setup.settlementDay, LocalDate.now(),
-            setup.firstCycleBudget, setup.accounts, setup.look,
+            setup.firstCycleBudget, setup.accounts, setup.look, setup.apps,
         )
     }
 
@@ -306,6 +309,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun recycle() = viewModelScope.launch { repo.recycle() }
 
     fun chooseTitle(title: String) = viewModelScope.launch { repo.chooseTitle(title) }
+
+    fun addFixedExpense(name: String, amount: Long, day: Int?) = viewModelScope.launch { repo.addFixedExpense(name, amount, day) }
 
     /** 미니게임 한 판 기록 → 실제로 받은 마일 */
     fun playGame(game: com.simbio.don.game.MiniGame, score: Int, reward: Long, granted: (Long) -> Unit) =

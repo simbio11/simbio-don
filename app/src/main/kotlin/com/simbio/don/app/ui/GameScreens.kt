@@ -45,6 +45,7 @@ import com.simbio.don.app.ui.kit.Button
 import com.simbio.don.app.ui.kit.FilterChip
 import com.simbio.don.app.ui.kit.SubButton
 import com.simbio.don.app.ui.kit.card
+import com.simbio.don.app.ui.kit.pressable
 import com.simbio.don.game.CardGrade
 import com.simbio.don.game.Cards
 import com.simbio.don.game.ItemKind
@@ -268,7 +269,7 @@ fun MilesCard(state: MileState, cardCount: Int, onMiles: () -> Unit, onFurniture
 internal fun MenuTile(label: String, icon: Int, modifier: Modifier, onClick: () -> Unit) {
     Column(
         modifier.clip(RoundedCornerShape(12.dp)).background(DonColors.Surface)
-            .clickable(role = Role.Button, onClick = onClick)
+            .pressable(onClick = onClick)
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

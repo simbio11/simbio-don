@@ -52,6 +52,7 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -66,8 +67,17 @@ import java.time.YearMonth
 /** 결산할 수 있는 지난 주. 새 달이 시작돼도 지난달 마지막 주는 결산 화면으로 본다 */
 data class PendingWeek(val nominal: String, val result: WeekResult)
 
-/** 새 달이 자동으로 시작됐다는 안내 */
-data class SalaryNotice(val salary: Long, val source: SalarySource, val start: LocalDate)
+/** 새 달이 자동으로 시작됐다는 안내 ([previous]는 지난달 월급) */
+data class SalaryNotice(val salary: Long, val source: SalarySource, val start: LocalDate, val previous: Long? = null)
+
+/** 홈에 보여주는 분석: 월말 예측·무지출 날·한 줄 분석·정기 결제·다가오는 결제 */
+data class HomeInsights(
+    val forecast: com.simbio.don.budget.MonthForecast? = null,
+    val noSpend: com.simbio.don.budget.NoSpend? = null,
+    val insights: List<com.simbio.don.budget.Insight> = emptyList(),
+    val subscriptions: List<com.simbio.don.budget.Subscription> = emptyList(),
+    val upcoming: List<com.simbio.don.budget.Upcoming> = emptyList(),
+)
 
 /** 첫 화면에 필요한 것 전부. */
 data class HomeState(
@@ -135,6 +145,12 @@ data class HomeState(
     /** 집 화면에 다는 칭호 (없으면 빈 칸) */
     val title: String = "",
     val game: GameState = GameState(),
+    // ── 0.13 ──
+    /** 모으는 돈 (저축·투자 통장) */
+    val wealth: Wealth = Wealth(emptyList(), emptyList()),
+    /** 이번 달 자산 점검을 아직 안 함 (모으는 통장이 있고, 월급날 뒤 점검이 없음) */
+    val assetCheckDue: Boolean = false,
+    val insights: HomeInsights = HomeInsights(),
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
 
@@ -284,26 +300,72 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 자산과 지금 잔액 */
     val accountBalances: Flow<List<AccountBalance>> =
-        combine(dao.accounts(), dao.accountEntries()) { accounts, entries -> AccountBalances.compute(accounts, entries) }
+        combine(dao.accounts(), dao.accountEntries(), dao.assetChecks()) { accounts, entries, checks -> AccountBalances.compute(accounts, entries, checks) }
+
+    /** 모으는 돈 (저축·투자 통장): 지금 금액·넣은 돈·달마다 */
+    fun wealth(now: Flow<LocalDateTime>): Flow<Wealth> =
+        combine(accountBalances, dao.accountEntries(), dao.assetChecks(), now) { b, e, c, t -> AccountBalances.wealth(b, e, c, t.toLocalDate()) }
+
+    /** 최근 100일 기록 (한 줄 분석·정기 결제 찾기) */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun recentEntries(now: Flow<LocalDateTime>): Flow<List<EntryEntity>> =
+        now.map { it.toLocalDate().minusDays(RECENT_DAYS).toEpochDay() }.distinctUntilChanged().flatMapLatest { dao.entriesSince(it) }
+
+    private data class HomeMore(
+        val miles: List<MileTxEntity>,
+        val plays: List<GamePlayEntity>,
+        val wealth: Wealth,
+        val fixed: List<FixedExpenseEntity>,
+        val recent: List<EntryEntity>,
+    )
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun home(now: Flow<LocalDateTime>): Flow<HomeState?> =
-        combine(homeBase(now), extras, summaries(now), accountBalances, combine(dao.mileTx(), dao.gamePlays()) { m, g -> m to g }) { h, x, sums, accounts, mg ->
+    fun home(now: Flow<LocalDateTime>): Flow<HomeState?> {
+        val more = combine(dao.mileTx(), dao.gamePlays(), wealth(now), dao.fixedExpenses(), recentEntries(now)) { m, g, w, f, r -> HomeMore(m, g, w, f, r) }
+        return combine(homeBase(now), extras, summaries(now), accountBalances, more) { h, x, sums, accounts, mo ->
             h?.let {
                 val total = sums.sumOf { s -> s.saved }
-                val (miles, plays) = mg
+                val miles = mo.miles
+                val plays = mo.plays
                 it.copy(
                     miles = MileState.of(miles),
                     game = GameState.of(miles, plays, it.currentWeek?.week),
+                    wealth = mo.wealth,
+                    assetCheckDue = mo.wealth.pots.isNotEmpty() && (mo.wealth.lastCheck?.isBefore(it.cycle.start) ?: true),
+                    insights = insightsOf(it, mo.fixed, mo.recent),
                     categoryBudgets = x.budgets,
                     savedTotal = total,
                     savedThisMonth = sums.firstOrNull()?.saved ?: 0,
-                    goals = Summaries.goals(total, x.goals),
+                    // 모으는 통장이 있으면 그 금액으로 목표를 채운다
+                    goals = Summaries.goals(if (mo.wealth.pots.isNotEmpty()) mo.wealth.total else total, x.goals),
                     streak = Summaries.streak(x.settled),
                     accounts = accounts,
                 )
             }
         }
+    }
+
+    private fun insightsOf(h: HomeState, fixed: List<FixedExpenseEntity>, recent: List<EntryEntity>): HomeInsights {
+        val entries = h.entries.map { it.toEntry() }
+        val recentEntries = recent.mapNotNull { e -> runCatching { e.toEntry() }.getOrNull() }
+        val upcoming = com.simbio.don.budget.UpcomingPayments.of(
+            fixed.map { Triple(it.name, it.amount, it.day) },
+            fixed.map { f -> f.lastDueEpochDay?.let { LocalDate.ofEpochDay(it) } },
+            h.cycle,
+            h.today,
+        ).toMutableList()
+        // 월급날도 일주일 안이면
+        if (!h.nextExpectedPayday.isBefore(h.today) && !h.nextExpectedPayday.isAfter(h.today.plusDays(7))) {
+            upcoming += com.simbio.don.budget.Upcoming("월급날", h.salary, h.nextExpectedPayday, income = true)
+        }
+        return HomeInsights(
+            forecast = com.simbio.don.budget.Forecast.month(entries, h.cycle.start, h.cycle.end, h.plan.disposable, h.today),
+            noSpend = com.simbio.don.budget.NoSpendDays.of(entries, h.cycle.start, h.today),
+            insights = com.simbio.don.budget.Insights.of(recentEntries, h.currentWeek?.week?.start ?: h.today, h.today),
+            subscriptions = com.simbio.don.budget.Subscriptions.detect(recentEntries, known = fixed.map { it.name }),
+            upcoming = upcoming.sortedBy { it.date },
+        )
+    }
 
     /** 지난달에 아직 결산하지 않은 주 (지난달 마지막 주는 새 달이 돼도 결산 화면으로 본다) */
     private data class PrevMonth(val nominal: String, val results: List<WeekResult>, val settled: Set<Int>)
@@ -330,7 +392,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 combine(dao.reviewItems(), dao.settledWeeks(c.nominal), previousMonth(s, cs)) { r, w, p -> Triple(r, w, p) },
                 now,
                 combine(dao.mockPurchases(), dao.house()) { m, h -> m to h },
-            ) { entries, rw, t, game -> buildHome(s, c, cycle, entries, rw.first, rw.second, t, game.first, game.second, rw.third) }
+            ) { entries, rw, t, game -> buildHome(s, c, cycle, entries, rw.first, rw.second, t, game.first, game.second, rw.third, cs.getOrNull(1)?.salary) }
         }
 
     private fun buildHome(
@@ -344,6 +406,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         mocks: List<MockPurchaseEntity> = emptyList(),
         house: HouseEntity? = null,
         prev: PrevMonth? = null,
+        prevSalary: Long? = null,
     ): HomeState {
         val plan = planFor(c, cycle)
         val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e.toEntry()) }.getOrDefault(l) }
@@ -381,7 +444,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             nextExpectedPayday = nextPayday,
             salary = c.salary,
             salarySource = source,
-            salaryNotice = if (c.noticeShown) null else SalaryNotice(c.salary, source, cycle.start),
+            salaryNotice = if (c.noticeShown) null else SalaryNotice(c.salary, source, cycle.start, prevSalary),
             entries = entries,
             monthSpent = Stats.total(asEntries),
             monthLiving = living,
@@ -1097,11 +1160,15 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         firstCycleBudget: Long? = null,
         accounts: List<AccountDraft> = emptyList(),
         look: CharacterLook = CharacterLook.MALE,
+        /** 결제 알림을 읽을 앱 (null이면 기본 앱 목록을 켜 둔다) */
+        apps: List<AppRule>? = null,
     ) = writeLock.withLock {
         saveLookLocked(look)
         val ids = accounts.mapIndexed { i, a ->
             dao.saveAccount(AccountEntity(name = a.name.take(20), type = a.type.name, opening = a.opening, sortOrder = i, packageName = a.packageName))
         }
+        // 모으는 통장은 시작 금액을 첫 점검으로 남긴다 (다음 월급날부터 점검)
+        accounts.forEachIndexed { i, a -> if (a.type.grows) dao.insertAssetCheck(AssetCheckEntity(accountId = ids[i], epochDay = today.toEpochDay(), value = a.opening)) }
         dao.saveSettings(SettingsEntity(payDay = payDay, settlementDay = settlementDay.value, savings = savings))
         // 고정 지출은 보통 통장에서 나간다
         val bankId = accounts.indexOfFirst { it.type == AccountType.BANK }.takeIf { it >= 0 }?.let { ids[it] }
@@ -1126,9 +1193,23 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 salarySource = SalarySource.ONBOARDING.name,
             ),
         )
-        dao.insertAppRulesIfAbsent(DefaultApps.presets.map { it.toEntity() })
+        if (apps == null) {
+            dao.insertAppRulesIfAbsent(DefaultApps.presets.map { it.toEntity() })
+        } else {
+            // 고른 앱은 켜고, 고르지 않은 기본 앱은 꺼 둔다 (설정에서 다시 켤 수 있게 목록에는 남김)
+            val chosen = apps.map { it.packageName }.toSet()
+            dao.insertAppRulesIfAbsent(apps.map { it.copy(enabled = true).toEntity() } + DefaultApps.presets.filter { it.packageName !in chosen }.map { it.copy(enabled = false).toEntity() })
+        }
         recordDueFixedLocked(today)
         seedSubcategoriesLocked()
+    }
+
+    /** 정기 결제를 고정비로 (다음 달부터 월급에서 먼저 빼고, 이번 달은 이미 나간 것으로 둔다) */
+    suspend fun addFixedExpense(name: String, amount: Long, day: Int?) {
+        val s = dao.settingsNow() ?: return
+        val now = dao.fixedExpensesNow()
+        if (now.any { CategoryGuesser.key(it.name) == CategoryGuesser.key(name) }) return
+        updateSettings(now + FixedExpenseEntity(name = name.take(20), amount = amount, day = day), s.savings, DayOfWeek.of(s.settlementDay), applyNow = false)
     }
 
     /**
@@ -1273,6 +1354,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val apply = source == SalarySource.ESTIMATED || (source == SalarySource.NOTIFICATION && amount > c.salary)
         if (apply) dao.saveCycle(c.copy(salary = amount, salarySource = SalarySource.NOTIFICATION.name, noticeShown = false))
     }
+
+    /** 지금 달 월급과 어디서 왔는지 (알림 서비스가 월급이 바뀌었는지 볼 때) */
+    suspend fun salarySnapshot(): Triple<String, Long, SalarySource>? =
+        dao.latestCycleNow()?.let { Triple(it.nominal, it.salary, enumOr(it.salarySource, SalarySource.MANUAL)) }
+
+    /** 지난달 월급 (없으면 null) */
+    suspend fun previousSalary(): Long? = dao.cyclesNow().getOrNull(1)?.salary
 
     /** 이번 달 월급 고치기 */
     suspend fun updateSalary(amount: Long) = writeLock.withLock {
@@ -1749,11 +1837,49 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         if (a.packageName != null) {
             dao.accountsNow().filter { it.id != a.id && it.packageName == a.packageName }.forEach { dao.saveAccount(it.copy(packageName = null)) }
         }
-        return dao.saveAccount(a.copy(name = a.name.take(20), sortOrder = order))
+        val id = dao.saveAccount(a.copy(name = a.name.take(20), sortOrder = order))
+        // 새 모으는 통장은 시작 금액을 첫 점검으로
+        if (a.id == 0L && enumOr(a.type, AccountType.ETC).grows) {
+            dao.insertAssetCheck(AssetCheckEntity(accountId = id, epochDay = LocalDate.now().toEpochDay(), value = a.opening))
+        }
+        return id
     }
 
     /** 자산 지우기. 그 자산으로 적은 기록은 남기고 자산만 비운다 */
+    /** 자산 점검 한 줄: [added]는 이번에 넣은 돈, [value]는 넣은 뒤 지금 금액 */
+    data class AssetCheckInput(val accountId: Long, val added: Long, val value: Long)
+
+    /**
+     * 월급날 자산 점검: 모으는 통장마다 넣은 돈은 [fromAccountId]에서 옮긴 이체로 적고, 지금 금액을 남긴다.
+     * 지금 금액과 (지난 금액 + 넣은 돈)의 차이가 그동안 불어나거나 줄어든 돈이다.
+     */
+    suspend fun checkAssets(inputs: List<AssetCheckInput>, fromAccountId: Long?, today: LocalDate = LocalDate.now()) = writeLock.withLock {
+        val accounts = dao.accountsNow().associateBy { it.id }
+        transaction {
+            inputs.forEach { i ->
+                val a = accounts[i.accountId] ?: return@forEach
+                if (i.added > 0) {
+                    dao.insertEntry(
+                        EntryEntity(
+                            epochDay = today.toEpochDay(),
+                            amount = i.added,
+                            label = "${a.name}에 넣기",
+                            type = EntryType.TRANSFER.name,
+                            source = EntrySource.MANUAL.name,
+                            category = Category.ETC.name,
+                            memo = "자산 점검",
+                            accountId = fromAccountId?.takeIf { it != a.id },
+                            toAccountId = a.id,
+                        ),
+                    )
+                }
+                dao.insertAssetCheck(AssetCheckEntity(accountId = a.id, epochDay = today.toEpochDay(), value = i.value.coerceAtLeast(0)))
+            }
+        }
+    }
+
     suspend fun deleteAccount(a: AccountEntity) = writeLock.withLock {
+        dao.deleteAssetChecksOf(a.id)
         dao.detachAccountFrom(a.id)
         dao.detachAccountTo(a.id)
         dao.detachAccountFixed(a.id)
@@ -1793,6 +1919,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             recurringIncomes = dao.recurringIncomesNow(),
             mileTx = dao.mileTxNow(),
             gamePlays = dao.gamePlaysNow(),
+            assetChecks = dao.assetChecksNow(),
         ),
         now,
     )
@@ -1806,14 +1933,14 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.wipeRules(); dao.wipeSeen(); dao.wipeSettled(); dao.wipeCategoryRules(); dao.wipeMocks(); dao.wipeHouses()
                 dao.wipeCategoryBudgets(); dao.wipeGoals(); dao.wipeAccounts()
                 dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes(); dao.wipeMileTx()
-                dao.wipeGamePlays()
+                dao.wipeGamePlays(); dao.wipeAssetChecks()
                 dao.putSettings(d.settings); dao.putFixed(d.fixed); dao.putCycles(d.cycles); dao.putEntries(d.entries)
                 dao.putReviews(d.reviews); dao.putRules(d.rules); dao.putSettled(d.settled); dao.putCategoryRules(d.categoryRules)
                 dao.putMocks(d.mocks); dao.putHouses(d.houses); dao.putCategoryBudgets(d.categoryBudgets); dao.putGoals(d.goals)
                 dao.putAccounts(d.accounts)
                 dao.putCategoryDefs(d.categoryDefs); dao.putSubcategories(d.subcategories); dao.putInstallments(d.installments)
                 dao.putRecurringIncomes(d.recurringIncomes); dao.putMileTx(d.mileTx)
-                dao.putGamePlays(d.gamePlays)
+                dao.putGamePlays(d.gamePlays); dao.putAssetChecks(d.assetChecks)
             }
             Category.register(dao.categoryDefsNow().map { it.toCategory() })
         }
@@ -1832,6 +1959,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     companion object {
         /** 뷰티샵 예약 내용 앞에 붙는 글자 */
         const val LOOK_PAYLOAD = "look:"
+
+        /** 한 줄 분석·정기 결제 찾기에 보는 날 수 */
+        const val RECENT_DAYS = 100L
 
         fun typeLabel(t: EntryType): String = when (t) {
             EntryType.SPEND -> "지출"

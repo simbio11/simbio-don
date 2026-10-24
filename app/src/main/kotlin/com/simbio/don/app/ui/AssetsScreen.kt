@@ -55,6 +55,8 @@ fun AccountType.icon(): UiIcon = when (this) {
     AccountType.BANK -> UiIcon.BANK
     AccountType.CARD -> UiIcon.CARD_LINE
     AccountType.ETC -> UiIcon.WALLET_LINE
+    AccountType.SAVINGS -> UiIcon.SAVINGS
+    AccountType.INVEST -> UiIcon.TREND_UP
 }
 
 fun AccountType.tint() = when (this) {
@@ -62,6 +64,8 @@ fun AccountType.tint() = when (this) {
     AccountType.BANK -> DonColors.Real
     AccountType.CARD -> DonColors.Game
     AccountType.ETC -> DonColors.InkSoft
+    AccountType.SAVINGS -> DonColors.Good
+    AccountType.INVEST -> androidx.compose.ui.graphics.Color(0xFFFF7A1A)
 }
 
 /** 잔액 글자: 카드 빚은 "갚을 돈" */
@@ -75,6 +79,10 @@ fun AssetsScreen(
     onOpen: (AccountEntity) -> Unit,
     onAdd: () -> Unit,
     onTransfer: () -> Unit,
+    wealth: com.simbio.don.app.data.Wealth = com.simbio.don.app.data.Wealth(emptyList(), emptyList()),
+    checkDue: Boolean = false,
+    onCheck: () -> Unit = {},
+    onAddPot: () -> Unit = {},
 ) {
     val shown = balances.filter { !it.account.hidden }
     Column(
@@ -97,6 +105,7 @@ fun AssetsScreen(
             }
             if (shown.size >= 2) SubButton(onClick = onTransfer, modifier = Modifier.fillMaxWidth()) { Text("이체 적기 (통장 → 현금, 카드값 내기)") }
         }
+        WealthCard(wealth, checkDue, onCheck, onAddPot)
         if (shown.isEmpty()) {
             SectionCard("자산이 없어요") {
                 Text(
@@ -217,9 +226,10 @@ fun AccountEditScreen(
     onSave: (AccountEntity) -> Unit,
     onDelete: (() -> Unit)?,
     onBack: () -> Unit,
+    initialType: AccountType = AccountType.BANK,
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
-    var type by remember { mutableStateOf(existing?.let { enumOr(it.type, AccountType.ETC) } ?: AccountType.BANK) }
+    var type by remember { mutableStateOf(existing?.let { enumOr(it.type, AccountType.ETC) } ?: initialType) }
     var opening by remember { mutableStateOf(existing?.opening?.let { kotlin.math.abs(it).toString() }?.takeIf { it != "0" } ?: "") }
     var debt by remember { mutableStateOf((existing?.opening ?: 0) < 0) }
     var pkg by remember { mutableStateOf(existing?.packageName) }
@@ -245,8 +255,23 @@ fun AccountEditScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                MoneyField(if (type == AccountType.CARD) "지금 갚을 돈 (없으면 비움)" else "지금 잔액", opening, { opening = it })
-                if (type != AccountType.CARD) {
+                MoneyField(
+                    when (type) {
+                        AccountType.CARD -> "지금 갚을 돈 (없으면 비움)"
+                        AccountType.INVEST -> "지금 금액 (평가액)"
+                        else -> "지금 잔액"
+                    },
+                    opening,
+                    { opening = it },
+                )
+                if (type.grows) {
+                    Text(
+                        "모으는 돈이에요. 홈의 \"모은 돈\"에 들어가고, 월급날마다 자산 점검으로 넣은 돈과 지금 금액을 적으면 얼마나 불었는지 보여요.",
+                        fontSize = 12.sp,
+                        color = DonColors.Good,
+                    )
+                }
+                if (type != AccountType.CARD && !type.grows) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("마이너스 통장처럼 빚이에요", fontSize = 13.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
                         Switch(checked = debt, onCheckedChange = { debt = it })
@@ -282,7 +307,7 @@ fun AccountEditScreen(
             Button(
                 onClick = {
                     val v = opening.toLongOrNull() ?: 0
-                    val signed = if (type == AccountType.CARD || debt) -v else v
+                    val signed = if (type == AccountType.CARD || (debt && !type.grows)) -v else v
                     onSave(
                         (existing ?: AccountEntity(name = "", type = type.name, opening = 0, sortOrder = 0)).copy(
                             name = name.trim(),

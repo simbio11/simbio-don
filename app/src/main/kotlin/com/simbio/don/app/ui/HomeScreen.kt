@@ -62,6 +62,10 @@ fun HomeScreen(
     onBudgets: () -> Unit = {},
     onGoals: () -> Unit = {},
     weather: com.simbio.don.app.weather.Weather? = null,
+    onWealth: () -> Unit = {},
+    onAssetCheck: () -> Unit = {},
+    onCalendarDay: (java.time.LocalDate) -> Unit = {},
+    onAddFixed: (com.simbio.don.budget.Subscription) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
@@ -86,6 +90,16 @@ fun HomeScreen(
             Banner("결제 알림 자동 기록이 꺼져 있어요", "알림 접근을 허용하면 결제할 때마다 자동으로 기록돼요.", "켜러 가기", onOpenListenerSettings)
         }
         home.salaryNotice?.let { n -> SalaryNoticeCard(n, home.plan.disposable, onSalary, onDismissSalary) }
+        if (home.assetCheckDue && home.salaryNotice == null) {
+            Banner(
+                "월급날 자산 점검",
+                "모으는 통장에 넣은 돈과 지금 금액을 적고 얼마나 불었는지 봐요.",
+                "점검하기",
+                onAssetCheck,
+                UiIcon.SAVINGS,
+                DonColors.Good,
+            )
+        }
         if (home.settleable.isNotEmpty()) {
             Banner(
                 "지난주 결산이 준비됐어요",
@@ -145,6 +159,10 @@ fun HomeScreen(
             }
         }
 
+        home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
+        HomeCalendarCard(home, onCalendarDay)
+        UpcomingCard(home.insights.upcoming, home.today)
+
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))
             StatTile("이번 달 수입", won(home.monthIncome), null, Modifier.weight(1f))
@@ -166,9 +184,12 @@ fun HomeScreen(
                 }
             }
         }
-        SavingsCard(home, onGoals)
+        SavingsCard(home, onGoals, onWealth)
 
         HomeGameCard(home, onHouse, onShop, weather)
+
+        InsightCard(home.insights.insights)
+        SubscriptionCard(home.insights.subscriptions, onAddFixed)
 
         // 홈은 생활비에 집중: 고정 지출은 빼고 본다 (가계부·통계 탭에는 들어감)
         val categories = Stats.byCategory(home.entries.map { it.toEntry() }.filter { it.type != com.simbio.don.budget.EntryType.FIXED })
@@ -242,7 +263,10 @@ fun SalaryNoticeCard(n: com.simbio.don.app.data.SalaryNotice, disposable: Long, 
                 )
                 Text(
                     if (n.source == com.simbio.don.app.data.SalarySource.NOTIFICATION) {
-                        "${shortDate(n.start)}부터 새 달이에요. 이번 달 생활비는 ${won(disposable)}이에요."
+                        val diff = n.previous?.let { n.salary - it }?.takeIf { it != 0L }
+                        "통장에 들어온 금액으로 이번 달 월급을 바꿨어요" +
+                            (diff?.let { " (지난달보다 ${if (it > 0) "+" else "−"}${won(kotlin.math.abs(it))})" } ?: "") +
+                            ". ${shortDate(n.start)}부터 새 달, 생활비는 ${won(disposable)}이에요."
                     } else {
                         "${shortDate(n.start)}부터 새 달이에요. 월급 입금을 아직 못 봐서 지난달 월급 ${won(n.salary)}으로 짰어요. 입금 알림이 오면 저절로 맞춰요."
                     },

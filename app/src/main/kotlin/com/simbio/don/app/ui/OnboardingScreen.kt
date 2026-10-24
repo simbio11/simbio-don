@@ -121,12 +121,17 @@ data class OnboardingResult(
     val firstCycleBudget: Long?,
     val accounts: List<DonRepository.AccountDraft>,
     val look: CharacterLook = CharacterLook.MALE,
+    /** 결제 알림을 읽을 앱 (null이면 기본 앱 목록) */
+    val apps: List<com.simbio.don.notify.AppRule>? = null,
 )
+
+/** 폰에 설치된 앱 (실행 아이콘이 있는 것) */
+data class InstalledApp(val packageName: String, val label: String)
 
 /** 이번 달 남은 생활비를 정하는 방법 */
 private enum class StartMode(val label: String) { PRORATE("남은 날만큼"), BALANCE("통장 잔액으로"), DIRECT("직접 정하기") }
 
-private enum class Step { WELCOME, CHARACTER, SALARY, FIXED, SAVINGS, THIS_MONTH, ASSETS, FINISH }
+private enum class Step { WELCOME, CHARACTER, SALARY, FIXED, SAVINGS, THIS_MONTH, ASSETS, APPS, FINISH }
 
 /**
  * 처음 설정 (한 번만). 월급은 여기서만 묻고, 다음 달부터는 월급날·입금 알림으로 저절로 돌아간다.
@@ -137,6 +142,7 @@ fun OnboardingScreen(
     today: LocalDate,
     listenerEnabled: Boolean = false,
     onOpenListenerSettings: () -> Unit = {},
+    installedApps: List<InstalledApp> = emptyList(),
     onDone: (OnboardingResult) -> Unit,
 ) {
     var step by remember { mutableStateOf(Step.WELCOME) }
@@ -155,6 +161,17 @@ fun OnboardingScreen(
     var useCard by remember { mutableStateOf(true) }
     var cardDebt by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf(Gender.MALE) }
+    var savingsPot by remember { mutableStateOf("") }
+    var investPot by remember { mutableStateOf("") }
+    // 알림을 읽을 앱: 폰에 있는 결제·은행 앱은 미리 골라 둔다 (폰 목록을 못 읽으면 기본 앱 목록)
+    val appChoices = remember(installedApps) {
+        installedApps.ifEmpty { com.simbio.don.notify.DefaultApps.presets.map { InstalledApp(it.packageName, it.displayName) } }
+    }
+    val pickedApps = remember(appChoices) {
+        androidx.compose.runtime.mutableStateMapOf<String, Boolean>().apply {
+            appChoices.forEach { a -> if (com.simbio.don.notify.DefaultApps.looksLikePayment(a.packageName, a.label)) put(a.packageName, true) }
+        }
+    }
 
     val salaryValue = salary.toLongOrNull() ?: 0
     val fixedList = fixed.mapNotNull { it.toFixed() }
@@ -190,11 +207,15 @@ fun OnboardingScreen(
             add(DonRepository.AccountDraft("현금", AccountType.CASH, cash.toLongOrNull() ?: 0))
             add(DonRepository.AccountDraft("생활비 통장", AccountType.BANK, (if (bankTouched) bank else balance).toLongOrNull() ?: 0))
             if (useCard) add(DonRepository.AccountDraft("신용카드", AccountType.CARD, -(cardDebt.toLongOrNull() ?: 0)))
+            savingsPot.toLongOrNull()?.takeIf { it > 0 }?.let { add(DonRepository.AccountDraft("적금·예금", AccountType.SAVINGS, it)) }
+            investPot.toLongOrNull()?.takeIf { it > 0 }?.let { add(DonRepository.AccountDraft("주식·투자", AccountType.INVEST, it)) }
         }
+        val labels = appChoices.associate { it.packageName to it.label }
+        val apps = pickedApps.filterValues { it }.keys.map { com.simbio.don.notify.AppRule(it, labels[it] ?: it) }
         onDone(
             OnboardingResult(
                 salaryValue, payDayValue!!, fixedList, savingsValue, settlementDay,
-                if (midCycle) firstBudget else null, accounts, CharacterLook.default(gender),
+                if (midCycle) firstBudget else null, accounts, CharacterLook.default(gender), apps,
             ),
         )
     }
@@ -206,7 +227,8 @@ fun OnboardingScreen(
                 Box(Modifier.fillMaxWidth(index.toFloat() / (steps.size - 1)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(DonColors.Real))
             }
         }
-        AnimatedContent(step, Modifier.weight(1f), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "step") { s ->
+        ScreenBackHandler(step != Step.WELCOME) { steps.getOrNull(index - 1)?.let { step = it } }
+        AnimatedContent(step, Modifier.weight(1f), transitionSpec = { stepTransition(targetState.ordinal > initialState.ordinal) }, label = "step") { s ->
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -231,7 +253,10 @@ fun OnboardingScreen(
                         }
                     }
                     Step.SALARY -> {
-                        StepTitle("월급을 알려주세요", "처음 한 번만 물어볼게요. 다음 달부터는 월급날이 되면 저절로 새 달이 시작되고, 월급 입금 알림으로 금액도 맞춰요.")
+                        StepTitle(
+                            "월급을 알려주세요",
+                            "처음 한 번만 물어볼게요. 월급은 달마다 조금씩 다를 수 있어서, 월급날 통장에 들어온 금액(입금 알림)으로 그달 월급을 저절로 바꾸고 알려 드려요.",
+                        )
                         FormCard {
                             MoneyField("월급 (세금 뗀 실수령액)", salary, { salary = it })
                             OutlinedTextField(
@@ -326,7 +351,18 @@ fun OnboardingScreen(
                             }
                             if (useCard) MoneyField("다음 결제일에 낼 카드값 (모르면 비움)", cardDebt, { cardDebt = it })
                         }
+                        FormCard("모으는 돈 (선택)") {
+                            Text(
+                                "적금·예금이나 주식처럼 따로 모으는 돈이 있으면 지금 금액을 적어요. 홈의 \"모은 돈\"에 들어가고, " +
+                                    "월급날마다 넣은 돈과 지금 금액을 적으면 얼마나 불었는지 보여요.",
+                                fontSize = 12.sp,
+                                color = DonColors.InkMuted,
+                            )
+                            MoneyField("적금·예금 잔액", savingsPot, { savingsPot = it })
+                            MoneyField("주식·투자 지금 금액", investPot, { investPot = it })
+                        }
                     }
+                    Step.APPS -> AppsStep(appChoices, installedApps.isEmpty(), pickedApps)
                     Step.FINISH -> {
                         StepTitle("거의 다 됐어요", "한 주는 결산 요일 아침에 마무리해요. 그 전날이 한 주의 마지막 날이에요.")
                         FormCard("결산 요일") { DayOfWeekPicker(settlementDay) { settlementDay = it } }
@@ -388,6 +424,60 @@ private fun Welcome() {
         }
     }
     Text("입력한 내용은 이 폰에만 저장되고 어디로도 보내지 않아요.", fontSize = 12.sp, color = DonColors.InkMuted)
+}
+
+/** 알림을 자동으로 적을 앱 고르기: 결제·은행 앱은 위에 미리 골라 두고, 나머지는 찾아서 고른다 */
+@Composable
+private fun AppsStep(apps: List<InstalledApp>, fallback: Boolean, picked: MutableMap<String, Boolean>) {
+    var query by remember { mutableStateOf("") }
+    var showAll by remember { mutableStateOf(false) }
+    StepTitle(
+        "자동으로 적을 앱",
+        "결제·입금 알림이 오는 앱을 골라요. 고른 앱의 알림만 읽어 가계부에 적고, 내용은 이 폰 밖으로 보내지 않아요. 나중에 설정에서 바꿀 수 있어요.",
+    )
+    val (suggested, others) = apps.partition { com.simbio.don.notify.DefaultApps.looksLikePayment(it.packageName, it.label) }
+    FormCard(if (fallback) "자주 쓰는 결제 앱" else "이 폰의 결제·은행·카드 앱") {
+        if (suggested.isEmpty()) Text("찾지 못했어요. 아래에서 직접 골라 주세요.", fontSize = 13.sp, color = DonColors.InkMuted)
+        suggested.forEach { a -> AppPickRow(a, picked[a.packageName] == true) { picked[a.packageName] = it } }
+    }
+    if (others.isNotEmpty()) {
+        FormCard("다른 앱") {
+            if (!showAll) {
+                SubButton(onClick = { showAll = true }, modifier = Modifier.fillMaxWidth()) { Text("다른 앱 ${others.size}개에서 고르기") }
+            } else {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("앱 이름 찾기") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                others.filter { query.isBlank() || query.trim() in it.label }.take(40).forEach { a ->
+                    AppPickRow(a, picked[a.packageName] == true) { picked[a.packageName] = it }
+                }
+            }
+        }
+    }
+    val count = picked.count { it.value }
+    Text("${count}개 골랐어요", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (count > 0) DonColors.Real else DonColors.InkMuted)
+    if (picked.filterValues { it }.keys.any { it in com.simbio.don.notify.DefaultApps.messagingPackages }) {
+        com.simbio.don.app.ui.kit.WarnLine("문자 앱은 스미싱 문자도 섞여 와요. 결제 문자만 적지만, 낯선 링크는 누르지 마세요.")
+    }
+}
+
+@Composable
+private fun AppPickRow(app: InstalledApp, on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(role = Role.Checkbox) { onChange(!on) }.padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = on, onCheckedChange = null)
+        Spacer(Modifier.width(6.dp))
+        Column(Modifier.weight(1f)) {
+            Text(app.label, fontSize = 15.sp, color = DonColors.Ink)
+            Text(app.packageName, fontSize = 11.sp, color = DonColors.InkFaint, maxLines = 1)
+        }
+    }
 }
 
 @Composable

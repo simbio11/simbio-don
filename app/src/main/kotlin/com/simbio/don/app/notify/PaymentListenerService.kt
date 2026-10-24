@@ -75,8 +75,15 @@ class PaymentListenerService : NotificationListenerService() {
         }
         scope.launch {
             if (watched == null && pkg !in repo.watchedPackages()) return@launch
+            val before = repo.salarySnapshot()
             repo.handleNotification(RawNotification(pkg, title, text, postedAt))
             WeekWidget.refresh(this@PaymentListenerService)
+            // 입금 알림으로 월급이 바뀌었으면 알려준다
+            val after = repo.salarySnapshot()
+            if (after != null && after != before && after.third == com.simbio.don.app.data.SalarySource.NOTIFICATION) {
+                val previous = if (before?.first == after.first) before.second.takeIf { before.third != com.simbio.don.app.data.SalarySource.ESTIMATED } ?: repo.previousSalary() else repo.previousSalary()
+                SalaryNotifier.notify(this@PaymentListenerService, after.second, previous)
+            }
         }
     }
 

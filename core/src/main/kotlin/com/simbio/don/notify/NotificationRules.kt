@@ -62,4 +62,15 @@ object DefaultApps {
 
     /** 문자 앱은 스미싱이 섞일 수 있어 켤 때 경고한다. */
     val messagingPackages = setOf("com.samsung.android.messaging", "com.google.android.apps.messaging")
+
+    private val LABEL_WORDS = listOf("페이", "뱅크", "은행", "카드", "토스", "머니", "증권", "월렛", "지갑", "신한", "국민", "우리", "하나", "농협", "기업", "새마을", "우체국")
+    private val PACKAGE_WORDS = listOf("pay", "bank", "card", "toss", "wallet", "shinhan", "kbstar", "woori", "hana", "nonghyup", "ibk", "kfcc", "epost")
+
+    /** 첫 설정에서 먼저 골라 둘 앱: 기본 앱이거나 이름·패키지가 결제·은행·카드 앱 같은 것 (문자 앱은 빼고) */
+    fun looksLikePayment(packageName: String, label: String): Boolean {
+        if (packageName in messagingPackages) return false
+        if (presets.any { it.packageName == packageName }) return true
+        val p = packageName.lowercase()
+        return LABEL_WORDS.any { it in label } || PACKAGE_WORDS.any { it in p }
+    }
 }

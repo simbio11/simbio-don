@@ -49,6 +49,7 @@ import com.simbio.don.app.ui.kit.SubButton
 import com.simbio.don.app.ui.kit.TextButton
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.kit.card
+import com.simbio.don.app.ui.kit.pressable
 import com.simbio.don.app.ui.kit.icon16
 import com.simbio.don.game.CartLine
 import com.simbio.don.game.Cards
@@ -69,7 +70,7 @@ private sealed interface MallPage {
     data object Cart : MallPage
 
     /** 바로 사기: 장바구니는 그대로 두고 이 물건만 결제 */
-    data class BuyNow(val lines: List<CartLine>) : MallPage
+    data class BuyNow(val lines: List<CartLine>, val from: MallPage = Home) : MallPage
 
     /** 결제 중 ([fromCart]면 끝나고 장바구니를 비운다) */
     data class Paying(val lines: List<CartLine>, val fromCart: Boolean) : MallPage
@@ -119,11 +120,24 @@ fun MallScreen(
             MallPage.Home -> BackBar(MALL_NAME, onBack, trailing = { CartButton(cartCount) { page = MallPage.Cart } })
             is MallPage.Detail -> BackBar("", { page = MallPage.Home }, trailing = { CartButton(cartCount) { page = MallPage.Cart } })
             MallPage.Cart -> BackBar("장바구니", { page = MallPage.Home })
-            is MallPage.BuyNow -> BackBar("주문 / 결제", { page = MallPage.Home })
+            is MallPage.BuyNow -> BackBar("주문 / 결제", { page = p.from })
             else -> Spacer(Modifier.height(8.dp))
         }
         MockBadge()
-        when (val p = page) {
+        // 시스템 뒤로 가기: 몰 안에서 한 단계씩
+        ScreenBackHandler(page != MallPage.Home && page !is MallPage.Paying) {
+            page = when (val p = page) {
+                is MallPage.BuyNow -> p.from
+                else -> MallPage.Home
+            }
+        }
+        androidx.compose.animation.AnimatedContent(
+            page,
+            Modifier.weight(1f),
+            transitionSpec = { stepTransition(targetState.depth >= initialState.depth) },
+            contentKey = { it.key },
+            label = "mall",
+        ) { p -> Column(Modifier.fillMaxSize()) { when (p) {
             MallPage.Home -> MallHome(
                 query, { query = it }, kind, { kind = it }, salary, naverOn, naver,
                 onNaver = { naverQuery = query },
@@ -133,11 +147,11 @@ fun MallScreen(
             is MallPage.Detail -> ProductDetail(
                 p.product, p.store, wallet, salary,
                 onAdd = { option -> onCart(Catalog.add(cart, p.product, option)) },
-                onBuyNow = { option -> page = MallPage.BuyNow(Catalog.add(emptyList(), p.product, option)) },
+                onBuyNow = { option -> page = MallPage.BuyNow(Catalog.add(emptyList(), p.product, option), from = p) },
                 onWish = { onWish(p.product.name, p.product.price, p.product.kind, p.store); page = MallPage.Home },
             )
             MallPage.Cart -> CartPage(cart, wallet, onCart, onPay = { page = MallPage.Paying(cart, fromCart = true) })
-            is MallPage.BuyNow -> CartPage(p.lines, wallet, { page = MallPage.BuyNow(it) }, onPay = { page = MallPage.Paying(p.lines, fromCart = false) })
+            is MallPage.BuyNow -> CartPage(p.lines, wallet, { page = p.copy(lines = it) }, onPay = { page = MallPage.Paying(p.lines, fromCart = false) })
             is MallPage.Paying -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("모의 결제 중…", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DonColors.GameDeep)
             }
@@ -155,9 +169,26 @@ fun MallScreen(
                     Button(onClick = onHouse, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) { Text("내 집 보기") }
                 }
             }
-        }
+        } } }
     }
 }
+
+/** 몰 안에서 얼마나 들어왔는지 (앞으로 가면 오른쪽에서 밀려 들어옴) */
+private val MallPage.depth: Int
+    get() = when (this) {
+        MallPage.Home -> 0
+        is MallPage.Detail, MallPage.Cart -> 1
+        is MallPage.BuyNow -> 2
+        is MallPage.Paying -> 3
+        is MallPage.Done -> 4
+    }
+
+/** 같은 쪽이면 움직이지 않음 (바로 사기에서 수량만 바꿀 때 등) */
+private val MallPage.key: Any
+    get() = when (this) {
+        is MallPage.Detail -> "detail:${product.id}:$store"
+        else -> this::class
+    }
 
 @Composable
 private fun CartButton(count: Int, onClick: () -> Unit) {
@@ -247,7 +278,7 @@ private fun ProductGrid(products: List<Product>, salary: Long, onOpen: (Product)
         products.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { p ->
-                    Column(Modifier.weight(1f).card().clickable { onOpen(p) }.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.weight(1f).card().pressable { onOpen(p) }.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Box(Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(10.dp)).background(DonColors.SurfaceAlt), contentAlignment = Alignment.Center) {
                             com.simbio.don.app.ui.kit.PixelImage(p.icon16(), 56.dp)
                         }

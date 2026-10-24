@@ -44,6 +44,7 @@ import com.simbio.don.app.ui.kit.ItemThumb
 import com.simbio.don.app.ui.kit.PixelImage
 import com.simbio.don.app.ui.kit.SmallButton
 import com.simbio.don.app.ui.kit.card
+import com.simbio.don.app.ui.kit.pressable
 import com.simbio.don.app.ui.kit.icon16
 import com.simbio.don.game.CardGrade
 import com.simbio.don.game.Catalog
@@ -91,6 +92,7 @@ fun CollectionScreen(items: List<MockItem>, title: String, onTitle: (String) -> 
 private fun DexPage(entries: List<DexEntry>, others: List<com.simbio.don.game.DexOther>, count: Int, onMall: () -> Unit) {
     var kind by remember { mutableStateOf<ItemKind?>(null) }
     var open by remember { mutableStateOf<DexEntry?>(null) }
+    ScreenBackHandler(open != null) { open = null }
     GameCard("모은 칸") {
         Row(verticalAlignment = Alignment.Bottom) {
             Text("$count", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
@@ -138,7 +140,7 @@ private fun DexSlot(e: DexEntry, modifier: Modifier, onClick: () -> Unit) {
     Column(
         modifier.clip(shape).background(if (e.got) DonColors.Surface else DonColors.Surface.copy(alpha = 0.6f))
             .border(if (e.got) 2.dp else 1.dp, if (e.got) tier.color() else DonColors.Line, shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .pressable(onClick = onClick)
             .semantics { contentDescription = if (e.got) "도감 ${e.product.name}" else "도감 빈 칸" }
             .padding(vertical = 8.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

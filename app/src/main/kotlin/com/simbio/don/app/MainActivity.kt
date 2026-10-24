@@ -61,7 +61,11 @@ import com.simbio.don.app.ui.AppState
 import com.simbio.don.app.ui.AssetsScreen
 import com.simbio.don.app.ui.BudgetsScreen
 import com.simbio.don.app.ui.CardsScreen
+import com.simbio.don.app.ui.AssetCheckScreen
 import com.simbio.don.app.ui.CollectionScreen
+import com.simbio.don.app.ui.FadeThrough
+import com.simbio.don.app.ui.ScreenHost
+import com.simbio.don.app.ui.ScreenStack
 import com.simbio.don.app.ui.MiniGameScreen
 import com.simbio.don.app.ui.CategoryManageScreen
 import com.simbio.don.app.ui.DayPhase
@@ -127,7 +131,8 @@ private sealed interface Overlay {
     data object Settings : Overlay
     data object Search : Overlay
     data class Account(val id: Long) : Overlay
-    data class EditAccount(val id: Long?) : Overlay
+    data class EditAccount(val id: Long?, val type: com.simbio.don.app.data.AccountType? = null) : Overlay
+    data object AssetCheck : Overlay
     data object Dress : Overlay
     data object Miles : Overlay
     data object Cards : Overlay
@@ -216,6 +221,17 @@ class MainActivity : ComponentActivity() {
 
     private fun openBatterySettings() = startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
 
+    /** 실행 아이콘이 있는 앱 (첫 설정에서 알림 앱 고르기). 이 앱은 빼고 이름순 */
+    private fun installedApps(): List<com.simbio.don.app.ui.InstalledApp> = runCatching {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        packageManager.queryIntentActivities(launcher, 0)
+            .map { it.activityInfo.packageName }
+            .distinct()
+            .filter { it != packageName }
+            .mapNotNull { pkg -> appLabel(pkg)?.let { com.simbio.don.app.ui.InstalledApp(pkg, it) } }
+            .sortedBy { it.label }
+    }.getOrDefault(emptyList())
+
     private fun appLabel(pkg: String): String? = try {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
     } catch (_: PackageManager.NameNotFoundException) {
@@ -227,7 +243,10 @@ class MainActivity : ComponentActivity() {
         val state by vm.state.collectAsStateWithLifecycle()
         when (val s = state) {
             AppState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            AppState.NeedsOnboarding -> OnboardingScreen(LocalDate.now(), listenerEnabled, ::openListenerSettings) { vm.completeOnboarding(it) }
+            AppState.NeedsOnboarding -> {
+                val apps = remember { installedApps() }
+                OnboardingScreen(LocalDate.now(), listenerEnabled, ::openListenerSettings, apps) { vm.completeOnboarding(it) }
+            }
             is AppState.Ready -> CompositionLocalProvider(LocalCharacterLook provides s.home.look) { Main(s.home) }
         }
     }
@@ -235,20 +254,18 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Main(home: HomeState) {
         var tab by remember { mutableStateOf(Tab.Home) }
-        var overlay by remember { mutableStateOf<Overlay?>(null) }
-        // 화면 위에서 연 화면(자산 상세 → 이체, 설정 → 월급, 검색 → 기록)을 닫으면 그 화면으로 돌아간다
-        var overlayBack by remember { mutableStateOf<Overlay?>(null) }
+        // 화면 위에 연 화면들: 닫으면 바로 전 화면으로 (아래 화면은 입력하던 그대로)
+        val screens = remember { ScreenStack<Overlay>() }
         var ledgerDate by remember { mutableStateOf<LocalDate?>(null) }
         var ledgerCategory by remember { mutableStateOf<Category?>(null) }
         var ledgerMode by rememberSaveable { mutableStateOf(LedgerMode.DAILY) }
-        val close = { overlay = overlayBack; overlayBack = null }
         LaunchedEffect(shared) {
-            shared?.let { overlayBack = null; overlay = Overlay.Shop(it); shared = null }
+            shared?.let { screens.clear(); screens.push(Overlay.Shop(it)); shared = null }
         }
         LaunchedEffect(addRequested) {
             if (addRequested) {
-                overlayBack = null
-                overlay = Overlay.Edit(null)
+                screens.clear()
+                screens.push(Overlay.Edit(null))
                 addRequested = false
             }
         }
@@ -262,19 +279,33 @@ class MainActivity : ComponentActivity() {
             if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted()
         }
 
-        BackHandler(enabled = overlay != null || tab != Tab.Home) {
-            when {
-                overlay != null -> close()
-                else -> tab = Tab.Home
-            }
-        }
-
-        overlay?.let { o ->
-            Overlay(o, home, close, open = { next -> overlayBack = o.takeIf { it !is Overlay.Edit }; overlay = next }, goHouse = { overlayBack = null; overlay = null; tab = Tab.House })
-            return
-        }
+        BackHandler(enabled = screens.isEmpty && tab != Tab.Home) { tab = Tab.Home }
 
         val names = home.accounts.associate { it.account.id to it.account.name }
+        ScreenHost(
+            screens,
+            base = { MainTabs(home, tab, { tab = it }, screens, snackbar, names, ledgerDate, { ledgerDate = it }, ledgerCategory, { ledgerCategory = it }, ledgerMode, { ledgerMode = it }, weather) },
+        ) { o, close ->
+            Overlay(o, home, close, open = { screens.push(it) }, goHouse = { screens.clear(); tab = Tab.House })
+        }
+    }
+
+    @Composable
+    private fun MainTabs(
+        home: HomeState,
+        tab: Tab,
+        onTab: (Tab) -> Unit,
+        screens: ScreenStack<Overlay>,
+        snackbar: SnackbarHostState,
+        names: Map<Long, String>,
+        ledgerDate: LocalDate?,
+        onLedgerDate: (LocalDate?) -> Unit,
+        ledgerCategory: Category?,
+        onLedgerCategory: (Category?) -> Unit,
+        ledgerMode: LedgerMode,
+        onLedgerMode: (LedgerMode) -> Unit,
+        weather: com.simbio.don.app.weather.Weather?,
+    ) {
         Scaffold(
             containerColor = DonColors.Bg,
             snackbarHost = {
@@ -297,7 +328,7 @@ class MainActivity : ComponentActivity() {
                     if (t == Tab.Ledger || t == Tab.Stats) {
                         if (tab != Tab.Ledger && tab != Tab.Stats) vm.resetMonth()
                     }
-                    tab = t
+                    onTab(t)
                 }
             },
             floatingActionButton = {
@@ -305,42 +336,49 @@ class MainActivity : ComponentActivity() {
                     AddFab(
                         onClick = {
                             val d = ledgerDate.takeIf { tab == Tab.Ledger && ledgerMode == LedgerMode.CALENDAR }
-                            overlay = Overlay.Edit(null, d?.let { EntryDraft(it, 0, "", EntryType.SPEND, Category.ETC, "", false) })
+                            screens.push(Overlay.Edit(null, d?.let { EntryDraft(it, 0, "", EntryType.SPEND, Category.ETC, "", false) }))
                         },
                         contentDescription = "가계부 쓰기",
                     )
                 }
             },
         ) { padding ->
-            Box(Modifier.padding(padding)) {
-                when (tab) {
+            FadeThrough(tab, Modifier.padding(padding)) { t ->
+                when (t) {
                     Tab.Home -> HomeScreen(
                         home = home,
                         listenerEnabled = listenerEnabled,
                         onOpenListenerSettings = ::openListenerSettings,
-                        onReview = { overlay = Overlay.Review },
-                        onSettle = { overlay = Overlay.Settle },
-                        onSalary = { overlay = Overlay.Salary },
+                        onReview = { screens.push(Overlay.Review) },
+                        onSettle = { screens.push(Overlay.Settle) },
+                        onSalary = { screens.push(Overlay.Salary) },
                         onDismissSalary = { vm.dismissSalaryNotice() },
-                        onSettings = { overlay = Overlay.Settings },
-                        onOpenEntry = { overlay = Overlay.Edit(it) },
-                        onAllEntries = { vm.resetMonth(); ledgerDate = null; ledgerCategory = null; ledgerMode = LedgerMode.DAILY; tab = Tab.Ledger },
-                        onStats = { vm.resetMonth(); tab = Tab.Stats },
-                        onHouse = { tab = Tab.House },
-                        onShop = { overlay = Overlay.Mall },
-                        onBudgets = { overlay = Overlay.Budgets },
-                        onGoals = { overlay = Overlay.Goals },
+                        onSettings = { screens.push(Overlay.Settings) },
+                        onOpenEntry = { screens.push(Overlay.Edit(it)) },
+                        onAllEntries = { vm.resetMonth(); onLedgerDate(null); onLedgerCategory(null); onLedgerMode(LedgerMode.DAILY); onTab(Tab.Ledger) },
+                        onStats = { vm.resetMonth(); onTab(Tab.Stats) },
+                        onHouse = { onTab(Tab.House) },
+                        onShop = { screens.push(Overlay.Mall) },
+                        onBudgets = { screens.push(Overlay.Budgets) },
+                        onGoals = { screens.push(Overlay.Goals) },
                         weather = weather,
+                        onWealth = { onTab(Tab.Assets) },
+                        onAssetCheck = { screens.push(Overlay.AssetCheck) },
+                        onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
+                        onAddFixed = { s ->
+                            vm.addFixedExpense(s.label, s.amount, s.day)
+                            Toast.makeText(this, "${s.label}을 고정비로 넣었어요. 다음 달부터 미리 빼 둘게요", Toast.LENGTH_SHORT).show()
+                        },
                     )
                     Tab.House -> HouseScreen(
                         home = home,
-                        onShop = { overlay = Overlay.Mall },
-                        onDress = { overlay = Overlay.Dress },
-                        onMiles = { overlay = Overlay.Miles },
-                        onFurniture = { overlay = Overlay.Furniture },
-                        onCards = { overlay = Overlay.Cards },
-                        onDex = { overlay = Overlay.Dex },
-                        onGame = { overlay = Overlay.Games(it) },
+                        onShop = { screens.push(Overlay.Mall) },
+                        onDress = { screens.push(Overlay.Dress) },
+                        onMiles = { screens.push(Overlay.Miles) },
+                        onFurniture = { screens.push(Overlay.Furniture) },
+                        onCards = { screens.push(Overlay.Cards) },
+                        onDex = { screens.push(Overlay.Dex) },
+                        onGame = { screens.push(Overlay.Games(it)) },
                         onRecycle = { vm.recycle() },
                         onDiscard = { vm.discard(it) },
                         onBuyWish = { vm.buyWished(it.id) },
@@ -350,37 +388,41 @@ class MainActivity : ComponentActivity() {
                     )
                     Tab.Assets -> AssetsScreen(
                         balances = home.accounts,
-                        onOpen = { overlay = Overlay.Account(it.id) },
-                        onAdd = { overlay = Overlay.EditAccount(null) },
-                        onTransfer = { overlay = Overlay.Edit(null, transferDraft(home, null)) },
+                        onOpen = { screens.push(Overlay.Account(it.id)) },
+                        onAdd = { screens.push(Overlay.EditAccount(null)) },
+                        onTransfer = { screens.push(Overlay.Edit(null, transferDraft(home, null))) },
+                        wealth = home.wealth,
+                        checkDue = home.assetCheckDue,
+                        onCheck = { screens.push(Overlay.AssetCheck) },
+                        onAddPot = { screens.push(Overlay.EditAccount(null, com.simbio.don.app.data.AccountType.SAVINGS)) },
                     )
                     Tab.Ledger, Tab.Stats -> {
                         val view by vm.month.collectAsStateWithLifecycle()
                         val cycles by vm.cycles.collectAsStateWithLifecycle()
                         val summaries by vm.summaries.collectAsStateWithLifecycle()
                         val yearView by vm.yearView.collectAsStateWithLifecycle()
-                        val v = view ?: return@Box
+                        val v = view ?: return@FadeThrough
                         val i = cycles.indexOfFirst { it.nominal == v.nominal }
                         val hasPrev = i in 0 until cycles.lastIndex
                         val hasNext = i > 0
-                        if (tab == Tab.Ledger) {
+                        if (t == Tab.Ledger) {
                             LedgerScreen(
                                 view = v,
                                 summaries = summaries,
                                 accountNames = names,
                                 hasPrev = hasPrev,
                                 hasNext = hasNext,
-                                onPrev = { vm.moveMonth(-1); ledgerDate = null },
-                                onNext = { vm.moveMonth(1); ledgerDate = null },
-                                onPickMonth = { vm.pickMonth(it); ledgerDate = null },
+                                onPrev = { vm.moveMonth(-1); onLedgerDate(null) },
+                                onNext = { vm.moveMonth(1); onLedgerDate(null) },
+                                onPickMonth = { vm.pickMonth(it); onLedgerDate(null) },
                                 selectedDate = ledgerDate,
-                                onSelectDate = { ledgerDate = it },
+                                onSelectDate = { onLedgerDate(it) },
                                 category = ledgerCategory,
-                                onCategory = { ledgerCategory = it },
-                                onOpen = { overlay = Overlay.Edit(it) },
-                                onSearch = { overlay = Overlay.Search },
+                                onCategory = { onLedgerCategory(it) },
+                                onOpen = { screens.push(Overlay.Edit(it)) },
+                                onSearch = { screens.push(Overlay.Search) },
                                 mode = ledgerMode,
-                                onMode = { ledgerMode = it },
+                                onMode = { onLedgerMode(it) },
                             )
                         } else {
                             StatsScreen(
@@ -389,9 +431,9 @@ class MainActivity : ComponentActivity() {
                                 hasNext = hasNext,
                                 onPrev = { vm.moveMonth(-1) },
                                 onNext = { vm.moveMonth(1) },
-                                onCategory = { c -> ledgerCategory = c; ledgerDate = null; ledgerMode = LedgerMode.DAILY; tab = Tab.Ledger },
+                                onCategory = { c -> onLedgerCategory(c); onLedgerDate(null); onLedgerMode(LedgerMode.DAILY); onTab(Tab.Ledger) },
                                 summaries = summaries,
-                                onBudgets = { overlay = Overlay.Budgets },
+                                onBudgets = { screens.push(Overlay.Budgets) },
                                 year = yearView,
                                 onPickYear = { vm.pickYear(it) },
                             )
@@ -426,6 +468,10 @@ class MainActivity : ComponentActivity() {
         var naverOn by remember { mutableStateOf(NaverShopping.isOn(this)) }
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
         var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
+        // 앱 잠금은 위에 연 화면(암호 정하기)에서 바뀌므로 이 화면으로 돌아올 때 다시 읽는다
+        var lockOn by remember { mutableStateOf(AppLock.isOn(this)) }
+        val active = com.simbio.don.app.ui.LocalScreenActive.current
+        LaunchedEffect(active) { if (active) lockOn = AppLock.isOn(this@MainActivity) }
         val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
                 DailyReminder.setOn(this, true)
@@ -502,7 +548,7 @@ class MainActivity : ComponentActivity() {
                 naverOn = naverOn,
                 onNaverKeys = { id, secret -> NaverShopping.save(this, id, secret); naverOn = true },
                 onNaverClear = { NaverShopping.clear(this); naverOn = false },
-                lockOn = AppLock.isOn(this),
+                lockOn = lockOn,
                 onLock = { on -> open(if (on) Overlay.SetPin else Overlay.UnlockToTurnOff) },
                 onChangePin = { open(Overlay.SetPin) },
                 onBack = onBack,
@@ -610,6 +656,7 @@ class MainActivity : ComponentActivity() {
                     rules = rules,
                     onSave = { vm.saveAccount(it) },
                     onDelete = existing?.let { a -> { vm.deleteAccount(a) } },
+                    initialType = o.type ?: com.simbio.don.app.data.AccountType.BANK,
                     onBack = close,
                 )
             }
@@ -729,6 +776,13 @@ class MainActivity : ComponentActivity() {
             }
             Overlay.Miles -> MilesScreen(home.miles, onDeposit = { vm.depositMiles(it) }, onWithdraw = { vm.withdrawMiles(it) }, onBack = close)
             Overlay.Cards -> CardsScreen(home.mockItems, home.salary, onBack = close)
+            Overlay.AssetCheck -> AssetCheckScreen(
+                wealth = home.wealth,
+                sources = home.accounts.filter { !it.account.hidden && (it.type == com.simbio.don.app.data.AccountType.BANK || it.type == com.simbio.don.app.data.AccountType.CASH) },
+                plannedSavings = home.plan.savings,
+                onSave = { inputs, from -> vm.checkAssets(inputs, from) },
+                onBack = close,
+            )
             Overlay.Dex -> CollectionScreen(home.mockItems, home.title, onTitle = { vm.chooseTitle(it) }, onMall = { open(Overlay.Mall) }, onBack = close)
             is Overlay.Games -> MiniGameScreen(
                 state = home.game,

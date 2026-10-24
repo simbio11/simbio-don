@@ -58,6 +58,16 @@ enum class AccountType(val label: String) {
     BANK("은행"),
     CARD("카드"),
     ETC("기타"),
+
+    /** 적금·예금·파킹 통장 — 모으는 돈 */
+    SAVINGS("저축·예금"),
+
+    /** 주식·펀드·연금 — 모으는 돈 (값이 오르내려 자산 점검 때 지금 금액을 적는다) */
+    INVEST("투자"),
+    ;
+
+    /** 모으는 돈 (홈 "모은 돈"과 자산 점검에 들어감) */
+    val grows: Boolean get() = this == SAVINGS || this == INVEST
 }
 
 /** 자산 (현금·통장·카드). 잔액 = 처음 잔액 + 이 자산으로 적은 수입·지출·이체. */
@@ -332,4 +342,16 @@ data class GamePlayEntity(
     val epochDay: Long,
     val score: Int,
     val miles: Long,
+)
+
+/**
+ * 자산 점검: 모으는 통장(저축·투자)의 그날 실제 금액. 점검 뒤 잔액 = 이 금액 + 그 뒤 기록.
+ * 넣은 돈(원금)과 견줘 불어난 돈을 본다.
+ */
+@Entity(tableName = "asset_check", indices = [androidx.room.Index(value = ["accountId"])])
+data class AssetCheckEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val accountId: Long,
+    val epochDay: Long,
+    val value: Long,
 )

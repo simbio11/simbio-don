@@ -182,21 +182,48 @@ fun StreakBadge(weeks: Int, modifier: Modifier = Modifier) {
 
 // ── 모은 돈 카드 (홈) ───────────────────────────────────────
 
-/** 지금까지 모은 실제 돈 + 다음 마일스톤 + 첫 목표 */
+/**
+ * 지금까지 모은 실제 돈 + 다음 마일스톤 + 첫 목표.
+ * 모으는 통장(저축·투자)을 넣었으면 그 금액(넣은 돈 + 불어난 돈)이 "모은 돈"이고, 가계부로 아낀 돈은 아래 한 줄로.
+ */
 @Composable
-fun SavingsCard(home: HomeState, onGoals: () -> Unit) {
+fun SavingsCard(home: HomeState, onGoals: () -> Unit, onWealth: () -> Unit = {}) {
+    val w = home.wealth
+    val headline = if (w.pots.isNotEmpty()) w.total else home.savedTotal
     RealCard("모은 돈", icon = { Icon(UiIcon.SAVINGS, 18.dp, DonColors.Good) }, trailing = { MoreButton("목표", onGoals) }) {
-        CountUpWon(home.savedTotal, 30.sp)
+        CountUpWon(headline, 30.sp)
+        if (w.pots.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("넣은 돈 ${won(w.principal)}", fontSize = 13.sp, color = DonColors.InkSoft)
+                if (w.gain != 0L) Text(gainText(w.gain, w.gainBps), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = gainColor(w.gain))
+            }
+            if (w.history.size >= 2) WealthChart(w.history, Modifier.fillMaxWidth().height(64.dp).padding(vertical = 4.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button, onClick = onWealth).padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("저축·투자 ${w.pots.size}곳 · 가계부로 아낀 돈 ${won(home.savedTotal)}", fontSize = 12.sp, color = DonColors.InkMuted, modifier = Modifier.weight(1f))
+                Icon(UiIcon.CHEVRON_RIGHT, 16.dp, DonColors.InkMuted)
+            }
+        } else {
+            Text("먼저 떼어둔 저축과 아낀 생활비를 합친 진짜 돈이에요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button, onClick = onWealth).padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("적금·주식처럼 따로 모으는 돈도 넣어 보세요", fontSize = 12.sp, color = DonColors.Real, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Icon(UiIcon.CHEVRON_RIGHT, 16.dp, DonColors.Real)
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Badge("이번 달 +${won(home.savedThisMonth)}", DonColors.Good)
+            Badge("이번 달 아낀 돈 +${won(home.savedThisMonth)}", DonColors.Good)
             StreakBadge(home.streak)
         }
-        Text("먼저 떼어둔 저축과 아낀 생활비를 합친 진짜 돈이에요.", fontSize = 12.sp, color = DonColors.InkMuted)
-        Summaries.nextMilestone(home.savedTotal)?.let { next ->
-            val prev = Summaries.reachedMilestone(home.savedTotal) ?: 0
+        Summaries.nextMilestone(headline)?.let { next ->
+            val prev = Summaries.reachedMilestone(headline) ?: 0
             Spacer(Modifier.height(4.dp))
-            Text("${compactWon(next)}원까지 ${won(next - home.savedTotal)} 남았어요", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
-            Progress((home.savedTotal - prev).toFloat() / (next - prev), DonColors.Good)
+            Text("${compactWon(next)}원까지 ${won(next - headline)} 남았어요", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+            Progress((headline - prev).toFloat() / (next - prev), DonColors.Good)
         }
         val goal = home.goals.firstOrNull { !it.done } ?: home.goals.firstOrNull()
         if (goal != null) {

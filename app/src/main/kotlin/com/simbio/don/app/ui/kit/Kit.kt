@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -72,6 +73,21 @@ fun Modifier.popIn(): Modifier {
 
 // ── 버튼 ───────────────────────────────────────────────────
 
+/**
+ * 카드·타일을 누를 때: 물결(ripple)과 함께 살짝 줄어들었다가 통통 돌아온다.
+ * 그냥 clickable보다 "눌렀다"는 느낌이 분명하다.
+ */
+fun Modifier.pressable(enabled: Boolean = true, role: Role? = Role.Button, onClick: () -> Unit): Modifier = composed {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val s by animateFloatAsState(
+        if (pressed && enabled) 0.96f else 1f,
+        if (pressed) spring(stiffness = Spring.StiffnessHigh) else spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+        label = "pressable",
+    )
+    this.scale(s).clickable(interaction, androidx.compose.material3.ripple(), enabled = enabled, role = role, onClick = onClick)
+}
+
 /** 누르는 동안 살짝 줄어드는 바탕 버튼 */
 @Composable
 private fun BaseButton(
@@ -88,13 +104,22 @@ private fun BaseButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val s by animateFloatAsState(if (pressed && enabled) 0.97f else 1f, label = "press")
+    // 누르면 쏙 들어갔다가 놓으면 통통 튀어 돌아온다
+    val s by animateFloatAsState(
+        if (pressed && enabled) 0.95f else 1f,
+        if (pressed) spring(stiffness = Spring.StiffnessHigh) else spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMedium),
+        label = "press",
+    )
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Box(
         modifier
             .scale(s)
             .clip(shape)
-            .background(if (enabled) fill else DonColors.Line)
-            .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .background(if (!enabled) DonColors.Line else if (pressed) androidx.compose.ui.graphics.lerp(fill, Color.Black, 0.08f) else fill)
+            .clickable(interaction, indication = null, enabled = enabled, role = Role.Button) {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
             .defaultMinSize(minHeight = minHeight),
         contentAlignment = Alignment.Center,
     ) {

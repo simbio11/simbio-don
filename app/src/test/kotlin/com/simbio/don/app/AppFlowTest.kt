@@ -134,7 +134,16 @@ class AppFlowTest {
         rule.onNodeWithText("다음").performClick()
 
         waitText("자산 잔액 (선택)")
+        rule.onNodeWithText("주식·투자 지금 금액").performScrollTo().performTextReplacement("2000000")
         shot("06_assets_setup")
+        rule.onNodeWithText("다음").performClick()
+
+        // 알림을 읽을 앱: 폰 목록이 없으면 기본 결제 앱을 미리 골라 둔다
+        waitText("자동으로 적을 앱")
+        waitText("8개 골랐어요")
+        rule.onNodeWithText("카카오뱅크").performScrollTo().performClick()
+        waitText("7개 골랐어요")
+        shot("06b_apps")
         rule.onNodeWithText("다음").performClick()
 
         waitText("거의 다 됐어요")
@@ -143,6 +152,8 @@ class AppFlowTest {
 
         waitText("실제 내 돈 · 이번 주")
         assertEquals(com.simbio.don.game.Gender.FEMALE, readDb { houseNow() }?.look?.let { com.simbio.don.game.CharacterLook.decode(it).gender })
+        assertEquals(false, readDb { appRulesNow() }.single { it.packageName == "com.kakao.bank" }.enabled)
+        assertEquals(2_000_000L, readDb { accountsNow() }.single { it.type == "INVEST" }.opening)
         rule.onNodeWithText("결제 알림 자동 기록이 꺼져 있어요").assertExists()
         rule.onNodeWithText("지난주 결산이 준비됐어요").assertDoesNotExist()
 
@@ -595,7 +606,8 @@ class AppFlowTest {
         rule.onNodeWithText("모으기 · 놀이").performScrollTo()
         shot("51_house_play")
 
-        // 도감 → 세트·칭호
+        // 도감 → 세트·칭호 (기록이 화면에 다 들어올 때까지 기다린다)
+        waitText("도감 7/76")
         rule.onNodeWithText("도감 7/76").performScrollTo().performClick()
         waitText("모은 칸")
         shot("52_dex")
@@ -657,5 +669,75 @@ class AppFlowTest {
         rule.onNodeWithText("결산 완료").performClick()
         rule.waitUntil(5_000) { readDb { allSettledWeeksNow() }.isNotEmpty() }
         rule.waitUntil(5_000) { readDb { mockPurchasesNow() }.none { it.status == com.simbio.don.game.PurchaseStatus.SHIPPING.name } }
+    }
+    /** 0.13: 홈 예측·달력·정기 결제, 시스템 뒤로 가기는 한 화면씩, 모으는 돈과 월급날 자산 점검 */
+    @Test
+    fun 예측_달력_자산_점검_뒤로_가기() {
+        val today = LocalDate.now()
+        val start = today.minusDays(12)
+        val repo = DonRepository.get(appContext)
+        background {
+            repo.completeOnboarding(
+                3_300_000, start.dayOfMonth, listOf(FixedExpense("월세", 700_000)), 500_000, DayOfWeek.MONDAY, start, null,
+                accounts = listOf(
+                    DonRepository.AccountDraft("생활비 통장", AccountType.BANK, 1_500_000),
+                    DonRepository.AccountDraft("적금", AccountType.SAVINGS, 4_000_000),
+                    DonRepository.AccountDraft("주식", AccountType.INVEST, 2_500_000),
+                ),
+            )
+            // 이틀에 한 번 점심, 사흘째마다 쉬는 날 (무지출 도장)
+            (0 until 12).filter { it % 3 != 2 }.forEach { i ->
+                repo.addManual(start.plusDays(i.toLong()), 12_000L + i * 1_000, "점심", EntryType.SPEND)
+            }
+            repo.addManual(start.plusDays(4), 180_000, "회식", EntryType.SPEND)
+            // 지난 두 달 같은 날 같은 금액: 정기 결제
+            val dao = DonDatabase.get(appContext).dao()
+            listOf(start.minusMonths(2), start.minusMonths(1)).forEach { d ->
+                dao.insertEntry(com.simbio.don.app.data.EntryEntity(epochDay = d.toEpochDay(), amount = 13_500, label = "넷플릭스", type = "SPEND", source = "MANUAL", category = "CULTURE"))
+            }
+        }
+        waitText("이대로 쓰면")
+        shot("70_home_forecast")
+        rule.onNodeWithText("하루 몫", substring = true).performScrollTo()
+        shot("71_home_calendar")
+        waitText("정기 결제 같아요")
+        rule.onNodeWithText("정기 결제 같아요").performScrollTo()
+        shot("72_home_insights")
+
+        // 시스템 뒤로 가기: 분류 관리 → 설정 → 홈
+        rule.onNodeWithContentDescription("설정").performScrollTo().performClick()
+        waitText("분류 관리 (소분류 · 직접 만들기)")
+        rule.onNodeWithText("분류 관리 (소분류 · 직접 만들기)").performScrollTo().performClick()
+        waitText("분류 관리")
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        waitText("분류 관리 (소분류 · 직접 만들기)")
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        waitText("이대로 쓰면")
+
+        // 달력 날을 누르면 가계부의 그날로
+        rule.onNodeWithContentDescription("달력 ${com.simbio.don.app.ui.shortDate(start.plusDays(4))}").performScrollTo().performClick()
+        waitText("회식")
+        rule.onNodeWithText("홈").performClick()
+
+        // 자산 탭: 모으는 돈 → 자산 점검
+        rule.onNodeWithText("자산").performClick()
+        waitText("모으는 돈")
+        rule.onNodeWithText("모으는 돈").performScrollTo()
+        shot("73_assets_wealth")
+        rule.onNodeWithText("자산 점검").performScrollTo().performClick()
+        waitText("어디서 옮겼어요?")
+        rule.onAllNodes(hasSetTextAction() and hasText("이번에 넣은 돈"))[1].performTextReplacement("200000")
+        rule.onAllNodes(hasSetTextAction() and hasText("넣은 뒤 지금 금액 (평가액)")).onFirst().performTextReplacement("2950000")
+        waitText("불어난 돈 +250,000원")
+        shot("74_asset_check")
+        rule.onNodeWithText("점검 완료").performClick()
+        waitText("점검했어요!")
+        shot("75_asset_checked")
+        rule.waitUntil(5_000) { readDb { assetChecksNow() }.size == 4 }
+        val transfers = readDb { allEntriesNow() }.filter { it.type == EntryType.TRANSFER.name }
+        // 적금 50만(저축액 미리 채움) + 주식 20만
+        assertEquals(listOf(200_000L, 500_000L), transfers.map { it.amount }.sorted())
+        rule.onNodeWithText("닫기").performClick()
+        waitText("넣은 돈 7,200,000원")
     }
 }

@@ -23,9 +23,9 @@ class MigrationTest {
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
         val db = helper.runMigrationsAndValidate(
-            "m.db", 9, true,
+            "m.db", 10, true,
             DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3, DonDatabase.MIGRATION_3_4, DonDatabase.MIGRATION_4_5,
-            DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7, DonDatabase.MIGRATION_7_8, DonDatabase.MIGRATION_8_9,
+            DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7, DonDatabase.MIGRATION_7_8, DonDatabase.MIGRATION_8_9, DonDatabase.MIGRATION_9_10,
         )
         db.query("SELECT id, amount, category, memo, accountId, minuteOfDay FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
@@ -103,5 +103,15 @@ class MigrationTest {
         }
         db.query("SELECT COUNT(*) FROM game_play").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
         db.query("SELECT SUM(amount) FROM mile_tx").use { c -> c.moveToNext(); assertEquals(2500, c.getInt(0)) }
+    }
+
+    @Test
+    fun v9에서_v10으로_자산은_그대로고_점검은_비어_있다() {
+        helper.createDatabase("m9.db", 9).use { db ->
+            db.execSQL("INSERT INTO account (id, name, type, opening, sortOrder, hidden) VALUES (1, '생활비 통장', 'BANK', 1000000, 0, 0)")
+        }
+        val db = helper.runMigrationsAndValidate("m9.db", 10, true, DonDatabase.MIGRATION_9_10)
+        db.query("SELECT name, opening FROM account").use { c -> c.moveToNext(); assertEquals("생활비 통장", c.getString(0)); assertEquals(1000000, c.getInt(1)) }
+        db.query("SELECT COUNT(*) FROM asset_check").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
     }
 }

@@ -10,8 +10,8 @@ import java.time.LocalDateTime
  */
 object Backup {
     const val FORMAT = "dont-backup"
-    /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12) */
-    const val VERSION = 4
+    /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12), 5: 자산 점검 (0.13) */
+    const val VERSION = 5
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -33,6 +33,7 @@ object Backup {
         val recurringIncomes: List<RecurringIncomeEntity> = emptyList(),
         val mileTx: List<MileTxEntity> = emptyList(),
         val gamePlays: List<GamePlayEntity> = emptyList(),
+        val assetChecks: List<AssetCheckEntity> = emptyList(),
     )
 
     class BadBackup(message: String) : Exception(message)
@@ -120,6 +121,9 @@ object Backup {
         put("gamePlays", arr(d.gamePlays) { o, x ->
             o.put("id", x.id); o.put("game", x.game); o.put("epochDay", x.epochDay); o.put("score", x.score); o.put("miles", x.miles)
         })
+        put("assetChecks", arr(d.assetChecks) { o, x ->
+            o.put("id", x.id); o.put("accountId", x.accountId); o.put("epochDay", x.epochDay); o.put("value", x.value)
+        })
     }.toString()
 
     fun decode(json: String): Data {
@@ -205,6 +209,9 @@ object Backup {
                 },
                 gamePlays = list(root, "gamePlays") { o ->
                     GamePlayEntity(o.getLong("id"), o.getString("game"), o.getLong("epochDay"), o.getInt("score"), o.getLong("miles"))
+                },
+                assetChecks = list(root, "assetChecks") { o ->
+                    AssetCheckEntity(o.getLong("id"), o.getLong("accountId"), o.getLong("epochDay"), o.getLong("value"))
                 },
             ).also {
                 if (it.settings.isEmpty() || it.cycles.isEmpty()) throw BadBackup("백업에 설정이 없어요")

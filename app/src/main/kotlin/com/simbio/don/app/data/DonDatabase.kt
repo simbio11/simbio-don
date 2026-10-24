@@ -32,8 +32,9 @@ import com.simbio.don.budget.CategoryGuesser
         RecurringIncomeEntity::class,
         MileTxEntity::class,
         GamePlayEntity::class,
+        AssetCheckEntity::class,
     ],
-    version = 9,
+    version = 10,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -51,7 +52,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                 }
                 ).build().also { instance = it }
         }
@@ -60,6 +61,17 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v10: 자산 점검 (모으는 통장의 그날 금액) */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS asset_check (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, accountId INTEGER NOT NULL, " +
+                        "epochDay INTEGER NOT NULL, value INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_asset_check_accountId ON asset_check (accountId)")
+            }
         }
 
         /** v9: 칭호, 미니게임 기록 */

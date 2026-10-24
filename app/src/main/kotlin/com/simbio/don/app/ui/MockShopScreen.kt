@@ -78,6 +78,7 @@ fun MockShopScreen(
     var store by remember { mutableStateOf(prefill?.store.orEmpty()) }
     var picked by remember { mutableStateOf<ItemKind?>(null) }
     var step by remember { mutableStateOf(ShopStep.FORM) }
+    ScreenBackHandler(step == ShopStep.CHECKOUT) { step = ShopStep.FORM }
     val kind = picked ?: ItemKind.guess(name)
     val amount = price.toLongOrNull() ?: 0
     val affordable = MockWallet.canAfford(wallet, amount)

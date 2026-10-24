@@ -48,6 +48,7 @@ import com.simbio.don.app.ui.kit.Button
 import com.simbio.don.app.ui.kit.PixelImage
 import com.simbio.don.app.ui.kit.SubButton
 import com.simbio.don.app.ui.kit.card
+import com.simbio.don.app.ui.kit.pressable
 import com.simbio.don.app.ui.kit.icon16
 import com.simbio.don.app.ui.kit.popIn
 import com.simbio.don.game.Cards
@@ -88,11 +89,19 @@ fun MiniGameScreen(
         BackBar(title, { if (page == GamePage.Menu) onBack() else page = GamePage.Menu }, trailing = {
             Badge("남은 ${miles(state.left)}", DonColors.GameDeep, modifier = Modifier.padding(end = 16.dp))
         })
+        ScreenBackHandler(page != GamePage.Menu) { page = GamePage.Menu }
+        androidx.compose.animation.AnimatedContent(
+            page,
+            Modifier.weight(1f),
+            transitionSpec = { stepTransition(targetState !is GamePage.Menu) },
+            contentKey = { if (it is GamePage.Play) "play${it.seed}" else it::class },
+            label = "game",
+        ) { p ->
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            when (val p = page) {
+            when (p) {
                 GamePage.Menu -> GameMenu(state) { page = GamePage.Play(it, seed()) }
                 is GamePage.Play -> when (p.game) {
                     MiniGame.QUIZ -> QuizGame(p.seed, salary) { right -> page = GamePage.Result(p.game, right, PriceQuiz.reward(right)) }
@@ -101,6 +110,7 @@ fun MiniGameScreen(
                 is GamePage.Result -> GameResult(p, state, onPlay, again = { page = GamePage.Play(p.game, seed()) }, menu = { page = GamePage.Menu })
             }
             Spacer(Modifier.height(24.dp))
+        }
         }
     }
 }
@@ -123,7 +133,7 @@ private fun GameMenu(state: GameState, onStart: (MiniGame) -> Unit) {
     MiniGame.entries.forEach { g ->
         val best = state.best(g)
         Row(
-            Modifier.fillMaxWidth().card().clickable(role = Role.Button) { onStart(g) }.padding(16.dp),
+            Modifier.fillMaxWidth().card().pressable { onStart(g) }.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
@@ -179,7 +189,7 @@ private fun QuizGame(seed: Long, salary: Long, onDone: (right: Int) -> Unit) {
         }
         Box(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(fill).border(2.dp, line, RoundedCornerShape(14.dp))
-                .clickable(enabled = !done, role = Role.Button) {
+                .pressable(enabled = !done) {
                     picked = c
                     if (c == q.answer) right++
                 }

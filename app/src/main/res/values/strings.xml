@@ -7,4 +7,5 @@
     <string name="widget_add">지출 입력</string>
     <string name="widget_description">이번 주 남은 돈과 오늘 쓸 수 있는 돈</string>
     <string name="reminder_channel">매일 지출 알림</string>
+    <string name="salary_channel">월급 알림</string>
 </resources>
