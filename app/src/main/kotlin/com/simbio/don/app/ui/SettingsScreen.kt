@@ -3,6 +3,8 @@ package com.simbio.don.app.ui
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Badge
@@ -81,6 +83,10 @@ fun SettingsScreen(
     onOpenAnimationSettings: () -> Unit = {},
     haptics: Boolean = true,
     onHaptics: (Boolean) -> Unit = {},
+    widgetTheme: ThemeMode = ThemeMode.SYSTEM,
+    onWidgetTheme: (ThemeMode) -> Unit = {},
+    widgetOpacity: Int = 100,
+    onWidgetOpacity: (Int) -> Unit = {},
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -222,6 +228,23 @@ fun SettingsScreen(
             if (onPinWidget == null) {
                 Text("홈 화면을 길게 눌러 위젯 → '돈't'를 고르세요.", fontSize = 12.sp, color = DonColors.InkSoft)
             }
+            Divider(Modifier.padding(vertical = 4.dp))
+            Text("위젯 색", fontSize = 15.sp, color = DonColors.Ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ThemeMode.entries.forEach { m -> FilterChip(selected = widgetTheme == m, onClick = { onWidgetTheme(m) }, label = { Text(m.label) }) }
+            }
+            Text("위젯 바탕", fontSize = 15.sp, color = DonColors.Ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                com.simbio.don.app.widget.WidgetStyle.OPACITIES.forEach { o ->
+                    FilterChip(
+                        selected = widgetOpacity == o,
+                        onClick = { onWidgetOpacity(o) },
+                        label = { Text(if (o == 100) "꽉 차게" else if (o == 0) "투명" else "$o%") },
+                    )
+                }
+            }
+            WidgetPreview(widgetTheme, widgetOpacity)
+            Text("투명하게 하면 배경화면이 비쳐요. 어두운 배경화면이면 위젯 색을 \"어둡게\"(밝은 글자)로 고르세요.", fontSize = 12.sp, color = DonColors.InkMuted)
         }
 
         GameCard("내 방 창밖 날씨") {
@@ -456,5 +479,34 @@ fun RuleEditScreen(rule: AppRule, onSave: (AppRule) -> Unit, onDelete: () -> Uni
         SubButton(onClick = { onSave(rule.copy(keywordRules = AppRule.DEFAULT_KEYWORD_RULES)); onBack() }, modifier = Modifier.fillMaxWidth()) { Text("기본 규칙으로 되돌리기") }
         TextButton(onClick = { onDelete(); onBack() }, color = DonColors.Warn) { Text("이 앱 목록에서 빼기") }
     }
+    }
+}
+
+/** 위젯 색·바탕 미리보기 (배경화면 위에 놓인 모습) */
+@Composable
+private fun WidgetPreview(theme: ThemeMode, opacity: Int) {
+    val dark = when (theme) {
+        ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    val st = com.simbio.don.app.widget.WidgetStyle(dark, opacity)
+    val wallpaper = androidx.compose.ui.graphics.Brush.linearGradient(
+        listOf(androidx.compose.ui.graphics.Color(0xFF3B4A7A), androidx.compose.ui.graphics.Color(0xFF9A6FB0), androidx.compose.ui.graphics.Color(0xFFE8B48A)),
+    )
+    androidx.compose.foundation.layout.Box(
+        Modifier.fillMaxWidth().height(120.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).background(wallpaper).padding(16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.fillMaxWidth(0.75f)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                .background(androidx.compose.ui.graphics.Color(st.bg).copy(alpha = st.bgAlpha / 255f))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Text("이번 주 남은 돈", fontSize = 11.sp, color = androidx.compose.ui.graphics.Color(st.inkMuted))
+            Text("183,000원", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(st.ink))
+            Text("오늘은 26,000원까지", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(st.real))
+        }
     }
 }

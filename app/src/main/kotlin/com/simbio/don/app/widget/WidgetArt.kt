@@ -40,22 +40,8 @@ data class CalendarCells(
  * 크기는 dp로 받고 [density]를 곱해 픽셀로 그린다.
  */
 object WidgetArt {
-    private const val INK = 0xFF191F28.toInt()
-    private const val INK_MUTED = 0xFF8B95A1.toInt()
-    private const val INK_FAINT = 0xFFB0B8C1.toInt()
-    private const val REAL = 0xFF346AFF.toInt()
-    private const val EXPENSE = 0xFFE5484D.toInt()
-    private const val GOOD = 0xFF14A06A.toInt()
-    private const val GOOD_SURFACE = 0xFFE8F7F0.toInt()
-
     /** 깃허브 잔디 색: 무지출이 가장 진하다 */
-    fun color(level: GrassLevel): Int = when (level) {
-        GrassLevel.EMPTY -> 0xFFEBEDF0.toInt()
-        GrassLevel.OK -> 0xFF9BE9A8.toInt()
-        GrassLevel.LOW -> 0xFF40C463.toInt()
-        GrassLevel.NO_SPEND -> 0xFF216E39.toInt()
-        GrassLevel.OVER -> 0xFFFF9C8F.toInt()
-    }
+    fun color(level: GrassLevel, st: WidgetStyle = WidgetStyle.Light): Int = st.grass(level)
 
     // 잔디 여백 (dp): 위 달 이름, 왼쪽 요일, 아래 범례
     private const val TOP = 13f
@@ -68,7 +54,7 @@ object WidgetArt {
         return floor((widthDp - LEFT) / pitch).toInt().coerceIn(4, 53)
     }
 
-    fun grass(g: Grass, widthDp: Float, heightDp: Float, density: Float): Bitmap {
+    fun grass(g: Grass, widthDp: Float, heightDp: Float, density: Float, st: WidgetStyle = WidgetStyle.Light): Bitmap {
         val d = density
         val w = (widthDp * d).roundToInt().coerceAtLeast(1)
         val h = (heightDp * d).roundToInt().coerceAtLeast(1)
@@ -82,7 +68,7 @@ object WidgetArt {
         val x0 = w - weeks * pitch + gap / 2
         val y0 = TOP * d
         val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-        val text = text(9f * d, INK_MUTED)
+        val text = text(9f * d, st.inkMuted)
 
         // 요일 (일요일부터면 월·수·금 줄)
         listOf(1 to "월", 3 to "수", 5 to "금").forEach { (row, name) ->
@@ -110,10 +96,10 @@ object WidgetArt {
             week.forEachIndexed { row, day ->
                 if (day == null) return@forEachIndexed
                 rect.set(x0 + i * pitch, y0 + row * pitch, x0 + i * pitch + size, y0 + row * pitch + size)
-                fill.color = color(day.level)
+                fill.color = color(day.level, st)
                 c.drawRoundRect(rect, r, r, fill)
                 if (day.date == g.today) {
-                    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.4f * d; color = INK }
+                    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.4f * d; color = st.ink }
                     c.drawRoundRect(rect, r, r, ring)
                 }
             }
@@ -128,19 +114,19 @@ object WidgetArt {
         x -= text.measureText("무지출") + 4 * d
         legend.asReversed().forEach { lv ->
             rect.set(x - ls, ly - ls + 1 * d, x, ly + 1 * d)
-            fill.color = color(lv)
+            fill.color = color(lv, st)
             c.drawRoundRect(rect, 2 * d, 2 * d, fill)
             x -= ls + 2.5f * d
         }
         c.drawText("많이 씀", x - 1.5f * d, ly, text)
         text.textAlign = Paint.Align.LEFT
-        c.drawText("하루 몫과 견준 생활비", x0 - gap / 2, ly, text.apply { color = INK_FAINT })
+        c.drawText("하루 몫과 견준 생활비", x0 - gap / 2, ly, text.apply { color = st.inkFaint })
         return bmp
     }
 
     private const val HEAD = 15f
 
-    fun calendar(cal: CalendarCells, widthDp: Float, heightDp: Float, density: Float): Bitmap {
+    fun calendar(cal: CalendarCells, widthDp: Float, heightDp: Float, density: Float, st: WidgetStyle = WidgetStyle.Light): Bitmap {
         val d = density
         val w = (widthDp * d).roundToInt().coerceAtLeast(1)
         val h = (heightDp * d).roundToInt().coerceAtLeast(1)
@@ -150,13 +136,13 @@ object WidgetArt {
         val rows = days.size / 7
         val cw = w / 7f
         val ch = (h - HEAD * d) / rows
-        val head = text(10f * d, INK_MUTED).apply { textAlign = Paint.Align.CENTER }
+        val head = text(10f * d, st.inkMuted).apply { textAlign = Paint.Align.CENTER }
         listOf("일", "월", "화", "수", "목", "금", "토").forEachIndexed { i, n ->
-            head.color = when (i) { 0 -> EXPENSE; 6 -> REAL; else -> INK_MUTED }
+            head.color = when (i) { 0 -> st.expense; 6 -> st.real; else -> st.inkMuted }
             c.drawText(n, cw * i + cw / 2, 11f * d, head)
         }
-        val num = text((if (ch < 26 * d) 9.5f else 11f) * d, INK).apply { textAlign = Paint.Align.CENTER }
-        val small = text((if (ch < 26 * d) 7.5f else 8.5f) * d, INK_MUTED).apply { textAlign = Paint.Align.CENTER }
+        val num = text((if (ch < 26 * d) 9.5f else 11f) * d, st.ink).apply { textAlign = Paint.Align.CENTER }
+        val small = text((if (ch < 26 * d) 7.5f else 8.5f) * d, st.inkMuted).apply { textAlign = Paint.Align.CENTER }
         val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         val rect = RectF()
@@ -172,16 +158,16 @@ object WidgetArt {
             val stamp = inside && day in cal.noSpend
             val plan = cal.planned[day]
             if (stamp) {
-                fill.color = GOOD_SURFACE
+                fill.color = st.goodSurface
                 c.drawRoundRect(rect, r, r, fill)
             }
             if (isToday) {
-                stroke.color = REAL
+                stroke.color = st.real
                 stroke.strokeWidth = 1.5f * d
                 stroke.pathEffect = null
                 c.drawRoundRect(rect, r, r, stroke)
             } else if (inside && !past && plan != null) {
-                stroke.color = INK_FAINT
+                stroke.color = st.inkFaint
                 stroke.strokeWidth = 1f * d
                 stroke.pathEffect = DashPathEffect(floatArrayOf(3 * d, 2.5f * d), 0f)
                 c.drawRoundRect(rect, r, r, stroke)
@@ -192,23 +178,23 @@ object WidgetArt {
             val top = rect.centerY() - block / 2
             val numY = top + num.textSize * 0.85f
             num.color = when {
-                !inside -> INK_FAINT
-                isToday -> REAL
-                else -> INK
+                !inside -> st.inkFaint
+                isToday -> st.real
+                else -> st.ink
             }
             num.isFakeBoldText = isToday
             c.drawText(day.dayOfMonth.toString(), rect.centerX(), numY, num)
             if (!inside || oneLine) return@forEachIndexed
             val subY = top + num.textSize + 3 * d + small.textSize * 0.85f
             when {
-                !past && plan != null && spent <= 0 -> c.drawText(compactWon(plan), rect.centerX(), subY, small.apply { color = INK_FAINT })
-                stamp -> check(c, rect.centerX(), subY - small.textSize * 0.35f, small.textSize * 0.55f, d)
+                !past && plan != null && spent <= 0 -> c.drawText(compactWon(plan), rect.centerX(), subY, small.apply { color = st.inkFaint })
+                stamp -> check(c, rect.centerX(), subY - small.textSize * 0.35f, small.textSize * 0.55f, d, st.good)
                 spent > 0 -> c.drawText(
                     compactWon(spent),
                     rect.centerX(),
                     subY,
                     small.apply {
-                        color = if (spent > cal.dailyPlan) EXPENSE else INK_MUTED
+                        color = if (spent > cal.dailyPlan) st.expense else st.inkMuted
                         isFakeBoldText = spent > cal.dailyPlan
                     },
                 )
@@ -219,13 +205,13 @@ object WidgetArt {
     }
 
     /** 무지출 도장 (초록 체크) */
-    private fun check(c: Canvas, cx: Float, cy: Float, s: Float, d: Float) {
+    private fun check(c: Canvas, cx: Float, cy: Float, s: Float, d: Float, color: Int) {
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 1.8f * d
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
-            color = GOOD
+            this.color = color
         }
         c.drawPath(Path().apply { moveTo(cx - s, cy); lineTo(cx - s * 0.3f, cy + s * 0.7f); lineTo(cx + s, cy - s * 0.7f) }, p)
     }

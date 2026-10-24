@@ -41,4 +41,15 @@ object UiPrefs {
     fun haptics(c: Context): Boolean = prefs(c).getBoolean("haptics", true)
 
     fun setHaptics(c: Context, on: Boolean) = prefs(c).edit().putBoolean("haptics", on).apply()
+
+    /** 위젯 색 (폰 설정 따라 · 밝게 · 어둡게) */
+    fun widgetTheme(c: Context): ThemeMode =
+        prefs(c).getString("widget_theme", null)?.let { n -> ThemeMode.entries.firstOrNull { it.name == n } } ?: ThemeMode.SYSTEM
+
+    fun setWidgetTheme(c: Context, m: ThemeMode) = prefs(c).edit().putString("widget_theme", m.name).apply()
+
+    /** 위젯 바탕 불투명도 (0 = 투명 ~ 100) */
+    fun widgetOpacity(c: Context): Int = prefs(c).getInt("widget_opacity", 100).coerceIn(0, 100)
+
+    fun setWidgetOpacity(c: Context, v: Int) = prefs(c).edit().putInt("widget_opacity", v.coerceIn(0, 100)).apply()
 }

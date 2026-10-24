@@ -547,6 +547,8 @@ class MainActivity : ComponentActivity() {
         var themeMode by remember { mutableStateOf(UiPrefs.themeMode(this)) }
         var effectsAlways by remember { mutableStateOf(UiPrefs.effectsAlways(this)) }
         var haptics by remember { mutableStateOf(UiPrefs.haptics(this)) }
+        var widgetTheme by remember { mutableStateOf(UiPrefs.widgetTheme(this)) }
+        var widgetOpacity by remember { mutableStateOf(UiPrefs.widgetOpacity(this)) }
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
         var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
         // 앱 잠금은 위에 연 화면(암호 정하기)에서 바뀌므로 이 화면으로 돌아올 때 다시 읽는다
@@ -624,6 +626,18 @@ class MainActivity : ComponentActivity() {
                 },
                 onOpenAnimationSettings = {
                     runCatching { startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                },
+                widgetTheme = widgetTheme,
+                onWidgetTheme = { m ->
+                    UiPrefs.setWidgetTheme(this, m)
+                    widgetTheme = m
+                    Widgets.refresh(this)
+                },
+                widgetOpacity = widgetOpacity,
+                onWidgetOpacity = { o ->
+                    UiPrefs.setWidgetOpacity(this, o)
+                    widgetOpacity = o
+                    Widgets.refresh(this)
                 },
                 haptics = haptics,
                 onHaptics = { on ->

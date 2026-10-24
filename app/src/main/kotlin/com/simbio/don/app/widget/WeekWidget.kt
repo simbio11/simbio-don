@@ -54,22 +54,25 @@ class WeekWidget : AppWidgetProvider() {
 
         internal fun render(context: Context, home: HomeState?): RemoteViews {
             val v = RemoteViews(context.packageName, R.layout.widget_week)
+            val st = WidgetStyle.of(context)
+            Widgets.background(v, st)
+            Widgets.colors(v, R.id.widget_title to st.inkMuted, R.id.widget_amount to st.ink, R.id.widget_today to st.real, R.id.widget_sub to st.inkMuted)
             val week = home?.currentWeek
             if (home == null || week == null) {
                 v.setTextViewText(R.id.widget_amount, "—")
                 v.setTextViewText(R.id.widget_today, if (home == null) "앱을 열어 처음 설정을 해 주세요" else "월급을 확인해 주세요")
-                v.setProgressBar(R.id.widget_progress, 100, 0, false)
+                Widgets.progress(v, st, 0)
                 v.setTextViewText(R.id.widget_sub, "")
             } else {
                 v.setTextViewText(R.id.widget_amount, Won.format(week.available))
-                v.setTextColor(R.id.widget_amount, if (week.available >= 0) 0xFF191F28.toInt() else 0xFFF04452.toInt())
+                v.setTextColor(R.id.widget_amount, if (week.available >= 0) st.ink else st.expense)
                 v.setTextViewText(
                     R.id.widget_today,
                     if (week.available > 0) "오늘은 ${Won.format(home.todayAllowance)}까지" else "이번 주 예산을 다 썼어요",
                 )
-                v.setTextColor(R.id.widget_today, if (week.available > 0) 0xFF346AFF.toInt() else 0xFFF04452.toInt())
+                v.setTextColor(R.id.widget_today, if (week.available > 0) st.real else st.expense)
                 val pct = if (week.budget <= 0) 0 else ((week.spent * 100) / week.budget).toInt().coerceIn(0, 100)
-                v.setProgressBar(R.id.widget_progress, 100, pct, false)
+                Widgets.progress(v, st, pct)
                 v.setTextViewText(R.id.widget_sub, "쓴 돈 ${Won.format(week.spent)} / 예산 ${Won.format(week.budget)}")
             }
             v.setOnClickPendingIntent(R.id.widget_root, open(context, null, 0))

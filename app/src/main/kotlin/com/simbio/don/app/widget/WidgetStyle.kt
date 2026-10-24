@@ -1,0 +1,67 @@
+package com.simbio.don.app.widget
+
+import android.content.Context
+import com.simbio.don.app.UiPrefs
+import com.simbio.don.app.ui.ThemeMode
+import com.simbio.don.budget.GrassLevel
+
+/**
+ * 위젯 색: 밝게·어둡게와 바탕 투명도(0 = 투명, 100 = 꽉 참).
+ * 투명하게 두면 배경화면이 비치므로, 어두운 배경화면이면 "어둡게"(밝은 글자)를 고른다.
+ */
+data class WidgetStyle(val dark: Boolean, val opacity: Int = 100) {
+    val bg: Int get() = if (dark) 0xFF1C1E23.toInt() else 0xFFFFFFFF.toInt()
+
+    /** 내 캐릭터 위젯 바탕 (옅은 보라) */
+    val buddyBg: Int get() = if (dark) 0xFF221E36.toInt() else 0xFFF4F1FF.toInt()
+    val bgAlpha: Int get() = opacity.coerceIn(0, 100) * 255 / 100
+
+    /** 바탕이 반 넘게 비치면 배경화면 위에서도 읽히게 흐린 글자를 한 단계씩 진하게 */
+    private val clear: Boolean get() = opacity < 50
+
+    val ink: Int get() = if (dark) 0xFFECEEF1.toInt() else 0xFF191F28.toInt()
+    val inkSoft: Int get() = if (clear) ink else if (dark) 0xFFB9C0C9.toInt() else 0xFF4E5968.toInt()
+    val inkMuted: Int get() = if (clear) (if (dark) 0xFFD5DAE0.toInt() else 0xFF333B46.toInt()) else if (dark) 0xFF9AA3AD.toInt() else 0xFF8B95A1.toInt()
+    val inkFaint: Int get() = if (clear) (if (dark) 0xFFAEB6C0.toInt() else 0xFF5B6573.toInt()) else if (dark) 0xFF66707B.toInt() else 0xFFB0B8C1.toInt()
+    val real: Int get() = if (dark) 0xFF6E97FF.toInt() else 0xFF346AFF.toInt()
+    val expense: Int get() = if (dark) 0xFFFF6B74.toInt() else 0xFFE5484D.toInt()
+    val good: Int get() = if (dark) 0xFF34C98C.toInt() else 0xFF14A06A.toInt()
+    val goodSurface: Int get() = if (dark) 0xFF17352C.toInt() else 0xFFE8F7F0.toInt()
+    val game: Int get() = if (dark) 0xFFBBAEFF.toInt() else 0xFF5A3FE0.toInt()
+
+    /** 깃허브 잔디 색: 무지출이 가장 진하다 (어둡게는 가장 밝다) */
+    fun grass(level: GrassLevel): Int = if (dark) {
+        when (level) {
+            GrassLevel.EMPTY -> 0xFF2A2F37.toInt()
+            GrassLevel.OK -> 0xFF0E4429.toInt()
+            GrassLevel.LOW -> 0xFF26A641.toInt()
+            GrassLevel.NO_SPEND -> 0xFF39D353.toInt()
+            GrassLevel.OVER -> 0xFFA8413B.toInt()
+        }
+    } else {
+        when (level) {
+            GrassLevel.EMPTY -> 0xFFEBEDF0.toInt()
+            GrassLevel.OK -> 0xFF9BE9A8.toInt()
+            GrassLevel.LOW -> 0xFF40C463.toInt()
+            GrassLevel.NO_SPEND -> 0xFF216E39.toInt()
+            GrassLevel.OVER -> 0xFFFF9C8F.toInt()
+        }
+    }
+
+    companion object {
+        val Light = WidgetStyle(false)
+        val Dark = WidgetStyle(true)
+
+        /** 바탕 투명도 고르기 (설정) */
+        val OPACITIES = listOf(100, 75, 50, 25, 0)
+
+        fun of(context: Context): WidgetStyle {
+            val dark = when (UiPrefs.widgetTheme(context)) {
+                ThemeMode.SYSTEM -> UiPrefs.systemDark(context)
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            return WidgetStyle(dark, UiPrefs.widgetOpacity(context))
+        }
+    }
+}

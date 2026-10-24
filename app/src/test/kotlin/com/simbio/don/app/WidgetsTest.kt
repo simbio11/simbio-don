@@ -160,4 +160,28 @@ class WidgetsTest {
         assertEquals(53, WidgetArt.grassWeeks(3000f, 120f))
         assertEquals(4, WidgetArt.grassWeeks(10f, 120f))
     }
+    /** 0.15: 위젯 색(어둡게)·바탕 투명 — 배경화면 위에 놓인 모습 */
+    @Test
+    fun 위젯_색과_투명() {
+        seed()
+        UiPrefs.setWidgetTheme(context, com.simbio.don.app.ui.ThemeMode.DARK)
+        UiPrefs.setWidgetOpacity(context, 0)
+        val st = com.simbio.don.app.widget.WidgetStyle.of(context)
+        assertTrue(st.dark)
+        assertEquals(0, st.bgAlpha)
+        val grass = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w5_grass_dark_clear")
+        assertEquals(st.ink, grass.findViewById<TextView>(R.id.widget_title).currentTextColor)
+        render(runBlocking { CalendarWidget().views(context, 2, 330f, 320f) }, 330, 320, "w6_calendar_dark_clear")
+        UiPrefs.setWidgetOpacity(context, 50)
+        val saved = render(runBlocking { SavedWidget().views(context, 3, 250f, 160f) }, 250, 160, "w7_saved_dark_half")
+        // 어둡게는 어두운 막대만 보인다
+        assertEquals(View.GONE, saved.findViewById<View>(R.id.widget_progress).visibility)
+        assertEquals(View.VISIBLE, saved.findViewById<View>(R.id.widget_progress_dark).visibility)
+        render(runBlocking { BuddyWidget().views(context, 4, 170f, 170f) }, 170, 170, "w8_buddy_dark_half")
+        val home = runBlocking { Widgets.home(context) }
+        render(com.simbio.don.app.widget.WeekWidget.render(context, home), 250, 130, "w9_week_dark_half")
+        UiPrefs.setWidgetTheme(context, com.simbio.don.app.ui.ThemeMode.LIGHT)
+        UiPrefs.setWidgetOpacity(context, 25)
+        render(com.simbio.don.app.widget.WeekWidget.render(context, home), 250, 130, "w10_week_light_quarter")
+    }
 }

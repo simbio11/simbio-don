@@ -1,63 +1,76 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 이번 달 달력 위젯: 날마다 쓴 돈, 무지출 도장, 다가올 계획 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@drawable/widget_bg"
-    android:orientation="vertical"
-    android:padding="12dp">
+    android:layout_height="match_parent">
+
+    <!-- 바탕: 색과 투명도는 위젯 설정에 따라 코드에서 바꾼다 -->
+    <ImageView
+        android:id="@+id/widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_bg" />
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="4dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="4dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="12dp">
 
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:layout_marginBottom="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="4dp">
 
-            <TextView
-                android:id="@+id/widget_title"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:maxLines="1"
-                android:text="@string/widget_calendar_label"
-                android:textColor="#FF191F28"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                android:layout_weight="1"
+                android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/widget_sub"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:maxLines="1"
-                android:textColor="#FF8B95A1"
-                android:textSize="10sp" />
+                <TextView
+                    android:id="@+id/widget_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:text="@string/widget_calendar_label"
+                    android:textColor="#FF191F28"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/widget_sub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:textColor="#FF8B95A1"
+                    android:textSize="10sp" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/widget_add"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:background="@drawable/widget_add_bg"
+                android:contentDescription="@string/widget_add"
+                android:padding="6dp"
+                android:src="@drawable/ic_add"
+                android:tint="#FFFFFFFF" />
         </LinearLayout>
 
         <ImageView
-            android:id="@+id/widget_add"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:background="@drawable/widget_add_bg"
-            android:contentDescription="@string/widget_add"
-            android:padding="6dp"
-            android:src="@drawable/ic_add"
-            android:tint="#FFFFFFFF" />
+            android:id="@+id/widget_image"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:contentDescription="@string/widget_calendar_label"
+            android:scaleType="fitCenter"
+            android:src="@drawable/widget_calendar_sample" />
     </LinearLayout>
-
-    <ImageView
-        android:id="@+id/widget_image"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:contentDescription="@string/widget_calendar_label"
-        android:scaleType="fitCenter"
-        android:src="@drawable/widget_calendar_sample" />
-</LinearLayout>
+</FrameLayout>

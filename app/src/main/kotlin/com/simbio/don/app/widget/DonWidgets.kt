@@ -77,6 +77,22 @@ object Widgets {
         return repo.home(flowOf(now)).first()
     }
 
+    /** 위젯 바탕 색·투명도 (설정의 위젯 색) */
+    fun background(v: RemoteViews, st: WidgetStyle, color: Int = st.bg) {
+        v.setInt(R.id.widget_bg, "setColorFilter", color)
+        v.setInt(R.id.widget_bg, "setImageAlpha", st.bgAlpha)
+    }
+
+    /** 글자색 여럿 (view id to 색) */
+    fun colors(v: RemoteViews, vararg pairs: Pair<Int, Int>) = pairs.forEach { (id, c) -> v.setTextColor(id, c) }
+
+    /** 막대: 밝게·어둡게 막대 중 하나만 보이게 */
+    fun progress(v: RemoteViews, st: WidgetStyle, pct: Int) {
+        v.setViewVisibility(R.id.widget_progress, if (st.dark) android.view.View.GONE else android.view.View.VISIBLE)
+        v.setViewVisibility(R.id.widget_progress_dark, if (st.dark) android.view.View.VISIBLE else android.view.View.GONE)
+        v.setProgressBar(if (st.dark) R.id.widget_progress_dark else R.id.widget_progress, 100, pct, false)
+    }
+
     /** 하루 몫: 이번 달 쓸 돈 ÷ 날 수 */
     fun dailyPlan(home: HomeState): Long = home.plan.disposable / home.cycle.days.coerceAtLeast(1)
 }
@@ -118,6 +134,10 @@ class GrassWidget : DonWidget() {
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
         val v = RemoteViews(context.packageName, R.layout.widget_grass)
+        val st = WidgetStyle.of(context)
+        Widgets.background(v, st)
+        Widgets.colors(v, R.id.widget_title to st.ink, R.id.widget_sub to st.good)
+        v.setInt(R.id.widget_sub, "setBackgroundResource", if (st.dark) R.drawable.widget_chip_good_dark else R.drawable.widget_chip_good)
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, MainActivity.ACTION_CALENDAR, 10))
         if (home == null) {
             v.setTextViewText(R.id.widget_sub, "앱을 열어 처음 설정을 해 주세요")
@@ -127,7 +147,7 @@ class GrassWidget : DonWidget() {
         val weeks = WidgetArt.grassWeeks(gw, gh)
         val g = DonRepository.get(context).grass(home.today, weeks, Widgets.dailyPlan(home))
         v.setTextViewText(R.id.widget_sub, subtitle(g))
-        v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, context.resources.displayMetrics.density))
+        v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, context.resources.displayMetrics.density, st))
         return v
     }
 
@@ -150,6 +170,9 @@ class CalendarWidget : DonWidget() {
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
         val v = RemoteViews(context.packageName, R.layout.widget_calendar)
+        val st = WidgetStyle.of(context)
+        Widgets.background(v, st)
+        Widgets.colors(v, R.id.widget_title to st.ink, R.id.widget_sub to st.inkMuted)
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, MainActivity.ACTION_CALENDAR, 11))
         v.setOnClickPendingIntent(R.id.widget_add, Widgets.open(context, MainActivity.ACTION_ADD, 12))
         if (home == null) {
@@ -162,7 +185,7 @@ class CalendarWidget : DonWidget() {
         v.setTextViewText(R.id.widget_sub, "생활비 ${compactWon(home.monthLiving)}원 · 무지출 ${cal.noSpend.size}일")
         val w = (widthDp - 24f).coerceAtLeast(150f)
         val h = (heightDp - 24f - 40f).coerceAtLeast(110f)
-        v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendar(cal, w, h, context.resources.displayMetrics.density))
+        v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendar(cal, w, h, context.resources.displayMetrics.density, st))
         return v
     }
 
@@ -186,6 +209,16 @@ class SavedWidget : DonWidget() {
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
         val v = RemoteViews(context.packageName, R.layout.widget_saved)
+        val st = WidgetStyle.of(context)
+        Widgets.background(v, st)
+        Widgets.colors(
+            v,
+            R.id.widget_label to st.inkMuted,
+            R.id.widget_amount to st.ink,
+            R.id.widget_sub to st.good,
+            R.id.widget_goal to st.inkSoft,
+            R.id.widget_goal_pct to st.good,
+        )
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, MainActivity.ACTION_ASSETS, 13))
         if (home == null) {
             v.setTextViewText(R.id.widget_amount, "—")
@@ -197,7 +230,7 @@ class SavedWidget : DonWidget() {
         v.setTextViewText(R.id.widget_sub, s.sub)
         v.setTextViewText(R.id.widget_goal, s.goalLabel)
         v.setTextViewText(R.id.widget_goal_pct, "${s.pct}%")
-        v.setProgressBar(R.id.widget_progress, 100, s.pct, false)
+        Widgets.progress(v, st, s.pct)
         return v
     }
 
@@ -235,6 +268,9 @@ class BuddyWidget : DonWidget() {
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
         val v = RemoteViews(context.packageName, R.layout.widget_buddy)
+        val st = WidgetStyle.of(context)
+        Widgets.background(v, st, st.buddyBg)
+        Widgets.colors(v, R.id.widget_title to st.ink, R.id.widget_sub to st.game)
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, null, 14))
         v.setOnClickPendingIntent(R.id.widget_add, Widgets.open(context, MainActivity.ACTION_ADD, 15))
         if (home == null) {
