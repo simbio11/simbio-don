@@ -63,7 +63,7 @@ fun ForecastCard(f: MonthForecast, end: LocalDate) {
     val over = f.leftover < 0
     RealCard("이대로 쓰면", icon = { Icon(UiIcon.TREND_UP, 18.dp, if (over) DonColors.Warn else DonColors.Real) }) {
         Text(
-            if (over) "${shortDate(end)}에 ${won(-f.leftover)} 모자라요" else "${shortDate(end)}에 ${won(f.leftover)} 남아요",
+            if (over) "${shortDate(end)}에 약 ${won(roundTo(-f.leftover, 1_000))} 모자라요" else "${shortDate(end)}에 약 ${won(roundTo(f.leftover, 1_000))} 남아요",
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             color = if (over) DonColors.Warn else DonColors.Ink,
@@ -75,20 +75,23 @@ fun ForecastCard(f: MonthForecast, end: LocalDate) {
         }
         if (f.daysLeft > 0) {
             Text(
-                if (f.perDayToFit > 0) "남은 ${f.daysLeft}일 동안 하루 ${won(f.perDayToFit)}씩 쓰면 딱 맞아요" else "생활비를 다 썼어요. 남은 ${f.daysLeft}일은 아껴 봐요",
+                if (f.perDayToFit > 0) "남은 ${f.daysLeft}일 동안 하루 ${won(f.perDayToFit / 100 * 100)}씩 쓰면 딱 맞아요" else "생활비를 다 썼어요. 남은 ${f.daysLeft}일은 아껴 봐요",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = if (f.perDayToFit > 0) DonColors.Real else DonColors.Warn,
             )
             if (f.plannedAhead > 0) Text("남은 날 계획한 돈 ${won(f.plannedAhead)}도 넣어서 봤어요", fontSize = 12.sp, color = DonColors.InkSoft)
             Text(
-                "요즘 평일 하루 ${won(f.weekdayAvg)} · 주말 하루 ${won(f.weekendAvg)}" + (f.runOut?.let { " · 이대로면 ${shortDate(it)}에 바닥나요" } ?: ""),
+                "요즘 평일 하루 ${won(roundTo(f.weekdayAvg, 100))} · 주말 하루 ${won(roundTo(f.weekendAvg, 100))}" + (f.runOut?.let { " · 이대로면 ${shortDate(it)}에 바닥나요" } ?: ""),
                 fontSize = 12.sp,
                 color = DonColors.InkMuted,
             )
         }
     }
 }
+
+/** 예측은 어림값이라 [unit] 단위로 반올림해 보여준다 */
+private fun roundTo(v: Long, unit: Long): Long = (v + unit / 2) / unit * unit
 
 @Composable
 private fun ForecastBar(f: MonthForecast) {

@@ -83,6 +83,7 @@ fun SettingsScreen(
     onOpenAnimationSettings: () -> Unit = {},
     haptics: Boolean = true,
     onHaptics: (Boolean) -> Unit = {},
+    onHomeCards: () -> Unit = {},
     widgetTheme: ThemeMode = ThemeMode.SYSTEM,
     onWidgetTheme: (ThemeMode) -> Unit = {},
     widgetOpacity: Int = 100,
@@ -176,6 +177,7 @@ fun SettingsScreen(
                 ThemeMode.entries.forEach { m -> FilterChip(selected = themeMode == m, onClick = { onThemeMode(m) }, label = { Text(m.label) }) }
             }
             Text("어둡게는 밤에 눈이 덜 부셔요. 위젯 색은 아래 위젯에서 따로 골라요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            SubButton(onClick = onHomeCards, modifier = Modifier.fillMaxWidth()) { Text("홈 꾸미기 (카드 숨기기·차례 바꾸기)") }
             Divider(Modifier.padding(vertical = 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

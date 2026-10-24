@@ -141,6 +141,9 @@ private sealed interface Overlay {
     data class EditAccount(val id: Long?, val type: com.simbio.don.app.data.AccountType? = null) : Overlay
     data object AssetCheck : Overlay
     data object Plans : Overlay
+
+    /** 홈 꾸미기 (카드 숨기기·차례) */
+    data object HomeCards : Overlay
     data object Dress : Overlay
     data object Miles : Overlay
     data object Cards : Overlay
@@ -245,6 +248,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyTheme()
         Feedback.haptics = UiPrefs.haptics(this)
+        com.simbio.don.app.ui.HomeCards.load(this)
         if (UiPrefs.effectsAlways(this) && UiPrefs.systemAnimationsOff(this)) runCatching { installFullMotion() }
         readShare(intent)
         if (DailyReminder.isOn(this)) DailyReminder.schedule(this)
@@ -440,6 +444,7 @@ class MainActivity : ComponentActivity() {
                         onWealth = { onTab(Tab.Assets) },
                         onAssetCheck = { screens.push(Overlay.AssetCheck) },
                         onPlans = { screens.push(Overlay.Plans) },
+                        onCustomize = { screens.push(Overlay.HomeCards) },
                         onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
                         onAddFixed = { s ->
                             vm.addFixedExpense(s.label, s.amount, s.day)
@@ -639,6 +644,7 @@ class MainActivity : ComponentActivity() {
                     widgetOpacity = o
                     Widgets.refresh(this)
                 },
+                onHomeCards = { open(Overlay.HomeCards) },
                 haptics = haptics,
                 onHaptics = { on ->
                     UiPrefs.setHaptics(this, on)
@@ -900,6 +906,11 @@ class MainActivity : ComponentActivity() {
             }
             Overlay.Miles -> MilesScreen(home.miles, onDeposit = { vm.depositMiles(it) }, onWithdraw = { vm.withdrawMiles(it) }, onBack = close)
             Overlay.Cards -> CardsScreen(home.mockItems, home.salary, onBack = close)
+            Overlay.HomeCards -> com.simbio.don.app.ui.HomeCardsScreen(
+                com.simbio.don.app.ui.HomeCards.layout,
+                onChange = { com.simbio.don.app.ui.HomeCards.save(this, it) },
+                onBack = close,
+            )
             Overlay.Plans -> {
                 val plans by vm.plans.collectAsStateWithLifecycle()
                 PlanScreen(

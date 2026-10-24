@@ -67,6 +67,7 @@ fun HomeScreen(
     onCalendarDay: (java.time.LocalDate) -> Unit = {},
     onAddFixed: (com.simbio.don.budget.Subscription) -> Unit = {},
     onPlans: () -> Unit = {},
+    onCustomize: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
@@ -130,91 +131,103 @@ fun HomeScreen(
             }
         }
 
-        val week = home.currentWeek
-        RealCard("실제 내 돈 · 이번 주") {
-            if (week != null) {
-                Text("이번 주 남은 돈", fontSize = 13.sp, color = DonColors.InkMuted)
-                Text(
-                    won(week.available),
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (week.available >= 0) DonColors.Ink else DonColors.Warn,
-                )
-                Text(
-                    if (week.available > 0) "오늘은 ${won(home.todayAllowance)}까지 쓰면 딱 맞아요" else "이번 주 예산을 다 썼어요",
-                    fontSize = 14.sp,
-                    color = if (week.available > 0) DonColors.Real else DonColors.Warn,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(10.dp))
-                Meter(week.spent, week.budget)
-                Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-                    Text("쓴 돈 ${won(week.spent)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
-                    Text("기본 예산 ${won(week.budget)}", fontSize = 12.sp, color = DonColors.InkMuted)
+        HomeCards.layout.shown.forEach { card ->
+            when (card) {
+                HomeCard.WEEK -> {
+                val week = home.currentWeek
+                RealCard("실제 내 돈 · 이번 주") {
+                    if (week != null) {
+                        Text("이번 주 남은 돈", fontSize = 13.sp, color = DonColors.InkMuted)
+                        Text(
+                            won(week.available),
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (week.available >= 0) DonColors.Ink else DonColors.Warn,
+                        )
+                        Text(
+                            if (week.available > 0) "오늘은 ${won(home.todayAllowance)}까지 쓰면 딱 맞아요" else "이번 주 예산을 다 썼어요",
+                            fontSize = 14.sp,
+                            color = if (week.available > 0) DonColors.Real else DonColors.Warn,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Meter(week.spent, week.budget)
+                        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                            Text("쓴 돈 ${won(week.spent)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
+                            Text("기본 예산 ${won(week.budget)}", fontSize = 12.sp, color = DonColors.InkMuted)
+                        }
+                        if (week.overspent > 0) WarnLine("기본 예산보다 ${won(week.overspent)} 더 썼어요", fontSize = 12)
+                        if (week.carryIn != 0L) Text("지난주에서 넘어온 돈 ${won(week.carryIn)} 포함", fontSize = 12.sp, color = DonColors.InkMuted)
+                        Text("${shortDate(week.week.start)} ~ ${shortDate(week.week.end)} · ${week.week.days}일", fontSize = 12.sp, color = DonColors.InkMuted)
+                    } else {
+                        Text("이번 주기 밖의 날짜예요. 월급을 확인해 주세요.")
+                    }
                 }
-                if (week.overspent > 0) WarnLine("기본 예산보다 ${won(week.overspent)} 더 썼어요", fontSize = 12)
-                if (week.carryIn != 0L) Text("지난주에서 넘어온 돈 ${won(week.carryIn)} 포함", fontSize = 12.sp, color = DonColors.InkMuted)
-                Text("${shortDate(week.week.start)} ~ ${shortDate(week.week.end)} · ${week.week.days}일", fontSize = 12.sp, color = DonColors.InkMuted)
-            } else {
-                Text("이번 주기 밖의 날짜예요. 월급을 확인해 주세요.")
-            }
-        }
-
-        home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
-        HomeCalendarCard(home, onCalendarDay)
-        UpcomingCard(home.insights.upcoming, home.today, onPlans)
-
-        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))
-            StatTile("이번 달 수입", won(home.monthIncome), null, Modifier.weight(1f))
-            StatTile("아낀 돈", won(home.savedSoFar), "지난 주들 합계", Modifier.weight(1f))
-        }
-
-        // 모은 돈이 마일스톤을 넘었거나 목표를 이뤘으면 한 번 축하
-        key(dismissed) {
-            val goal = celebrations.pendingGoal(home.goals)
-            val milestone = if (goal == null) celebrations.pendingMilestone(home.savedTotal) else null
-            when {
-                goal != null -> CelebrationCard("목표 달성!", "'${goal.goal.name}' ${won(goal.goal.target)}을 모았어요.") {
-                    celebrations.celebrateGoal(goal.goal.id)
-                    dismissed++
                 }
-                milestone != null -> CelebrationCard("모은 돈 ${compactWon(milestone)}원 돌파!", "아낀 돈이 진짜로 쌓이고 있어요. 지금 ${won(home.savedTotal)}.") {
-                    celebrations.celebrateMilestone(milestone)
-                    dismissed++
+                HomeCard.FORECAST -> home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
+                HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay)
+                HomeCard.UPCOMING -> UpcomingCard(home.insights.upcoming, home.today, onPlans)
+                HomeCard.TILES -> {
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))
+                    StatTile("이번 달 수입", won(home.monthIncome), null, Modifier.weight(1f))
+                    StatTile("아낀 돈", won(home.savedSoFar), "지난 주들 합계", Modifier.weight(1f))
+                }
+                }
+                HomeCard.SAVED -> {
+                // 모은 돈이 마일스톤을 넘었거나 목표를 이뤘으면 한 번 축하
+                key(dismissed) {
+                    val goal = celebrations.pendingGoal(home.goals)
+                    val milestone = if (goal == null) celebrations.pendingMilestone(home.savedTotal) else null
+                    when {
+                        goal != null -> CelebrationCard("목표 달성!", "'${goal.goal.name}' ${won(goal.goal.target)}을 모았어요.") {
+                            celebrations.celebrateGoal(goal.goal.id)
+                            dismissed++
+                        }
+                        milestone != null -> CelebrationCard("모은 돈 ${compactWon(milestone)}원 돌파!", "아낀 돈이 진짜로 쌓이고 있어요. 지금 ${won(home.savedTotal)}.") {
+                            celebrations.celebrateMilestone(milestone)
+                            dismissed++
+                        }
+                    }
+                }
+                SavingsCard(home, onGoals, onWealth)
+                }
+                HomeCard.ROOM -> HomeGameCard(home, onHouse, onShop, weather)
+                HomeCard.INSIGHTS -> InsightCard(home.insights.insights)
+                HomeCard.SUBSCRIPTIONS -> SubscriptionCard(home.insights.subscriptions, onAddFixed)
+                HomeCard.CATEGORIES -> {
+                // 홈은 생활비에 집중: 고정 지출은 빼고 본다 (가계부·통계 탭에는 들어감)
+                val categories = Stats.byCategory(home.entries.map { it.toEntry() }.filter { it.type != com.simbio.don.budget.EntryType.FIXED })
+                // 카테고리 예산: 80% 넘게 쓴 것만 미리 알려준다
+                val spentBy = categories.associate { it.category to it.amount }
+                val tight = home.categoryBudgets.filter { (c, b) -> b > 0 && (spentBy[c] ?: 0) * 10 >= b * 8 }
+                if (tight.isNotEmpty()) {
+                    SectionCard("카테고리 예산 주의", trailing = { MoreButton("예산", onBudgets) }) {
+                        BudgetBars(tight, spentBy, limit = 3)
+                    }
+                }
+                if (categories.isNotEmpty()) {
+                    SectionCard("이번 달 많이 쓴 카테고리", trailing = { MoreButton("통계", onStats) }) {
+                        CategoryBars(categories, limit = 3)
+                    }
+                }
+                }
+                HomeCard.RECENT -> {
+                SectionCard("최근 내역", trailing = if (home.entries.size > 5) ({ MoreButton("전체 ${home.entries.size}건", onAllEntries) }) else null) {
+                    if (home.entries.isEmpty()) {
+                        Text("아직 기록이 없어요. 결제하면 알림으로 자동 기록되고, + 버튼으로 직접 넣을 수도 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
+                    }
+                    val names = home.accounts.associate { it.account.id to it.account.name }
+                    home.entries.sortedWith(compareByDescending<EntryEntity> { it.epochDay }.thenByDescending { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
+                        .take(5).forEach { LedgerRow(it, names, onOpenEntry) }
+                }
                 }
             }
         }
-        SavingsCard(home, onGoals, onWealth)
-
-        HomeGameCard(home, onHouse, onShop, weather)
-
-        InsightCard(home.insights.insights)
-        SubscriptionCard(home.insights.subscriptions, onAddFixed)
-
-        // 홈은 생활비에 집중: 고정 지출은 빼고 본다 (가계부·통계 탭에는 들어감)
-        val categories = Stats.byCategory(home.entries.map { it.toEntry() }.filter { it.type != com.simbio.don.budget.EntryType.FIXED })
-        // 카테고리 예산: 80% 넘게 쓴 것만 미리 알려준다
-        val spentBy = categories.associate { it.category to it.amount }
-        val tight = home.categoryBudgets.filter { (c, b) -> b > 0 && (spentBy[c] ?: 0) * 10 >= b * 8 }
-        if (tight.isNotEmpty()) {
-            SectionCard("카테고리 예산 주의", trailing = { MoreButton("예산", onBudgets) }) {
-                BudgetBars(tight, spentBy, limit = 3)
-            }
-        }
-        if (categories.isNotEmpty()) {
-            SectionCard("이번 달 많이 쓴 카테고리", trailing = { MoreButton("통계", onStats) }) {
-                CategoryBars(categories, limit = 3)
-            }
-        }
-
-        SectionCard("최근 내역", trailing = if (home.entries.size > 5) ({ MoreButton("전체 ${home.entries.size}건", onAllEntries) }) else null) {
-            if (home.entries.isEmpty()) {
-                Text("아직 기록이 없어요. 결제하면 알림으로 자동 기록되고, + 버튼으로 직접 넣을 수도 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
-            }
-            val names = home.accounts.associate { it.account.id to it.account.name }
-            home.entries.sortedWith(compareByDescending<EntryEntity> { it.epochDay }.thenByDescending { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
-                .take(5).forEach { LedgerRow(it, names, onOpenEntry) }
+        com.simbio.don.app.ui.kit.TextButton(onClick = onCustomize, modifier = Modifier.align(Alignment.CenterHorizontally), color = DonColors.InkMuted) {
+            com.simbio.don.app.ui.kit.Icon(UiIcon.EDIT, 16.dp, DonColors.InkMuted)
+            Spacer(Modifier.width(4.dp))
+            Text("홈 꾸미기 (카드 숨기기·차례 바꾸기)", fontSize = 13.sp)
         }
         Spacer(Modifier.height(88.dp))
     }

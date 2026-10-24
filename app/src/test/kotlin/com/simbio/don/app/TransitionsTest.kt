@@ -12,12 +12,18 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.assertCountEquals
+import com.simbio.don.app.ui.HomeCard
+import com.simbio.don.app.ui.HomeCards
+import com.simbio.don.app.ui.HomeLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import com.simbio.don.app.data.DonDatabase
 import com.simbio.don.app.data.DonRepository
 import com.simbio.don.budget.FixedExpense
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -100,7 +106,27 @@ class TransitionsTest {
         rule.mainClock.autoAdvance = true
         rule.waitUntilAtLeastOneExists(hasText("순자산"), 5_000)
     }
+    /** 홈 꾸미기: 카드를 숨기고 올리면 홈이 그대로 바뀌고 저장된다 */
+    @Test
+    fun 홈_꾸미기() {
+        rule.waitUntilAtLeastOneExists(hasText("이대로 쓰면"), 5_000)
+        rule.onNodeWithText("홈 꾸미기", substring = true).performScrollTo().performClick()
+        rule.waitUntilAtLeastOneExists(hasText("보고 싶은 카드만 켜고", substring = true), 5_000)
+        // "이대로 쓰면" 숨기고, "최근 내역"을 맨 위로
+        rule.onAllNodes(androidx.compose.ui.test.isToggleable())[1].performClick()
+        repeat(HomeCard.entries.size) { rule.onNodeWithContentDescription("최근 내역 위로").performClick() }
+        assertEquals(HomeCard.RECENT, HomeCards.layout.order.first())
+        assertTrue(HomeCard.FORECAST in HomeCards.layout.hidden)
+        System.getProperty("screenshotDir")?.let { save("t6_home_cards", capture()) }
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitUntilAtLeastOneExists(hasText("최근 내역"), 5_000)
+        rule.onAllNodes(hasText("이대로 쓰면")).assertCountEquals(0)
+        assertEquals(HomeCards.layout, HomeLayout.decode(appContext.getSharedPreferences("ui", 0).getString("home_cards", null)))
+        HomeCards.layout = HomeLayout.Default
+    }
 }
+
+
 
 /** 폰에서 애니메이션을 꺼도 "이 앱에서는 효과 보이기"를 켜면 움직임 배율 1인 재구성기로 그린다 */
 @RunWith(RobolectricTestRunner::class)

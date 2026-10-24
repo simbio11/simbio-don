@@ -364,6 +364,8 @@ enum class UiIcon(@DrawableRes val res: Int) {
     BACK(R.drawable.ic_arrow_back_ios_new),
     CHEVRON_LEFT(R.drawable.ic_chevron_left),
     CHEVRON_RIGHT(R.drawable.ic_chevron_right),
+    CHEVRON_UP(R.drawable.ic_chevron_up),
+    CHEVRON_DOWN(R.drawable.ic_chevron_down),
     CLOSE(R.drawable.ic_close),
     INFO(R.drawable.ic_info),
     DELETE(R.drawable.ic_delete),
