@@ -20,13 +20,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from palette import MARKERS, PALETTE, THEMES  # noqa: E402
 import room  # noqa: E402
 import sprites  # noqa: E402
-from v3 import char3, export3, items16, lib as lib3  # noqa: E402
+from v3 import char3, export3, items16, lib as lib3, products16  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "app/src/main/res/drawable-nodpi")
 LAYOUT_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/RoomLayout.kt")
 PARTS_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/CharacterParts.kt")
 COLORS_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/RoomColors.kt")
+PRODUCTS_KT = os.path.join(ROOT, "app/src/main/kotlin/com/simbio/don/app/ui/pixel/ProductIcons.kt")
 
 
 def grid_image(rows, name="?"):
@@ -56,6 +57,8 @@ def build():
 
     # 카드·가게용 16×16 (방 안의 물건은 12×12 그대로)
     outputs.update(items16.outputs())
+    # 돈't 몰 상품마다 16×16 (도감·몰·카드)
+    outputs.update(products16.outputs())
 
     # 집 단계마다 방 바탕과 시간대 레이어 (벽지·바닥·러그·커튼·이불은 표식 색 — 앱이 바꾼다)
     for level in room.LEVELS:
@@ -91,6 +94,26 @@ def check_markers(outputs):
         # 반투명 칸은 표식과 같은 색이면 안 됨
         semi = {p[:3] for p in data if 0 < p[3] < 255}
         assert not (semi & marks), f"{level}: 반투명 칸에 표식 색"
+
+
+def write_products_kt():
+    ids = sorted(products16.all_rows(), key=lambda k: (k[0], int(k[1:])))
+    lines = "\n".join(f'        "{k}" to R.drawable.px16_p_{k},' for k in ids)
+    kt = f"""package com.simbio.don.app.ui.pixel
+
+import com.simbio.don.app.R
+
+// 생성된 파일: tools/pixelart/make_art.py (v3/products16.py) — 직접 고치지 말고 스크립트를 고친 뒤 다시 돌린다.
+
+/** 돈't 몰 상품 id (core Catalog) → 16×16 도트 */
+object ProductIcons {{
+    val byId: Map<String, Int> = mapOf(
+{lines}
+    )
+}}
+"""
+    with open(PRODUCTS_KT, "w") as f:
+        f.write(kt)
 
 
 def write_colors_kt():
@@ -242,6 +265,7 @@ def main():
         save(img, name)
     write_layout_kt()
     write_colors_kt()
+    write_products_kt()
     with open(PARTS_KT, "w") as f:
         f.write(export3.kotlin(export3.parts()))
     icon = write_launcher_icon()
