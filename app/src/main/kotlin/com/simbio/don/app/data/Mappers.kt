@@ -81,3 +81,13 @@ fun MockPurchaseEntity.toItem() = com.simbio.don.game.MockItem(
     payload = payload,
     grade = grade?.let { enumOr(it, com.simbio.don.game.CardGrade.NORMAL) },
 )
+
+fun PlanEntity.toPlan() = com.simbio.don.budget.Plan(
+    id = id,
+    date = java.time.LocalDate.ofEpochDay(epochDay),
+    amount = amount,
+    label = label,
+    category = com.simbio.don.budget.Category.of(category),
+    actual = doneAmount,
+    canceled = canceled,
+)

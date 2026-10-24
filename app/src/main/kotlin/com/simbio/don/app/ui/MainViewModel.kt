@@ -141,11 +141,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             repo.addInstallment(
                 draft.date, draft.amount, draft.months, draft.label, draft.category, draft.sub, draft.memo, draft.accountId, draft.minuteOfDay,
             )
+            draft.planId?.let { repo.completePlan(it, null, draft.amount, draft.date) }
         } else if (existing == null) {
-            repo.addManual(
+            val id = repo.addManual(
                 draft.date, draft.amount, draft.label, draft.type, draft.category, draft.memo,
                 draft.accountId, draft.toAccountId, draft.minuteOfDay, LocalDateTime.now(), draft.sub,
             )
+            // 계획에서 "썼어요"로 적었으면 계획과 잇는다 (계획과 실제를 견줌)
+            draft.planId?.let { repo.completePlan(it, id, draft.amount, draft.date) }
         } else {
             repo.updateEntry(
                 existing.copy(
@@ -309,6 +312,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun recycle() = viewModelScope.launch { repo.recycle() }
 
     fun chooseTitle(title: String) = viewModelScope.launch { repo.chooseTitle(title) }
+
+    fun saveOwnerName(name: String) = viewModelScope.launch { repo.saveOwnerName(name) }
+
+    // ── 돈 나갈 계획 ──
+    val plans = repo.plans.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun savePlan(p: com.simbio.don.app.data.PlanEntity) = viewModelScope.launch { repo.savePlan(p) }
+    fun deletePlan(id: Long) = viewModelScope.launch { repo.deletePlan(id) }
+    fun cancelPlan(id: Long, canceled: Boolean) = viewModelScope.launch { repo.cancelPlan(id, canceled) }
+    fun linkPlan(id: Long, e: com.simbio.don.app.data.EntryEntity) = viewModelScope.launch { repo.linkPlan(id, e) }
+
+    fun planMatches(plans: List<com.simbio.don.app.data.PlanEntity>, entries: List<com.simbio.don.app.data.EntryEntity>) = repo.planMatches(plans, entries)
 
     fun addFixedExpense(name: String, amount: Long, day: Int?) = viewModelScope.launch { repo.addFixedExpense(name, amount, day) }
 

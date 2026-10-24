@@ -78,6 +78,8 @@ data class EntryDraft(
     val sub: String? = null,
     /** 할부 개월 (새 지출만, 1이면 일시불) */
     val months: Int = 1,
+    /** 돈 나갈 계획에서 "썼어요"로 연 것이면 그 계획 (저장하면 계획과 이어진다) */
+    val planId: Long? = null,
 )
 
 /** 할부 고르기 칩 */
@@ -123,7 +125,8 @@ fun EntryEditScreen(
     var amount by remember { mutableStateOf(existing?.amount?.toString() ?: initial?.amount?.takeIf { it > 0 }?.toString() ?: "") }
     var label by remember { mutableStateOf(existing?.label ?: initial?.label ?: "") }
     var type by remember { mutableStateOf(start) }
-    var picked by remember { mutableStateOf(existing?.let { Category.of(it.category) }) }
+    // 계획에서 연 것이면 계획한 분류 그대로
+    var picked by remember { mutableStateOf(existing?.let { Category.of(it.category) } ?: initial?.takeIf { it.planId != null }?.category) }
     var memo by remember { mutableStateOf(existing?.memo ?: "") }
     var date by remember { mutableStateOf(existing?.let { LocalDate.ofEpochDay(it.epochDay) } ?: initial?.date ?: today.coerceIn(minDate, maxDate)) }
     var minute by remember {
@@ -162,6 +165,7 @@ fun EntryEditScreen(
     fun draft() = EntryDraft(
         date, amount.toLong(), label.trim(), type, category, memo.trim(), applySame, accountId, toAccountId, minute,
         subNow.takeIf { kind != Kind.TRANSFER }, monthsNow,
+        planId = initial?.planId?.takeIf { savedCount == 0 },
     )
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {

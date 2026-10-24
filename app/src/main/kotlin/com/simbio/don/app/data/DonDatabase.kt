@@ -33,8 +33,9 @@ import com.simbio.don.budget.CategoryGuesser
         MileTxEntity::class,
         GamePlayEntity::class,
         AssetCheckEntity::class,
+        PlanEntity::class,
     ],
-    version = 10,
+    version = 11,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -52,7 +53,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 }
                 ).build().also { instance = it }
         }
@@ -61,6 +62,19 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v11: 돈 나갈 계획, 내 이름(내 계좌끼리 송금 알아보기), 송금으로 나간 기록 표시 */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS plan (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, epochDay INTEGER NOT NULL, amount INTEGER NOT NULL, " +
+                        "label TEXT NOT NULL, category TEXT NOT NULL, memo TEXT NOT NULL, doneEntryId INTEGER, doneAmount INTEGER, doneEpochDay INTEGER, " +
+                        "canceled INTEGER NOT NULL)",
+                )
+                db.execSQL("ALTER TABLE settings ADD COLUMN ownerName TEXT")
+                db.execSQL("ALTER TABLE entry ADD COLUMN sentOut INTEGER NOT NULL DEFAULT 0")
+            }
         }
 
         /** v10: 자산 점검 (모으는 통장의 그날 금액) */

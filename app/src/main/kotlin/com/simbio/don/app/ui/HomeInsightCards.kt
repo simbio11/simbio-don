@@ -80,6 +80,7 @@ fun ForecastCard(f: MonthForecast, end: LocalDate) {
                 fontWeight = FontWeight.SemiBold,
                 color = if (f.perDayToFit > 0) DonColors.Real else DonColors.Warn,
             )
+            if (f.plannedAhead > 0) Text("남은 날 계획한 돈 ${won(f.plannedAhead)}도 넣어서 봤어요", fontSize = 12.sp, color = DonColors.InkSoft)
             Text(
                 "요즘 평일 하루 ${won(f.weekdayAvg)} · 주말 하루 ${won(f.weekendAvg)}" + (f.runOut?.let { " · 이대로면 ${shortDate(it)}에 바닥나요" } ?: ""),
                 fontSize = 12.sp,
@@ -125,6 +126,8 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
     val perDay = Stats.daily(home.entries.map { it.toEntry() }, livingOnly = true)
     val noSpend = home.insights.noSpend
     val plan = home.plan.disposable / home.cycle.days.coerceAtLeast(1)
+    // 아직 안 쓴 계획 (회색 점선)
+    val planned = home.plans.filter { it.open }.groupBy { LocalDate.ofEpochDay(it.epochDay) }.mapValues { (_, l) -> l.sumOf { it.amount } }
     RealCard(
         "이번 달 달력",
         icon = { Icon(UiIcon.CALENDAR, 18.dp, DonColors.Real) },
@@ -158,6 +161,7 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
                         Modifier.weight(1f).aspectRatio(0.82f).padding(1.dp).clip(RoundedCornerShape(8.dp))
                             .background(if (stamp) DonColors.GoodSurface else Color.Transparent)
                             .let { if (isToday) it.border(1.5.dp, DonColors.Real, RoundedCornerShape(8.dp)) else it }
+                            .let { if (!isToday && inside && planned[d] != null && !past) it.dashedBorder(DonColors.InkFaint, 8.dp, 1.dp) else it }
                             .let { if (inside) it.pressable(role = null) { onDay(d) } else it }
                             .semantics { contentDescription = "달력 ${shortDate(d)}" },
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -175,6 +179,7 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
                         )
                         when {
                             !inside -> Unit
+                            !past && planned[d] != null && spent <= 0 -> Text(compactWon(planned.getValue(d)), fontSize = 9.sp, maxLines = 1, color = DonColors.InkFaint)
                             stamp -> Icon(UiIcon.CHECK, 14.dp, DonColors.Good)
                             spent > 0 -> Text(
                                 compactWon(spent),
@@ -190,30 +195,55 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
                 }
             }
         }
-        Text("하루 몫 ${won(plan)} · 넘긴 날은 빨강, 안 쓴 날은 도장", fontSize = 11.sp, color = DonColors.InkMuted)
+        Text("하루 몫 ${won(plan)} · 넘긴 날은 빨강, 안 쓴 날은 도장, 점선은 계획", fontSize = 11.sp, color = DonColors.InkMuted)
     }
 }
 
 // ── 다가오는 결제 ───────────────────────────────────────────
 
 @Composable
-fun UpcomingCard(list: List<Upcoming>, today: LocalDate) {
-    if (list.isEmpty()) return
-    SectionCard("일주일 안에") {
-        list.take(4).forEach { u ->
+fun UpcomingCard(list: List<Upcoming>, today: LocalDate, onPlans: () -> Unit = {}) {
+    SectionCard("일주일 안에", trailing = { com.simbio.don.app.ui.kit.MoreButton("계획 +", onPlans) }) {
+        if (list.isEmpty()) {
+            Text("일주일 안에 나갈 돈이 없어요. 생일·병원처럼 쓸 일이 정해진 돈은 계획으로 적어 두면 여기와 예측에 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
+        list.take(5).forEach { u ->
             val d = ChronoUnit.DAYS.between(today, u.date)
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconBubble(if (u.income) UiIcon.PAYMENTS else UiIcon.CALENDAR, if (u.income) DonColors.Income else DonColors.InkSoft, 34.dp)
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    .let { if (u.planned) it.dashedBorder(DonColors.InkFaint, 12.dp).padding(horizontal = 8.dp, vertical = 4.dp) else it.padding(vertical = 2.dp) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconBubble(
+                    when {
+                        u.income -> UiIcon.PAYMENTS
+                        u.planned -> UiIcon.FLAG
+                        else -> UiIcon.CALENDAR
+                    },
+                    if (u.income) DonColors.Income else DonColors.InkSoft,
+                    34.dp,
+                )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(u.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (u.planned) Badge("계획", DonColors.InkSoft)
+                        Text(u.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (u.planned) DonColors.InkSoft else DonColors.Ink, maxLines = 1)
+                    }
                     Text("${shortDate(u.date)} · ${if (d == 0L) "오늘" else "${d}일 뒤"}", fontSize = 12.sp, color = DonColors.InkMuted)
                 }
                 Text(
-                    (if (u.income) "+" else "−") + won(u.amount),
+                    when {
+                        u.income -> "+" + won(u.amount)
+                        u.planned -> "예정 " + won(u.amount)
+                        else -> "−" + won(u.amount)
+                    },
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (u.income) DonColors.Income else DonColors.Ink,
+                    color = when {
+                        u.income -> DonColors.Income
+                        u.planned -> DonColors.InkMuted
+                        else -> DonColors.Ink
+                    },
                 )
             }
         }

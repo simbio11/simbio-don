@@ -39,7 +39,7 @@ data class AppRule(
             KeywordRule(listOf("광고", "혜택", "이벤트", "쿠폰", "인증번호"), RuleAction.IGNORE),
             KeywordRule(listOf("취소", "환불"), RuleAction.REFUND),
             KeywordRule(listOf("입금"), RuleAction.INCOME),
-            KeywordRule(listOf("결제", "승인", "사용", "출금"), RuleAction.SPEND),
+            KeywordRule(listOf("결제", "승인", "사용", "출금", "이체", "송금"), RuleAction.SPEND),
         )
     }
 }

@@ -23,9 +23,9 @@ class MigrationTest {
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
         val db = helper.runMigrationsAndValidate(
-            "m.db", 10, true,
+            "m.db", 11, true,
             DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3, DonDatabase.MIGRATION_3_4, DonDatabase.MIGRATION_4_5,
-            DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7, DonDatabase.MIGRATION_7_8, DonDatabase.MIGRATION_8_9, DonDatabase.MIGRATION_9_10,
+            DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7, DonDatabase.MIGRATION_7_8, DonDatabase.MIGRATION_8_9, DonDatabase.MIGRATION_9_10, DonDatabase.MIGRATION_10_11,
         )
         db.query("SELECT id, amount, category, memo, accountId, minuteOfDay FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
@@ -113,5 +113,17 @@ class MigrationTest {
         val db = helper.runMigrationsAndValidate("m9.db", 10, true, DonDatabase.MIGRATION_9_10)
         db.query("SELECT name, opening FROM account").use { c -> c.moveToNext(); assertEquals("생활비 통장", c.getString(0)); assertEquals(1000000, c.getInt(1)) }
         db.query("SELECT COUNT(*) FROM asset_check").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
+    }
+
+    @Test
+    fun v10에서_v11로_기록은_그대로고_계획은_비어_있다() {
+        helper.createDatabase("m10.db", 10).use { db ->
+            db.execSQL("INSERT INTO settings (id, payDay, settlementDay, savings, subSeeded, milesSeeded) VALUES (0, 25, 1, 0, 1, 1)")
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (1, 20000, 4500, '스타벅스', 'SPEND', 'MANUAL')")
+        }
+        val db = helper.runMigrationsAndValidate("m10.db", 11, true, DonDatabase.MIGRATION_10_11)
+        db.query("SELECT amount, sentOut FROM entry").use { c -> c.moveToNext(); assertEquals(4500, c.getInt(0)); assertEquals(0, c.getInt(1)) }
+        db.query("SELECT ownerName FROM settings").use { c -> c.moveToNext(); assertTrue(c.isNull(0)) }
+        db.query("SELECT COUNT(*) FROM plan").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
     }
 }

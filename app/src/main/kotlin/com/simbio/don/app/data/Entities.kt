@@ -20,6 +20,8 @@ data class SettingsEntity(
     @ColumnInfo(defaultValue = "0") val milesSeeded: Boolean = false,
     /** 마일 키우기: 마지막으로 이자를 붙인 날 (epochDay) */
     val growEpochDay: Long? = null,
+    /** 내 이름 (예금주) — 송금·입금 알림에 이 이름이 보이면 내 계좌끼리 옮긴 돈으로 본다 */
+    val ownerName: String? = null,
 )
 
 /** 고정 지출. [day]를 정하면 그날 가계부에 자동으로 적는다 (그 전에 결제 알림이 오면 알림으로). */
@@ -137,6 +139,8 @@ data class EntryEntity(
     val installmentNo: String? = null,
     /** 반복 수입에서 온 기록 */
     val incomeId: Long? = null,
+    /** 알림 글이 송금·이체로 나간 것이었음 (곧 같은 금액이 들어오면 내 계좌끼리 이체로 합친다) */
+    @ColumnInfo(defaultValue = "0") val sentOut: Boolean = false,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */
@@ -355,3 +359,25 @@ data class AssetCheckEntity(
     val epochDay: Long,
     val value: Long,
 )
+
+/**
+ * 돈 나갈 계획: 아직 안 쓴, 쓸 예정인 돈. 실제 기록과 따로 두고, 쓰면 그 기록과 이어 계획과 실제를 견준다.
+ * [doneEntryId]·[doneAmount]가 있으면 썼음, [canceled]면 안 쓰기로 함.
+ */
+@Entity(tableName = "plan")
+data class PlanEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val epochDay: Long,
+    val amount: Long,
+    val label: String,
+    /** com.simbio.don.budget.Category 이름 */
+    val category: String = "ETC",
+    val memo: String = "",
+    val doneEntryId: Long? = null,
+    val doneAmount: Long? = null,
+    val doneEpochDay: Long? = null,
+    val canceled: Boolean = false,
+) {
+    val done: Boolean get() = doneAmount != null
+    val open: Boolean get() = !done && !canceled
+}

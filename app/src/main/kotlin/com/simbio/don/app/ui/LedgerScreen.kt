@@ -198,7 +198,11 @@ fun LedgerScreen(
     onSearch: () -> Unit,
     mode: LedgerMode,
     onMode: (LedgerMode) -> Unit,
+    /** 돈 나갈 계획 (실제 기록과 따로, 점선으로) */
+    plans: List<com.simbio.don.app.data.PlanEntity> = emptyList(),
+    onPlans: () -> Unit = {},
 ) {
+    val monthPlans = plans.filter { it.open && LocalDate.ofEpochDay(it.epochDay) in view.cycle }
     val income = Stats.income(view.entries)
     val expense = Stats.total(view.entries)
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
@@ -210,8 +214,17 @@ fun LedgerScreen(
             Spacer(Modifier.height(12.dp))
         }
         when (mode) {
-            LedgerMode.DAILY -> dailyItems(view, accountNames, selectedDate, onSelectDate, category, onCategory, onOpen)
-            LedgerMode.CALENDAR -> calendarItems(view, accountNames, selectedDate ?: view.today.takeIf { it in view.cycle } ?: view.cycle.start, onSelectDate, onOpen)
+            LedgerMode.DAILY -> {
+                if (monthPlans.isNotEmpty() && selectedDate == null && category == null) item {
+                    SectionCard("돈 나갈 계획 · 아직 안 씀", trailing = { com.simbio.don.app.ui.kit.MoreButton("계획", onPlans) }) {
+                        Text("계획 ${won(monthPlans.sumOf { it.amount })} · 실제 기록과 따로 세요", fontSize = 12.sp, color = DonColors.InkMuted)
+                        monthPlans.sortedBy { it.epochDay }.take(5).forEach { PlanRow(it, view.today, onPlans) }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+                dailyItems(view, accountNames, selectedDate, onSelectDate, category, onCategory, onOpen)
+            }
+            LedgerMode.CALENDAR -> calendarItems(view, accountNames, selectedDate ?: view.today.takeIf { it in view.cycle } ?: view.cycle.start, onSelectDate, onOpen, monthPlans, onPlans)
             LedgerMode.WEEKLY -> weeklyItems(view)
             LedgerMode.MONTHLY -> monthlyItems(summaries, view.nominal) { n -> onPickMonth(n); onMode(LedgerMode.DAILY) }
         }
@@ -275,6 +288,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.calendarItems(
     selected: LocalDate,
     onSelectDate: (LocalDate?) -> Unit,
     onOpen: (EntryEntity) -> Unit,
+    plans: List<com.simbio.don.app.data.PlanEntity> = emptyList(),
+    onPlans: () -> Unit = {},
 ) {
     item {
         Column(Modifier.fillMaxWidth().card().padding(horizontal = 8.dp, vertical = 12.dp)) {
@@ -282,6 +297,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.calendarItems(
                 view.cycle.start, view.cycle.end,
                 Stats.dailyIncome(view.entries), Stats.daily(view.entries),
                 view.today, selected,
+                planned = plans.groupBy { LocalDate.ofEpochDay(it.epochDay) }.mapValues { (_, l) -> l.sumOf { it.amount } },
             ) { onSelectDate(it) }
         }
         Spacer(Modifier.height(10.dp))
@@ -291,9 +307,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.calendarItems(
         val es = list.mapNotNull { it.toEntryOrNull() }
         Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 10.dp)) {
             DayHeader(selected, Stats.income(es), Stats.total(es))
-            if (list.isEmpty()) Text("이날은 기록이 없어요.", fontSize = 13.sp, color = DonColors.InkMuted, modifier = Modifier.padding(vertical = 8.dp))
+            val dayPlans = plans.filter { it.epochDay == selected.toEpochDay() }
+            if (list.isEmpty() && dayPlans.isEmpty()) Text("이날은 기록이 없어요.", fontSize = 13.sp, color = DonColors.InkMuted, modifier = Modifier.padding(vertical = 8.dp))
             list.sortedWith(compareByDescending<EntryEntity> { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
                 .forEach { e -> LedgerRow(e, accountNames, onOpen) }
+            dayPlans.forEach { PlanRow(it, view.today, onPlans) }
         }
     }
 }
@@ -310,6 +328,7 @@ fun LedgerCalendar(
     expense: Map<LocalDate, Long>,
     today: LocalDate,
     selected: LocalDate?,
+    planned: Map<LocalDate, Long> = emptyMap(),
     onSelect: (LocalDate) -> Unit,
 ) {
     val first = start.minusDays((start.dayOfWeek.value % 7).toLong())
@@ -360,6 +379,8 @@ fun LedgerCalendar(
                         if (inside) {
                             income[d]?.takeIf { it > 0 }?.let { Text(compactWon(it), fontSize = 9.sp, color = DonColors.Income, maxLines = 1) }
                             expense[d]?.takeIf { it != 0L }?.let { Text(compactWon(it), fontSize = 9.sp, color = DonColors.Expense, maxLines = 1) }
+                            // 계획은 회색 (아직 안 쓴 돈)
+                            planned[d]?.let { Text("예정 " + compactWon(it), fontSize = 8.sp, color = DonColors.InkFaint, maxLines = 1) }
                         }
                     }
                 }

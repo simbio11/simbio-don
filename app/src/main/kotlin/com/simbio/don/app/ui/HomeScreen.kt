@@ -66,6 +66,7 @@ fun HomeScreen(
     onAssetCheck: () -> Unit = {},
     onCalendarDay: (java.time.LocalDate) -> Unit = {},
     onAddFixed: (com.simbio.don.budget.Subscription) -> Unit = {},
+    onPlans: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
@@ -161,7 +162,7 @@ fun HomeScreen(
 
         home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
         HomeCalendarCard(home, onCalendarDay)
-        UpcomingCard(home.insights.upcoming, home.today)
+        UpcomingCard(home.insights.upcoming, home.today, onPlans)
 
         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))

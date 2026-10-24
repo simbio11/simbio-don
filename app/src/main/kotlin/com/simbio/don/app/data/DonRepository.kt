@@ -10,6 +10,7 @@ import com.simbio.don.game.Dex
 import com.simbio.don.game.MiniGame
 import com.simbio.don.game.MiniGameRewards
 import com.simbio.don.game.Sets
+import com.simbio.don.notify.SelfTransfer
 import com.simbio.don.budget.Subcategories
 import com.simbio.don.budget.RecurringIncomes
 import com.simbio.don.budget.Installments
@@ -70,8 +71,9 @@ data class PendingWeek(val nominal: String, val result: WeekResult)
 /** 새 달이 자동으로 시작됐다는 안내 ([previous]는 지난달 월급) */
 data class SalaryNotice(val salary: Long, val source: SalarySource, val start: LocalDate, val previous: Long? = null)
 
-/** 홈에 보여주는 분석: 월말 예측·무지출 날·한 줄 분석·정기 결제·다가오는 결제 */
+/** 홈에 보여주는 분석: 월말 예측·무지출 날·한 줄 분석·정기 결제·다가오는 결제·이번 달 계획 */
 data class HomeInsights(
+    val plans: com.simbio.don.budget.PlanSummary? = null,
     val forecast: com.simbio.don.budget.MonthForecast? = null,
     val noSpend: com.simbio.don.budget.NoSpend? = null,
     val insights: List<com.simbio.don.budget.Insight> = emptyList(),
@@ -151,6 +153,8 @@ data class HomeState(
     /** 이번 달 자산 점검을 아직 안 함 (모으는 통장이 있고, 월급날 뒤 점검이 없음) */
     val assetCheckDue: Boolean = false,
     val insights: HomeInsights = HomeInsights(),
+    /** 돈 나갈 계획 (전부) */
+    val plans: List<PlanEntity> = emptyList(),
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
 
@@ -317,11 +321,17 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val wealth: Wealth,
         val fixed: List<FixedExpenseEntity>,
         val recent: List<EntryEntity>,
+        val plans: List<PlanEntity> = emptyList(),
     )
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun home(now: Flow<LocalDateTime>): Flow<HomeState?> {
-        val more = combine(dao.mileTx(), dao.gamePlays(), wealth(now), dao.fixedExpenses(), recentEntries(now)) { m, g, w, f, r -> HomeMore(m, g, w, f, r) }
+        val more = combine(
+            combine(dao.mileTx(), dao.gamePlays(), wealth(now)) { m, g, w -> Triple(m, g, w) },
+            dao.fixedExpenses(),
+            recentEntries(now),
+            dao.plans(),
+        ) { mgw, f, r, p -> HomeMore(mgw.first, mgw.second, mgw.third, f, r, p) }
         return combine(homeBase(now), extras, summaries(now), accountBalances, more) { h, x, sums, accounts, mo ->
             h?.let {
                 val total = sums.sumOf { s -> s.saved }
@@ -332,7 +342,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                     game = GameState.of(miles, plays, it.currentWeek?.week),
                     wealth = mo.wealth,
                     assetCheckDue = mo.wealth.pots.isNotEmpty() && (mo.wealth.lastCheck?.isBefore(it.cycle.start) ?: true),
-                    insights = insightsOf(it, mo.fixed, mo.recent),
+                    insights = insightsOf(it, mo.fixed, mo.recent, mo.plans),
+                    plans = mo.plans,
                     categoryBudgets = x.budgets,
                     savedTotal = total,
                     savedThisMonth = sums.firstOrNull()?.saved ?: 0,
@@ -345,7 +356,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
     }
 
-    private fun insightsOf(h: HomeState, fixed: List<FixedExpenseEntity>, recent: List<EntryEntity>): HomeInsights {
+    private fun insightsOf(h: HomeState, fixed: List<FixedExpenseEntity>, recent: List<EntryEntity>, plans: List<PlanEntity> = emptyList()): HomeInsights {
+        val planList = plans.map { it.toPlan() }
         val entries = h.entries.map { it.toEntry() }
         val recentEntries = recent.mapNotNull { e -> runCatching { e.toEntry() }.getOrNull() }
         val upcoming = com.simbio.don.budget.UpcomingPayments.of(
@@ -354,12 +366,20 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             h.cycle,
             h.today,
         ).toMutableList()
+        // 일주일 안의 내 계획
+        com.simbio.don.budget.Plans.upcoming(planList, h.today, h.today.plusDays(7)).forEach { p ->
+            upcoming += com.simbio.don.budget.Upcoming(p.label, p.amount, p.date, income = false, planned = true)
+        }
         // 월급날도 일주일 안이면
         if (!h.nextExpectedPayday.isBefore(h.today) && !h.nextExpectedPayday.isAfter(h.today.plusDays(7))) {
             upcoming += com.simbio.don.budget.Upcoming("월급날", h.salary, h.nextExpectedPayday, income = true)
         }
         return HomeInsights(
-            forecast = com.simbio.don.budget.Forecast.month(entries, h.cycle.start, h.cycle.end, h.plan.disposable, h.today),
+            forecast = com.simbio.don.budget.Forecast.month(
+                entries, h.cycle.start, h.cycle.end, h.plan.disposable, h.today,
+                planList.filter { it.open }.map { it.date to it.amount },
+            ),
+            plans = com.simbio.don.budget.Plans.summary(planList, h.cycle.start, h.cycle.end),
             // 무지출은 이번 달에 처음 적은 날부터 센다 (기록을 안 한 날까지 "안 쓴 날"로 치지 않게)
             noSpend = entries.minOfOrNull { it.date }?.let { first ->
                 com.simbio.don.budget.NoSpendDays.of(entries, maxOf(h.cycle.start, first), h.today)
@@ -1528,7 +1548,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
         // 가게별 카테고리 기억은 지출에만 (수입 카테고리를 지출 추측에 섞지 않게)
         if (category != null && label.isNotBlank() && !category.income && type != EntryType.TRANSFER) learn(name, category)
-        dao.insertEntry(
+        val id = dao.insertEntry(
             EntryEntity(
                 epochDay = date.toEpochDay(),
                 amount = amount,
@@ -1547,6 +1567,45 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             adjustSalaryLocked(amount, date)
             rollOverLocked(now ?: LocalDateTime.now())
         }
+        id
+    }
+
+    // ── 돈 나갈 계획 ───────────────────────────────────────────
+
+    val plans: Flow<List<PlanEntity>> = dao.plans()
+
+    suspend fun savePlan(p: PlanEntity): Long = dao.savePlan(p.copy(label = p.label.trim().take(30).ifBlank { "계획" }))
+
+    suspend fun deletePlan(id: Long) = dao.deletePlan(id)
+
+    /** 안 쓰기로 함 (그만큼 아낀 돈) / 되돌리기 */
+    suspend fun cancelPlan(id: Long, canceled: Boolean = true) {
+        val p = dao.plansNow().firstOrNull { it.id == id } ?: return
+        dao.savePlan(p.copy(canceled = canceled))
+    }
+
+    /** 계획을 실제 기록과 잇는다 (썼어요) */
+    suspend fun completePlan(id: Long, entryId: Long?, amount: Long, date: LocalDate) {
+        val p = dao.plansNow().firstOrNull { it.id == id } ?: return
+        dao.savePlan(p.copy(doneEntryId = entryId, doneAmount = amount, doneEpochDay = date.toEpochDay(), canceled = false))
+    }
+
+    /** 이미 적힌 지출을 이 계획을 쓴 것으로 */
+    suspend fun linkPlan(id: Long, entry: EntryEntity) = completePlan(id, entry.id, entry.amount, LocalDate.ofEpochDay(entry.epochDay))
+
+    /** 계획을 쓴 것 같은 실제 지출 (계획 id → 기록). 이미 다른 계획에 이은 기록은 빼고 */
+    fun planMatches(plans: List<PlanEntity>, entries: List<EntryEntity>): Map<Long, EntryEntity> {
+        val byId = entries.associateBy { it.id }
+        val taken = plans.mapNotNull { it.doneEntryId }.toMutableSet()
+        val candidates = entries.mapNotNull { e -> runCatching { e.id to e.toEntry() }.getOrNull() }
+        val out = mutableMapOf<Long, EntryEntity>()
+        plans.filter { it.open }.forEach { p ->
+            com.simbio.don.budget.Plans.match(p.toPlan(), candidates, taken)?.let { id ->
+                taken += id
+                byId[id]?.let { out[p.id] = it }
+            }
+        }
+        return out
     }
 
     /**
@@ -1618,6 +1677,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 inbox.any { it.packageName == parsed.packageName && it.amount == parsed.amount && it.postedAtEpochSecond == at }
             if (seen) return@withLock
         }
+        // 내 계좌끼리 이체로 이미 적은 돈의 다른 쪽(또는 다시 온 알림)이면 받은·보낸 통장만 채운다
+        if (parsed != null && (parsed.action == RuleAction.INCOME || SelfTransfer.isSendOut(parsed)) && completeSelfTransfer(parsed)) return@withLock
         // 할부 첫 기록은 산 금액 전체로 견준다 (다른 앱에 온 같은 결제 알림과 짝이 맞게)
         val recent = recentEntries.mapNotNull { e ->
             e.toParsedOrNull()?.let { p ->
@@ -1629,10 +1690,20 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val pending = inbox.map { it.toParsed() to null }
         val fixed = dao.fixedExpensesNow().map { it.toFixed() }
 
+        val owner = dao.settingsNow()?.ownerName
         when (val d = ReviewPolicy.decide(result, (recent + pending).map { it.first }, fixed)) {
             null -> Unit
-            is Decision.AutoApply -> if (!recordFixedFromPayment(d.payment)) insertFromPayment(d.payment, EntryType.SPEND)
-            is Decision.Income -> {
+            is Decision.AutoApply -> when {
+                // 내 계좌끼리: 한쪽만 와도 알아보거나, 막 들어온 같은 금액과 합친다
+                SelfTransfer.looksSelf(d.payment, owner) -> insertSelfTransfer(d.payment, out = true)
+                SelfTransfer.isSendOut(d.payment) && mergeSelfTransfer(d.payment, out = true) -> Unit
+                !recordFixedFromPayment(d.payment) -> insertFromPayment(d.payment, EntryType.SPEND)
+            }
+            is Decision.Income -> if (SelfTransfer.looksSelf(d.payment, owner)) {
+                insertSelfTransfer(d.payment, out = false)
+            } else if (mergeSelfTransfer(d.payment, out = false)) {
+                Unit
+            } else {
                 dao.insertIncome(IncomeEntity(amount = d.payment.amount, postedAtEpochSecond = d.payment.postedAt.epochSecond()))
                 // 다른 앱에 같은 입금이 막 잡혔으면 한 번만 적는다
                 val dup = recent.any { (p, _) -> ReviewPolicy.isDuplicate(d.payment, p) }
@@ -1658,6 +1729,74 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 ),
             )
         }
+    }
+
+    /** 내 계좌끼리 옮긴 돈 한쪽만 봤을 때: 이 앱의 자산에서 나가거나(out) 들어온 이체로 */
+    private suspend fun insertSelfTransfer(p: ParsedPayment, out: Boolean) {
+        val account = accountFor(p.packageName)
+        dao.insertEntry(
+            EntryEntity(
+                epochDay = p.postedAt.toLocalDate().toEpochDay(),
+                amount = p.amount,
+                label = SELF_TRANSFER_LABEL,
+                type = EntryType.TRANSFER.name,
+                source = EntrySource.NOTIFICATION.name,
+                packageName = p.packageName,
+                postedAtEpochSecond = p.postedAt.epochSecond(),
+                category = Category.ETC.name,
+                memo = p.label.takeIf { it.isNotBlank() }.orEmpty(),
+                accountId = if (out) account else null,
+                toAccountId = if (out) null else account,
+                minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
+            ),
+        )
+    }
+
+    /**
+     * 내 계좌끼리 송금의 다른 쪽이 막 적혀 있으면(같은 금액, 15분 안) 그 기록을 이체 한 건으로 바꾼다.
+     * 나간 알림이면 막 들어온 수입을, 들어온 알림이면 송금으로 나간 지출을 찾는다. 합쳤으면 true
+     */
+    private suspend fun mergeSelfTransfer(p: ParsedPayment, out: Boolean): Boolean {
+        val since = p.postedAt.minus(SelfTransfer.WINDOW).epochSecond()
+        val other = dao.notificationEntriesSince(since)
+            .filter { e ->
+                val at = e.postedAtEpochSecond?.toLocalDateTime() ?: return@filter false
+                val kindOk = if (out) e.type == EntryType.INCOME.name else (e.type == EntryType.SPEND.name && e.sentOut)
+                kindOk && e.installmentId == null && SelfTransfer.isPair(p.amount, p.postedAt, e.amount, at)
+            }
+            .minByOrNull { kotlin.math.abs((it.postedAtEpochSecond ?: 0) - p.postedAt.epochSecond()) } ?: return false
+        val mine = accountFor(p.packageName)
+        dao.updateEntry(
+            other.copy(
+                type = EntryType.TRANSFER.name,
+                label = SELF_TRANSFER_LABEL,
+                category = Category.ETC.name,
+                accountId = if (out) mine else other.accountId,
+                toAccountId = if (out) other.accountId else mine,
+                sub = null,
+                sentOut = false,
+            ),
+        )
+        return true
+    }
+
+    /** 막 적은 "내 계좌 이체"(같은 금액, 15분 안)가 있으면 빈 쪽 통장을 채우고 true */
+    private suspend fun completeSelfTransfer(p: ParsedPayment): Boolean {
+        val since = p.postedAt.minus(SelfTransfer.WINDOW).epochSecond()
+        val t = dao.notificationEntriesSince(since).firstOrNull { e ->
+            val at = e.postedAtEpochSecond?.toLocalDateTime() ?: return@firstOrNull false
+            e.type == EntryType.TRANSFER.name && e.label == SELF_TRANSFER_LABEL && SelfTransfer.isPair(e.amount, at, p.amount, p.postedAt)
+        } ?: return false
+        val mine = accountFor(p.packageName)
+        if (p.action == RuleAction.INCOME && t.toAccountId == null && mine != null && mine != t.accountId) dao.updateEntry(t.copy(toAccountId = mine))
+        if (p.action != RuleAction.INCOME && t.accountId == null && mine != null && mine != t.toAccountId) dao.updateEntry(t.copy(accountId = mine))
+        return true
+    }
+
+    /** 내 이름 (예금주) 저장: 송금·입금 알림에 보이면 내 계좌끼리로 본다 */
+    suspend fun saveOwnerName(name: String) = writeLock.withLock {
+        val s = dao.settingsNow() ?: return@withLock
+        dao.saveSettings(s.copy(ownerName = name.trim().take(20).ifBlank { null }))
     }
 
     /** 알림으로 기록. 고른 카테고리를 돌려준다 */
@@ -1694,6 +1833,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 category = category.name,
                 accountId = accountFor(p.packageName),
                 minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
+                sentOut = type == EntryType.SPEND && SelfTransfer.isSendOut(p),
             ),
         )
         return category
@@ -1923,6 +2063,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             mileTx = dao.mileTxNow(),
             gamePlays = dao.gamePlaysNow(),
             assetChecks = dao.assetChecksNow(),
+            plans = dao.plansNow(),
         ),
         now,
     )
@@ -1936,14 +2077,14 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.wipeRules(); dao.wipeSeen(); dao.wipeSettled(); dao.wipeCategoryRules(); dao.wipeMocks(); dao.wipeHouses()
                 dao.wipeCategoryBudgets(); dao.wipeGoals(); dao.wipeAccounts()
                 dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes(); dao.wipeMileTx()
-                dao.wipeGamePlays(); dao.wipeAssetChecks()
+                dao.wipeGamePlays(); dao.wipeAssetChecks(); dao.wipePlans()
                 dao.putSettings(d.settings); dao.putFixed(d.fixed); dao.putCycles(d.cycles); dao.putEntries(d.entries)
                 dao.putReviews(d.reviews); dao.putRules(d.rules); dao.putSettled(d.settled); dao.putCategoryRules(d.categoryRules)
                 dao.putMocks(d.mocks); dao.putHouses(d.houses); dao.putCategoryBudgets(d.categoryBudgets); dao.putGoals(d.goals)
                 dao.putAccounts(d.accounts)
                 dao.putCategoryDefs(d.categoryDefs); dao.putSubcategories(d.subcategories); dao.putInstallments(d.installments)
                 dao.putRecurringIncomes(d.recurringIncomes); dao.putMileTx(d.mileTx)
-                dao.putGamePlays(d.gamePlays); dao.putAssetChecks(d.assetChecks)
+                dao.putGamePlays(d.gamePlays); dao.putAssetChecks(d.assetChecks); dao.putPlans(d.plans)
             }
             Category.register(dao.categoryDefsNow().map { it.toCategory() })
         }
@@ -1962,6 +2103,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     companion object {
         /** 뷰티샵 예약 내용 앞에 붙는 글자 */
         const val LOOK_PAYLOAD = "look:"
+
+        /** 내 계좌끼리 옮긴 돈 기록 이름 */
+        const val SELF_TRANSFER_LABEL = "내 계좌 이체"
 
         /** 한 줄 분석·정기 결제 찾기에 보는 날 수 */
         const val RECENT_DAYS = 100L

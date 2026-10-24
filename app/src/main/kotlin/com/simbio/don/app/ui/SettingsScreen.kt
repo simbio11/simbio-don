@@ -89,6 +89,7 @@ fun SettingsScreen(
     lockOn: Boolean = false,
     onLock: (Boolean) -> Unit = {},
     onChangePin: () -> Unit = {},
+    onOwnerName: (String) -> Unit = {},
     onBack: (() -> Unit)? = null,
 ) {
     val rows = remember(fixed) {
@@ -131,6 +132,27 @@ fun SettingsScreen(
             SubButton(onClick = onOpenListenerSettings, modifier = Modifier.fillMaxWidth()) { Text("알림 접근 설정 열기") }
             Text("갤럭시는 배터리 최적화 때문에 알림 수신이 끊길 수 있어요. '제한 없음'으로 바꿔 주세요.", fontSize = 13.sp, color = DonColors.InkSoft)
             SubButton(onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth()) { Text("배터리 설정 열기") }
+        }
+
+        RealCard("내 계좌끼리 옮긴 돈") {
+            Text(
+                "내 통장끼리 옮긴 돈은 지출·수입이 아니라 이체로 적어요. 송금으로 나간 돈과 같은 금액이 15분 안에 다른 통장에 들어오면 " +
+                    "한 건의 이체로 합치고, 알림에 '내 계좌'나 내 이름이 보이면 한쪽만 와도 이체로 봐요. 잘못 적히면 기록을 눌러 바꿀 수 있어요.",
+                fontSize = 13.sp,
+                color = DonColors.InkSoft,
+            )
+            var owner by remember(settings.ownerName) { mutableStateOf(settings.ownerName.orEmpty()) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = owner,
+                    onValueChange = { owner = it.take(20) },
+                    label = { Text("내 이름 (예금주)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                com.simbio.don.app.ui.kit.SmallButton(onClick = { onOwnerName(owner) }) { Text("저장") }
+            }
+            Text("이름은 이 폰에만 저장되고, 송금·입금 알림을 볼 때만 써요.", fontSize = 12.sp, color = DonColors.InkMuted)
         }
 
         RealCard("알림·위젯") {

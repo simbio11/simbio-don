@@ -21,6 +21,8 @@ data class MonthForecast(
     val weekendAvg: Long,
     val perDayToFit: Long,
     val runOut: LocalDate?,
+    /** 남은 날에 잡아 둔 돈 나갈 계획 (예측에 넣음) */
+    val plannedAhead: Long = 0,
 ) {
     /** 월말에 남을 돈 (음수면 모자람) */
     val leftover: Long get() = budget - projected
@@ -34,7 +36,15 @@ object Forecast {
      * [start]~[end] 한 달에서 [today]까지의 생활비([entries], 고정 지출 제외)로 월말을 예측한다.
      * 하루 지출이 그날까지 중간값의 3배를 넘으면 한 번 쓰는 큰돈으로 보고 평균에는 그만큼만 센다.
      */
-    fun month(entries: List<Entry>, start: LocalDate, end: LocalDate, budget: Long, today: LocalDate): MonthForecast {
+    fun month(
+        entries: List<Entry>,
+        start: LocalDate,
+        end: LocalDate,
+        budget: Long,
+        today: LocalDate,
+        /** 아직 안 쓴 돈 나갈 계획 (날짜, 금액) — 평소 속도에 더해 그날 나가는 것으로 본다 */
+        plans: List<Pair<LocalDate, Long>> = emptyList(),
+    ): MonthForecast {
         val days = (ChronoUnit.DAYS.between(start, end) + 1).toInt()
         val last = minOf(today, end)
         val elapsedDays = if (last.isBefore(start)) emptyList() else generateSequence(start) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }.toList()
@@ -56,10 +66,14 @@ object Forecast {
         val weekend = avg { it.isWeekend() }
 
         val rest = generateSequence(last.plusDays(1)) { it.plusDays(1) }.takeWhile { !it.isAfter(end) }.toList()
-        var acc = spent
+        // 오늘이나 그 뒤 날짜의 계획 (오늘 것은 아직 안 썼다고 보고 내일 몫에 넣지 않고 바로 더한다)
+        val ahead = plans.filter { (d, _) -> !d.isBefore(today) && !d.isAfter(end) }
+        val todayPlans = ahead.filter { it.first <= last }.sumOf { it.second }
+        val byDay = ahead.filter { it.first > last }.groupBy({ it.first }, { it.second }).mapValues { it.value.sum() }
+        var acc = spent + todayPlans
         var runOut: LocalDate? = null
         rest.forEach { d ->
-            acc += if (d.isWeekend()) weekend else weekday
+            acc += (if (d.isWeekend()) weekend else weekday) + (byDay[d] ?: 0)
             if (runOut == null && acc > budget && spent <= budget) runOut = d
         }
         val daysLeft = rest.size
@@ -70,8 +84,9 @@ object Forecast {
             daysLeft = daysLeft,
             weekdayAvg = weekday,
             weekendAvg = weekend,
-            perDayToFit = if (daysLeft == 0) 0 else ((budget - spent) / daysLeft).coerceAtLeast(0),
+            perDayToFit = if (daysLeft == 0) 0 else ((budget - spent - ahead.sumOf { it.second }) / daysLeft).coerceAtLeast(0),
             runOut = runOut,
+            plannedAhead = ahead.sumOf { it.second },
         )
     }
 
@@ -184,8 +199,8 @@ object Insights {
     }
 }
 
-/** 다가오는 고정 지출·수입 */
-data class Upcoming(val label: String, val amount: Long, val date: LocalDate, val income: Boolean)
+/** 다가오는 고정 지출·수입·계획 ([planned]면 내가 잡아 둔 돈 나갈 계획) */
+data class Upcoming(val label: String, val amount: Long, val date: LocalDate, val income: Boolean, val planned: Boolean = false)
 
 object UpcomingPayments {
     /** [today]부터 [days]일 안에 나갈 고정 지출 (아직 안 적은 것: [lastDue] 이후) */

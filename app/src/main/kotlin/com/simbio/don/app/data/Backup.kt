@@ -10,8 +10,8 @@ import java.time.LocalDateTime
  */
 object Backup {
     const val FORMAT = "dont-backup"
-    /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12), 5: 자산 점검 (0.13) */
-    const val VERSION = 5
+    /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12), 5: 자산 점검 (0.13), 6: 돈 나갈 계획·내 이름 (0.14) */
+    const val VERSION = 6
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -34,6 +34,7 @@ object Backup {
         val mileTx: List<MileTxEntity> = emptyList(),
         val gamePlays: List<GamePlayEntity> = emptyList(),
         val assetChecks: List<AssetCheckEntity> = emptyList(),
+        val plans: List<PlanEntity> = emptyList(),
     )
 
     class BadBackup(message: String) : Exception(message)
@@ -45,7 +46,7 @@ object Backup {
         put("settings", arr(d.settings) { o, x ->
             o.put("payDay", x.payDay); o.put("settlementDay", x.settlementDay); o.put("savings", x.savings)
             o.putOpt("pendingSettlementDay", x.pendingSettlementDay); o.put("subSeeded", x.subSeeded)
-            o.put("milesSeeded", x.milesSeeded); o.putOpt("growEpochDay", x.growEpochDay)
+            o.put("milesSeeded", x.milesSeeded); o.putOpt("growEpochDay", x.growEpochDay); o.putOpt("ownerName", x.ownerName)
         })
         put("fixed", arr(d.fixed) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("amount", x.amount); o.putOpt("day", x.day)
@@ -124,6 +125,11 @@ object Backup {
         put("assetChecks", arr(d.assetChecks) { o, x ->
             o.put("id", x.id); o.put("accountId", x.accountId); o.put("epochDay", x.epochDay); o.put("value", x.value)
         })
+        put("plans", arr(d.plans) { o, x ->
+            o.put("id", x.id); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("label", x.label); o.put("category", x.category)
+            o.put("memo", x.memo); o.putOpt("doneEntryId", x.doneEntryId); o.putOpt("doneAmount", x.doneAmount)
+            o.putOpt("doneEpochDay", x.doneEpochDay); o.put("canceled", x.canceled)
+        })
     }.toString()
 
     fun decode(json: String): Data {
@@ -139,7 +145,8 @@ object Backup {
                 settings = list(root, "settings") { o ->
                     SettingsEntity(payDay = o.getInt("payDay"), settlementDay = o.getInt("settlementDay"), savings = o.getLong("savings"),
                         pendingSettlementDay = o.intOrNull("pendingSettlementDay"), subSeeded = o.optBoolean("subSeeded", false),
-                        milesSeeded = o.optBoolean("milesSeeded", false), growEpochDay = o.longOrNull("growEpochDay"))
+                        milesSeeded = o.optBoolean("milesSeeded", false), growEpochDay = o.longOrNull("growEpochDay"),
+                        ownerName = o.strOrNull("ownerName"))
                 },
                 fixed = list(root, "fixed") { o ->
                     FixedExpenseEntity(o.getLong("id"), o.getString("name"), o.getLong("amount"), o.intOrNull("day"),
@@ -212,6 +219,11 @@ object Backup {
                 },
                 assetChecks = list(root, "assetChecks") { o ->
                     AssetCheckEntity(o.getLong("id"), o.getLong("accountId"), o.getLong("epochDay"), o.getLong("value"))
+                },
+                plans = list(root, "plans") { o ->
+                    PlanEntity(o.getLong("id"), o.getLong("epochDay"), o.getLong("amount"), o.getString("label"), o.optString("category", "ETC"),
+                        o.optString("memo", ""), o.longOrNull("doneEntryId"), o.longOrNull("doneAmount"), o.longOrNull("doneEpochDay"),
+                        o.optBoolean("canceled", false))
                 },
             ).also {
                 if (it.settings.isEmpty() || it.cycles.isEmpty()) throw BadBackup("백업에 설정이 없어요")

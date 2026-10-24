@@ -62,6 +62,7 @@ import com.simbio.don.app.ui.AssetsScreen
 import com.simbio.don.app.ui.BudgetsScreen
 import com.simbio.don.app.ui.CardsScreen
 import com.simbio.don.app.ui.AssetCheckScreen
+import com.simbio.don.app.ui.PlanScreen
 import com.simbio.don.app.ui.CollectionScreen
 import com.simbio.don.app.ui.FadeThrough
 import com.simbio.don.app.ui.ScreenHost
@@ -133,6 +134,7 @@ private sealed interface Overlay {
     data class Account(val id: Long) : Overlay
     data class EditAccount(val id: Long?, val type: com.simbio.don.app.data.AccountType? = null) : Overlay
     data object AssetCheck : Overlay
+    data object Plans : Overlay
     data object Dress : Overlay
     data object Miles : Overlay
     data object Cards : Overlay
@@ -364,6 +366,7 @@ class MainActivity : ComponentActivity() {
                         weather = weather,
                         onWealth = { onTab(Tab.Assets) },
                         onAssetCheck = { screens.push(Overlay.AssetCheck) },
+                        onPlans = { screens.push(Overlay.Plans) },
                         onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
                         onAddFixed = { s ->
                             vm.addFixedExpense(s.label, s.amount, s.day)
@@ -423,6 +426,8 @@ class MainActivity : ComponentActivity() {
                                 onSearch = { screens.push(Overlay.Search) },
                                 mode = ledgerMode,
                                 onMode = { onLedgerMode(it) },
+                                plans = home.plans,
+                                onPlans = { screens.push(Overlay.Plans) },
                             )
                         } else {
                             StatsScreen(
@@ -551,6 +556,10 @@ class MainActivity : ComponentActivity() {
                 lockOn = lockOn,
                 onLock = { on -> open(if (on) Overlay.SetPin else Overlay.UnlockToTurnOff) },
                 onChangePin = { open(Overlay.SetPin) },
+                onOwnerName = { name ->
+                    vm.saveOwnerName(name)
+                    Toast.makeText(this, if (name.isBlank()) "이름을 지웠어요" else "저장했어요", Toast.LENGTH_SHORT).show()
+                },
                 onBack = onBack,
             )
         }
@@ -776,6 +785,24 @@ class MainActivity : ComponentActivity() {
             }
             Overlay.Miles -> MilesScreen(home.miles, onDeposit = { vm.depositMiles(it) }, onWithdraw = { vm.withdrawMiles(it) }, onBack = close)
             Overlay.Cards -> CardsScreen(home.mockItems, home.salary, onBack = close)
+            Overlay.Plans -> {
+                val plans by vm.plans.collectAsStateWithLifecycle()
+                PlanScreen(
+                    plans = plans,
+                    matches = remember(plans, home.entries) { vm.planMatches(plans, home.entries) },
+                    summary = home.insights.plans,
+                    today = home.today,
+                    onAdd = { vm.savePlan(it) },
+                    onSpent = { p ->
+                        val d = minOf(LocalDate.ofEpochDay(p.epochDay), home.today)
+                        open(Overlay.Edit(null, EntryDraft(d, p.amount, p.label, EntryType.SPEND, Category.of(p.category), "", false, planId = p.id)))
+                    },
+                    onLink = { p, e -> vm.linkPlan(p.id, e) },
+                    onCancel = { p, c -> vm.cancelPlan(p.id, c) },
+                    onDelete = { vm.deletePlan(it.id) },
+                    onBack = close,
+                )
+            }
             Overlay.AssetCheck -> AssetCheckScreen(
                 wealth = home.wealth,
                 sources = home.accounts.filter { !it.account.hidden && (it.type == com.simbio.don.app.data.AccountType.BANK || it.type == com.simbio.don.app.data.AccountType.CASH) },
