@@ -13,6 +13,7 @@ import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -722,7 +723,8 @@ class AppFlowTest {
         // 자산 탭: 모으는 돈 → 자산 점검
         rule.onNodeWithText("자산").performClick()
         waitText("모으는 돈")
-        rule.onNodeWithText("모으는 돈").performScrollTo()
+        // 순자산 칸에도 "모으는 돈"이 있어 아래 카드 제목으로
+        rule.onAllNodesWithText("모으는 돈").onLast().performScrollTo()
         shot("73_assets_wealth")
         rule.onNodeWithText("자산 점검").performScrollTo().performClick()
         waitText("어디서 옮겼어요?")

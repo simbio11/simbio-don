@@ -155,6 +155,9 @@ class FullMotionTest {
                     }
                 }
             }
+            // 닫힌 화면의 재구성기가 끝까지 정리되게 (남으면 다음 테스트의 Compose가 쉬지 못한다)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(Recomposer.runningRecomposers.value.isEmpty())
         } finally {
             Settings.Global.putFloat(appContext.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
             DonRepository.resetForTests()

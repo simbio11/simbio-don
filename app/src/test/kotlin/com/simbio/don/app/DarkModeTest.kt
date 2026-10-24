@@ -6,6 +6,8 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -129,7 +131,8 @@ class DarkModeTest {
         waitText("밝기")
         rule.onNodeWithText("밝기").performScrollTo()
         shot("d10_settings")
-        rule.onNodeWithText("밝게").performScrollTo().performClick()
+        // 위 "밝기"의 밝게 (아래 위젯 색에도 밝게가 있다)
+        rule.onAllNodesWithText("밝게").onFirst().performScrollTo().performClick()
         rule.waitForIdle()
         assertFalse(DonColors.dark)
         assertEquals(ThemeMode.LIGHT, UiPrefs.themeMode(appContext))
