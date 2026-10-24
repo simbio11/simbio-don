@@ -304,6 +304,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun giveUpWished(id: Long) = viewModelScope.launch { repo.giveUpWished(id) }
 
     fun recycle() = viewModelScope.launch { repo.recycle() }
+
+    fun chooseTitle(title: String) = viewModelScope.launch { repo.chooseTitle(title) }
+
+    /** 미니게임 한 판 기록 → 실제로 받은 마일 */
+    fun playGame(game: com.simbio.don.game.MiniGame, score: Int, reward: Long, granted: (Long) -> Unit) =
+        viewModelScope.launch { granted(repo.playGame(game, score, reward, LocalDate.now())) }
     fun discard(ids: Set<Long>) = viewModelScope.launch { repo.discard(ids) }
 
     fun updateSalary(amount: Long) = viewModelScope.launch { repo.updateSalary(amount) }

@@ -9,6 +9,8 @@
 소분류·직접 만든 카테고리, 할부(달마다 나눠 적기), 반복 수입, 앱 잠금(4자리), 연간 통계도 된다.
 실제로 아낀 비율만큼 **마일**이 쌓이고(키우면 주 0.5% 복리), 마일로 이사·가구·옷을 사고, 모의로 산 물건은 카드로 모인다.
 모의 쇼핑은 **돈't 몰**(상품 상세·장바구니, 선택형 네이버 쇼핑 검색 — 검색어만 보냄)에서.
+도착한 몰 물건은 **도감**(76칸, 상품마다 도트 그림)을 채우고, **세트** 네 개를 다 모으면 칭호를 단다.
+**미니게임**(얼마일까? · 짝 맞추기)은 이번 주 결산 마일의 10%까지만 마일을 주고, 주말 **결산쇼**는 결과 → 도착 카드 뒤집기 → 마일 → 새 도감 순으로 보여준다.
 
 - **형태**: Android 네이티브 앱 (Google Play 목표, 초기엔 개인용 APK)
 - **실제 돈 연결 없음**: 계좌·결제 API 연동 없이 순수 모의 (규제 이슈 0)
@@ -25,7 +27,7 @@
 - `core/` — 순수 Kotlin 로직 (Android 의존 없음, 단위 테스트)
   - `budget/` — 월급날 기준 한 달(`PayCycle`), 주 예산 배분(`BudgetEngine`), 이월·예외 지출·결산 판정(`CycleLedger`, `Settlement`), 월급 입금 판별·고정 지출 날짜(`Payday`)
   - `notify/` — 결제 알림 규칙(앱 선택 → 키워드), 금액 추출, 중복·고정비 의심 판정(`ReviewPolicy`)
-  - `game/` — 모의 구매·집·기분, 캐릭터 모습(`CharacterLook`), 마일리지·카드(`Miles`), 가게 값(`Shop`)
+  - `game/` — 모의 구매·집·기분, 캐릭터 모습(`CharacterLook`), 마일리지·카드(`Miles`), 가게 값(`Shop`), 몰 상품(`Catalog`), 도감·세트(`Dex`, `Sets`), 미니게임(`MiniGames`)
 - `app/` — Android 앱 (Kotlin · Jetpack Compose · Room), 쇼핑앱식 UI (`ui/kit`) + 게임 속 도트 그림 (`tools/pixelart`)
 - `tools/pixelart/` — 도트 그림 생성기 (`python3 tools/pixelart/make_art.py`) — [docs/art-spec.md](docs/art-spec.md)
   - `notify/PaymentListenerService` — 고른 앱의 결제 알림만 읽어 기기 안에서 기록

@@ -156,7 +156,7 @@ private fun mileKindLabel(kind: String) = when (kind) {
 // ── 카드 ────────────────────────────────────────────────────
 
 /** 테두리 색 (값 구간) */
-private fun PriceTier.color(): Color = when (this) {
+internal fun PriceTier.color(): Color = when (this) {
     PriceTier.BRONZE -> Color(0xFFC08A5B)
     PriceTier.SILVER -> Color(0xFFA9B2BF)
     PriceTier.GOLD -> Color(0xFFE2B23C)
@@ -164,7 +164,7 @@ private fun PriceTier.color(): Color = when (this) {
 }
 
 /** 반짝이 (그 주 아낀 비율) */
-private fun CardGrade.foil(): Brush? = when (this) {
+internal fun CardGrade.foil(): Brush? = when (this) {
     CardGrade.NORMAL -> null
     CardGrade.RARE -> Brush.linearGradient(listOf(Color(0x339CC0F5), Color(0x00FFFFFF), Color(0x339CC0F5)))
     CardGrade.LEGEND -> Brush.linearGradient(listOf(Color(0x55FFD25E), Color(0x33F59BBA), Color(0x339CC0F5), Color(0x55FFD25E)))
@@ -192,7 +192,7 @@ fun ItemCard(item: MockItem, salary: Long, modifier: Modifier = Modifier) {
             Modifier.fillMaxWidth().aspectRatio(1.3f).clip(RoundedCornerShape(10.dp)).background(DonColors.GameSurface)
                 .let { m -> grade.foil()?.let { m.background(it) } ?: m },
             contentAlignment = Alignment.Center,
-        ) { com.simbio.don.app.ui.kit.ItemIcon16(item.kind, 64.dp) }
+        ) { com.simbio.don.app.ui.kit.PixelImage(com.simbio.don.app.ui.kit.icon16For(item.name, item.kind), 64.dp) }
         Text(item.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, maxLines = 1)
         Text(won(item.price), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
         val share = Cards.salaryShareBps(item.price, salary)
@@ -265,7 +265,7 @@ fun MilesCard(state: MileState, cardCount: Int, onMiles: () -> Unit, onFurniture
 }
 
 @Composable
-private fun MenuTile(label: String, icon: Int, modifier: Modifier, onClick: () -> Unit) {
+internal fun MenuTile(label: String, icon: Int, modifier: Modifier, onClick: () -> Unit) {
     Column(
         modifier.clip(RoundedCornerShape(12.dp)).background(DonColors.Surface)
             .clickable(role = Role.Button, onClick = onClick)

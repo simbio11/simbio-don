@@ -49,6 +49,7 @@ import com.simbio.don.app.ui.kit.SubButton
 import com.simbio.don.app.ui.kit.TextButton
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.kit.card
+import com.simbio.don.app.ui.kit.icon16
 import com.simbio.don.game.CartLine
 import com.simbio.don.game.Cards
 import com.simbio.don.game.Catalog
@@ -248,7 +249,7 @@ private fun ProductGrid(products: List<Product>, salary: Long, onOpen: (Product)
                 row.forEach { p ->
                     Column(Modifier.weight(1f).card().clickable { onOpen(p) }.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Box(Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(10.dp)).background(DonColors.SurfaceAlt), contentAlignment = Alignment.Center) {
-                            com.simbio.don.app.ui.kit.ItemIcon16(p.kind, 56.dp)
+                            com.simbio.don.app.ui.kit.PixelImage(p.icon16(), 56.dp)
                         }
                         Text(p.name, fontSize = 13.sp, color = DonColors.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(won(p.price), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
@@ -272,7 +273,7 @@ private fun ProductDetail(product: Product, store: String, wallet: Long, salary:
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(Modifier.fillMaxWidth().aspectRatio(1.4f).card(DonColors.SurfaceAlt), contentAlignment = Alignment.Center) {
-                com.simbio.don.app.ui.kit.ItemIcon16(product.kind, 128.dp)
+                com.simbio.don.app.ui.kit.PixelImage(product.icon16(), 128.dp)
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -332,7 +333,7 @@ private fun CartPage(cart: List<CartLine>, wallet: Long, onCart: (List<CartLine>
             if (cart.isEmpty()) Text("장바구니가 비었어요.", fontSize = 14.sp, color = DonColors.InkMuted, modifier = Modifier.padding(vertical = 24.dp))
             cart.forEachIndexed { i, l ->
                 Row(Modifier.fillMaxWidth().card().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ItemThumb(l.product.kind, 56.dp)
+                    ItemThumb(l.product.kind, 56.dp, name = l.product.name)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(l.product.name, fontSize = 14.sp, color = DonColors.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)

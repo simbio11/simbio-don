@@ -56,6 +56,8 @@ fun HouseScreen(
     onMiles: () -> Unit = {},
     onFurniture: () -> Unit = {},
     onCards: () -> Unit = {},
+    onDex: () -> Unit = {},
+    onGame: (com.simbio.don.game.MiniGame) -> Unit = {},
     onBuyWish: (MockItem) -> Unit = {},
     onGiveUpWish: (MockItem) -> Unit = {},
     weather: Weather? = null,
@@ -70,7 +72,10 @@ fun HouseScreen(
     ) {
         Row(Modifier.padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("내 ${house.level.label}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("내 ${house.level.label}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                    if (home.title.isNotEmpty()) Badge("「${home.title}」", DonColors.GameDeep)
+                }
                 Text(
                     "나는 지금 ${home.mood.label}" + if (weather != null && city != null) " · $city ${weather.label}" else "",
                     fontSize = 13.sp,
@@ -126,6 +131,8 @@ fun HouseScreen(
             onDress = onDress,
         )
 
+        PlayCard(home.mockItems, home.game.left, home.game.cap, onDex = onDex, onGame = onGame)
+
         if (house.wouldHaveCost > 0) {
             Row(
                 Modifier.fillMaxWidth().card().padding(18.dp),
@@ -157,7 +164,7 @@ fun HouseScreen(
             SectionCard("배송 중 ${home.shipping.size}개", trailing = { Badge("주말 결산 때 도착", DonColors.Game) }) {
                 home.shipping.forEach { m ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ItemThumb(m.kind, 48.dp)
+                        ItemThumb(m.kind, 48.dp, name = m.name)
                         Spacer(Modifier.size(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(m.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, color = DonColors.Ink)
@@ -192,7 +199,7 @@ private fun WishlistCard(home: HomeState, onBuy: (MockItem) -> Unit, onGiveUp: (
             if (i > 0) Divider(Modifier.padding(vertical = 8.dp))
             val ready = w.createdAt?.let { Wishlist.isReady(it, home.now) } ?: true
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ItemThumb(w.kind, 52.dp)
+                ItemThumb(w.kind, 52.dp, name = w.name)
                 Spacer(Modifier.size(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(w.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DonColors.Ink, maxLines = 1)
@@ -242,7 +249,7 @@ private fun DiscardDialog(title: String, items: List<MockItem>, onDismiss: () ->
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(checked = m.id in selected, onCheckedChange = null)
-                        ItemThumb(m.kind, 36.dp)
+                        ItemThumb(m.kind, 36.dp, name = m.name)
                         Spacer(Modifier.size(8.dp))
                         Text("${m.name} · ${won(m.price)}", fontSize = 13.sp)
                     }

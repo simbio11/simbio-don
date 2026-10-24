@@ -24,7 +24,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.Dp
 import com.simbio.don.app.R
+import com.simbio.don.app.ui.pixel.ProductIcons
+import com.simbio.don.game.Dex
 import com.simbio.don.game.ItemKind
+import com.simbio.don.game.Product
 import kotlin.math.roundToInt
 
 // 도트 그림은 게임 안(방·캐릭터·모의로 산 물건)에만 쓴다.
@@ -38,13 +41,18 @@ internal fun pixelScale(px: Int, size: Dp): Int = with(LocalDensity.current) { (
  * (3.94배처럼 소수 배율이면 칸마다 굵기가 달라져 지저분해진다).
  */
 @Composable
-fun PixelImage(@DrawableRes id: Int, size: Dp, modifier: Modifier = Modifier, contentDescription: String? = null) {
+fun PixelImage(@DrawableRes id: Int, size: Dp, modifier: Modifier = Modifier, contentDescription: String? = null, silhouette: Color? = null) {
     val img = ImageBitmap.imageResource(id)
     val scale = pixelScale(maxOf(img.width, img.height), size)
     val density = LocalDensity.current
     val w = with(density) { (img.width * scale).toDp() }
     val h = with(density) { (img.height * scale).toDp() }
-    Image(img, contentDescription, modifier.size(w, h), filterQuality = FilterQuality.None)
+    Image(
+        img, contentDescription, modifier.size(w, h),
+        filterQuality = FilterQuality.None,
+        // 아직 못 모은 칸: 모양만 한 색으로
+        colorFilter = silhouette?.let { androidx.compose.ui.graphics.ColorFilter.tint(it) },
+    )
 }
 
 @DrawableRes
@@ -85,11 +93,19 @@ fun ItemKind.icon16(trash: Boolean = false): Int = when (this) {
 @Composable
 fun ItemIcon16(kind: ItemKind, size: Dp, modifier: Modifier = Modifier) = PixelImage(kind.icon16(), size, modifier)
 
-/** 상품 사진 자리: 옅은 회색 둥근 칸 가운데 도트 물건 */
+/** 돈't 몰 상품 그림 (없으면 물건 종류 그림) */
+@DrawableRes
+fun Product.icon16(): Int = ProductIcons.byId[id] ?: kind.icon16()
+
+/** 이름이 몰 상품("오버핏 맨투맨 (M)")이면 그 상품 그림, 아니면 물건 종류 그림 */
+@DrawableRes
+fun icon16For(name: String?, kind: ItemKind): Int = name?.let { Dex.productOf(it) }?.icon16() ?: kind.icon16()
+
+/** 상품 사진 자리: 옅은 회색 둥근 칸 가운데 도트 물건 ([name]이 몰 상품이면 그 그림) */
 @Composable
-fun ItemThumb(kind: ItemKind, size: Dp, modifier: Modifier = Modifier, fill: Color = Color(0xFFF2F4F6)) {
+fun ItemThumb(kind: ItemKind, size: Dp, modifier: Modifier = Modifier, fill: Color = Color(0xFFF2F4F6), name: String? = null) {
     Box(modifier.size(size).clip(RoundedCornerShape(size / 5)).background(fill), contentAlignment = Alignment.Center) {
-        ItemIcon16(kind, size * 0.62f)
+        PixelImage(icon16For(name, kind), size * 0.62f)
     }
 }
 

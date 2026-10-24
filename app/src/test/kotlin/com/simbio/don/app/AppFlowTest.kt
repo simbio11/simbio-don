@@ -5,7 +5,9 @@ import androidx.compose.ui.test.performSemanticsAction
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -562,5 +564,98 @@ class AppFlowTest {
         val h = readDb { houseNow() }!!
         assertEquals("big", com.simbio.don.game.CharacterLook.decode(h.look).eyes)
         assertEquals(false, h.freeMakeover)
+    }
+    /** M3: 도감·세트 칭호 → 미니게임 둘 → 결산쇼 (카드 뒤집기·마일·새 도감·세트 완성) */
+    @Test
+    fun 도감_미니게임_결산쇼() {
+        val today = LocalDate.now()
+        val start = today.minusDays(12)
+        val repo = DonRepository.get(appContext)
+        fun buy(id: String, option: String?, date: LocalDate) {
+            val p = com.simbio.don.game.Catalog.byId(id)!!
+            kotlinx.coroutines.runBlocking {
+                repo.buyMock(p.name + (option?.let { " ($it)" } ?: ""), p.price, p.kind, "돈't 몰", date, java.time.LocalDateTime.now())
+            }
+        }
+        background {
+            repo.completeOnboarding(3_300_000, start.dayOfMonth, listOf(FixedExpense("월세", 700_000)), 400_000, DayOfWeek.MONDAY, start, null)
+            val dao = DonDatabase.get(appContext).dao()
+            // 이미 도착한 물건: 스트리트 세트 전부 + 운동 시작 세트 셋
+            listOf("c1" to "M", "c10" to "L", "s1" to "250", "b2" to "블랙", "c7" to "M", "s2" to "260", "e3" to "블랙").forEach { (id, o) -> buy(id, o, start) }
+            dao.updateMocks(dao.mockPurchasesNow().mapIndexed { i, m -> m.copy(status = com.simbio.don.game.PurchaseStatus.DELIVERED.name, grade = if (i % 3 == 0) "LEGEND" else "RARE") })
+            // 지난주에 산 것: 결산쇼에서 도착 (무선 이어폰이 오면 운동 시작 세트 완성)
+            buy("e1", "화이트", start)
+            buy("m4", null, start)
+            buy("d2", null, start)
+            dao.insertMileTx(com.simbio.don.app.data.MileTxEntity(epochDay = today.toEpochDay(), amount = 2_500, kind = "EARN", memo = "지난 결산", refKey = "t#9:EARN"))
+        }
+        waitText("실제 내 돈 · 이번 주")
+        rule.onNodeWithText("내 집").performClick()
+        waitText("모으기 · 놀이")
+        rule.onNodeWithText("모으기 · 놀이").performScrollTo()
+        shot("51_house_play")
+
+        // 도감 → 세트·칭호
+        rule.onNodeWithText("도감 7/76").performScrollTo().performClick()
+        waitText("모은 칸")
+        shot("52_dex")
+        rule.onNodeWithText("세트·칭호").performClick()
+        waitText("「패션 피플」 달기")
+        shot("53_sets")
+        rule.onNodeWithText("「패션 피플」 달기").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        rule.waitUntil(5_000) { readDb { houseNow() }?.title == "패션 피플" }
+        rule.onNodeWithContentDescription("뒤로").performClick()
+        waitText("「패션 피플」")
+
+        // 얼마일까? 다섯 문제
+        rule.onNodeWithText("얼마일까?").performScrollTo().performClick()
+        waitText("이 물건은 얼마일까요?")
+        shot("54_quiz")
+        repeat(com.simbio.don.game.PriceQuiz.ROUNDS) { i ->
+            rule.onAllNodes(hasText("원", substring = true) and hasClickAction()).onFirst().performClick()
+            if (i == 0) shot("55_quiz_answer")
+            val next = if (i < com.simbio.don.game.PriceQuiz.ROUNDS - 1) "다음 문제" else "결과 보기"
+            rule.onNodeWithText(next).performScrollTo().performClick()
+        }
+        waitText("문제 중", substring = true)
+        rule.waitUntil(5_000) { readDb { gamePlaysNow() }.size == 1 }
+        shot("56_quiz_result")
+        val play = readDb { gamePlaysNow() }.single()
+        assertEquals(play.score * 10L, play.miles) // 상한(250) 안
+        rule.onNodeWithText("다른 게임").performScrollTo().performClick()
+        waitText("이번 주 미니게임 마일")
+        shot("57_games")
+
+        // 짝 맞추기: 두 장 뒤집기
+        rule.onNodeWithText("짝 맞추기").performClick()
+        waitText("뒤집은 횟수 0")
+        shot("58_memory")
+        rule.onAllNodesWithContentDescription("뒤집힌 카드")[0].performClick()
+        rule.onAllNodesWithContentDescription("뒤집힌 카드")[0].performClick()
+        waitText("뒤집은 횟수 1")
+        shot("59_memory_flip")
+        rule.onNodeWithContentDescription("뒤로").performClick()
+        rule.onNodeWithContentDescription("뒤로").performClick()
+
+        // 결산쇼
+        rule.onNodeWithText("홈").performClick()
+        waitText("결산 보기")
+        rule.onNodeWithText("결산 보기").performClick()
+        waitText("지난주 결산")
+        shot("60_show_result")
+        rule.onNodeWithText("다음").performClick()
+        waitText("예산을 지켜서 전부 집에 도착해요!")
+        rule.mainClock.advanceTimeBy(2_000)
+        shot("61_show_cards")
+        rule.onNodeWithText("다음").performClick()
+        waitText("게임 · 마일")
+        shot("62_show_miles")
+        rule.onNodeWithText("다음").performClick()
+        waitText("도감에 새로 3칸!")
+        waitText("「운동 시작」 세트 완성!")
+        shot("63_show_dex")
+        rule.onNodeWithText("결산 완료").performClick()
+        rule.waitUntil(5_000) { readDb { allSettledWeeksNow() }.isNotEmpty() }
+        rule.waitUntil(5_000) { readDb { mockPurchasesNow() }.none { it.status == com.simbio.don.game.PurchaseStatus.SHIPPING.name } }
     }
 }

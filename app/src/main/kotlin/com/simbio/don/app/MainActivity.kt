@@ -61,6 +61,8 @@ import com.simbio.don.app.ui.AppState
 import com.simbio.don.app.ui.AssetsScreen
 import com.simbio.don.app.ui.BudgetsScreen
 import com.simbio.don.app.ui.CardsScreen
+import com.simbio.don.app.ui.CollectionScreen
+import com.simbio.don.app.ui.MiniGameScreen
 import com.simbio.don.app.ui.CategoryManageScreen
 import com.simbio.don.app.ui.DayPhase
 import com.simbio.don.app.ui.DonColors
@@ -133,6 +135,8 @@ private sealed interface Overlay {
     data object Mall : Overlay
     data object Categories : Overlay
     data object RecurringIncome : Overlay
+    data object Dex : Overlay
+    data class Games(val start: com.simbio.don.game.MiniGame?) : Overlay
 
     /** 새 암호 정하기 (켜기·바꾸기) */
     data object SetPin : Overlay
@@ -335,6 +339,8 @@ class MainActivity : ComponentActivity() {
                         onMiles = { overlay = Overlay.Miles },
                         onFurniture = { overlay = Overlay.Furniture },
                         onCards = { overlay = Overlay.Cards },
+                        onDex = { overlay = Overlay.Dex },
+                        onGame = { overlay = Overlay.Games(it) },
                         onRecycle = { vm.recycle() },
                         onDiscard = { vm.discard(it) },
                         onBuyWish = { vm.buyWished(it.id) },
@@ -723,6 +729,14 @@ class MainActivity : ComponentActivity() {
             }
             Overlay.Miles -> MilesScreen(home.miles, onDeposit = { vm.depositMiles(it) }, onWithdraw = { vm.withdrawMiles(it) }, onBack = close)
             Overlay.Cards -> CardsScreen(home.mockItems, home.salary, onBack = close)
+            Overlay.Dex -> CollectionScreen(home.mockItems, home.title, onTitle = { vm.chooseTitle(it) }, onMall = { open(Overlay.Mall) }, onBack = close)
+            is Overlay.Games -> MiniGameScreen(
+                state = home.game,
+                salary = home.salary,
+                start = o.start,
+                onPlay = { g, score, reward, granted -> vm.playGame(g, score, reward, granted) },
+                onBack = close,
+            )
             Overlay.Goals -> {
                 val all by vm.goals.collectAsStateWithLifecycle()
                 GoalsScreen(

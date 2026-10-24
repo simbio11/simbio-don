@@ -283,6 +283,7 @@ enum class UiIcon(@DrawableRes val res: Int) {
     PARTY(R.drawable.ic_celebration_fill),
     WALLET(R.drawable.ic_account_balance_wallet_fill),
     TROPHY(R.drawable.ic_emoji_events_fill),
+    STAR(R.drawable.ic_star_fill),
     CLOCK(R.drawable.ic_schedule_fill),
     SEARCH(R.drawable.ic_search),
     HEART(R.drawable.ic_favorite),
