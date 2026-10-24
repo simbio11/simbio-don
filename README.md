@@ -13,6 +13,8 @@
 **미니게임**(얼마일까? · 짝 맞추기)은 이번 주 결산 마일의 10%까지만 마일을 주고, 주말 **결산쇼**는 결과 → 도착 카드 뒤집기 → 마일 → 새 도감 순으로 보여준다.
 홈에서 **이대로 쓰면 월말에 얼마 남는지**(평일·주말 속도로 예측), **이번 달 달력**(무지출 도장), 일주일 안에 나갈 돈, **정기 결제 같은 것**, 한 줄 분석을 보여준다.
 적금·주식 같은 **모으는 돈**을 넣으면 월급날마다 **자산 점검**(넣은 돈 · 지금 금액)으로 얼마나 불었는지 본다. 월급은 달마다 통장에 들어온 금액으로 저절로 바뀌고 알려준다.
+생일·병원처럼 **돈 나갈 계획**을 미리 적으면 실제 쓴 돈과 따로(점선) 보이고 예측에 들어가며, 쓰고 나면 계획과 실제를 견준다. **내 계좌끼리 옮긴 돈**은 지출·수입이 아니라 이체 한 건으로 적는다.
+홈 화면 **위젯**은 다섯 가지 — 이번 주 남은 돈, **무지출 잔디**(깃허브 잔디처럼), **이번 달 달력**, 모은 돈, 내 캐릭터. 얼마일까?는 네이버 쇼핑 키가 있으면 **실제 상품의 지금 최저가**로 문제를 낸다.
 
 - **형태**: Android 네이티브 앱 (Google Play 목표, 초기엔 개인용 APK)
 - **실제 돈 연결 없음**: 계좌·결제 API 연동 없이 순수 모의 (규제 이슈 0)
@@ -27,17 +29,17 @@
 ## 구조
 
 - `core/` — 순수 Kotlin 로직 (Android 의존 없음, 단위 테스트)
-  - `budget/` — 월급날 기준 한 달(`PayCycle`), 주 예산 배분(`BudgetEngine`), 이월·예외 지출·결산 판정(`CycleLedger`, `Settlement`), 월급 입금 판별·고정 지출 날짜(`Payday`), 월말 예측·무지출·정기 결제·한 줄 분석(`Insights`)
-  - `notify/` — 결제 알림 규칙(앱 선택 → 키워드), 금액 추출, 중복·고정비 의심 판정(`ReviewPolicy`)
+  - `budget/` — 월급날 기준 한 달(`PayCycle`), 주 예산 배분(`BudgetEngine`), 이월·예외 지출·결산 판정(`CycleLedger`, `Settlement`), 월급 입금 판별·고정 지출 날짜(`Payday`), 월말 예측·무지출·정기 결제·한 줄 분석(`Insights`), 돈 나갈 계획(`Plans`), 위젯 잔디(`Grass`)
+  - `notify/` — 결제 알림 규칙(앱 선택 → 키워드), 금액 추출, 중복·고정비 의심 판정(`ReviewPolicy`), 내 계좌끼리 송금(`SelfTransfer`)
   - `game/` — 모의 구매·집·기분, 캐릭터 모습(`CharacterLook`), 마일리지·카드(`Miles`), 가게 값(`Shop`), 몰 상품(`Catalog`), 도감·세트(`Dex`, `Sets`), 미니게임(`MiniGames`)
 - `app/` — Android 앱 (Kotlin · Jetpack Compose · Room), 쇼핑앱식 UI (`ui/kit`) + 게임 속 도트 그림 (`tools/pixelart`)
 - `tools/pixelart/` — 도트 그림 생성기 (`python3 tools/pixelart/make_art.py`) — [docs/art-spec.md](docs/art-spec.md)
   - `notify/PaymentListenerService` — 고른 앱의 결제 알림만 읽어 기기 안에서 기록
   - `notify/DailyReminder` — 매일 밤 9시 지출 요약·결산 알림 (설정에서 켤 때만)
   - `lock/AppLock` — 앱 잠금 (4자리, 소금 친 해시로 이 폰에만)
-  - `widget/WeekWidget` — 홈 화면 위젯 (이번 주 남은 돈 + 지출 입력)
+  - `widget/` — 홈 화면 위젯: 이번 주 남은 돈(`WeekWidget`), 무지출 잔디·이번 달 달력·모은 돈·내 캐릭터(`DonWidgets`, Canvas 그림 `WidgetArt`)
   - `weather/WeatherService` — 창밖 날씨 (Open-Meteo, 고른 도시 좌표만 보냄. 설정에서 끌 수 있음)
-  - `mall/NaverShopping` — 돈't 몰 네이버 쇼핑 검색 (선택, 사용자 키, 검색어만 보냄)
+  - `mall/NaverShopping` — 돈't 몰 네이버 쇼핑 검색 (선택, 사용자 키, 검색어만 보냄), `mall/RealQuiz` — 얼마일까? 실제 상품 문제
   - `data/` — Room 저장소(월급날 자동 새 달·고정 지출 자동 기록·자산 잔액·백업), `ui/` — 화면
 
 ```sh

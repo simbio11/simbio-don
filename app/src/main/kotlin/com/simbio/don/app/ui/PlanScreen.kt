@@ -202,8 +202,10 @@ fun PlanScreen(
 
             if (upcoming.isNotEmpty()) PlanSection("다가오는 계획", upcoming, matches, today, onSpent, onLink, onCancel, onDelete)
             if (overdue.isNotEmpty()) PlanSection("날짜가 지난 계획", overdue, matches, today, onSpent, onLink, onCancel, onDelete)
-            if (open.isEmpty()) {
+            if (plans.isEmpty()) {
                 Text("아직 계획이 없어요. 생일·병원·여행처럼 쓸 일이 정해진 돈을 미리 적어 두면, 예산이 갑자기 모자라지 않아요.", fontSize = 13.sp, color = DonColors.InkMuted)
+            } else if (open.isEmpty()) {
+                Text("다가오는 계획이 없어요.", fontSize = 13.sp, color = DonColors.InkMuted)
             }
             if (done.isNotEmpty()) {
                 SectionCard("쓴 계획 (계획 → 실제)") {

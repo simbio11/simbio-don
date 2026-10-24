@@ -740,4 +740,48 @@ class AppFlowTest {
         rule.onNodeWithText("닫기").performClick()
         waitText("넣은 돈 7,200,000원")
     }
+    /** 0.14: 돈 나갈 계획 — 실제와 따로 적고, 가계부에 점선으로, "썼어요"로 실제와 견준다 */
+    @Test
+    fun 돈_나갈_계획() {
+        val today = LocalDate.now()
+        val repo = DonRepository.get(appContext)
+        background { repo.completeOnboarding(3_300_000, today.dayOfMonth, listOf(FixedExpense("월세", 700_000)), 500_000, DayOfWeek.MONDAY, today) }
+        waitText("계획 +")
+        rule.onNodeWithText("계획 +").performScrollTo().performClick()
+        waitText("돈 나갈 일 적기")
+        rule.onNodeWithText("내일").performClick()
+        rule.onAllNodes(hasSetTextAction() and hasText("얼마쯤")).onFirst().performTextReplacement("50000")
+        rule.onAllNodes(hasSetTextAction() and hasText("무엇에?", substring = true)).onFirst().performTextReplacement("친구 생일 선물")
+        rule.onNodeWithText("계획 추가").performScrollTo().performClick()
+        rule.waitUntil(5_000) { readDb { plansNow() }.size == 1 }
+        waitText("다가오는 계획")
+        rule.onNodeWithText("다가오는 계획").performScrollTo()
+        shot("80_plans")
+        // 실제 지출엔 안 들어간다
+        assertEquals(0, readDb { allEntriesNow() }.count { it.type == EntryType.SPEND.name })
+
+        // 가계부 달력에 점선 계획
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        waitText("이대로 쓰면")
+        rule.onNodeWithText("가계부").performClick()
+        waitText("일일")
+        rule.onNodeWithText("달력").performClick()
+        rule.onNodeWithContentDescription(com.simbio.don.app.ui.shortDate(today.plusDays(1))).performScrollTo().performClick()
+        waitText("친구 생일 선물")
+        shot("81_ledger_plan")
+
+        // 썼어요 → 입력 화면 (계획이 채워짐) → 실제 43,000원
+        rule.onNodeWithText("홈").performClick()
+        rule.onNodeWithText("계획 +").performScrollTo().performClick()
+        waitText("다가오는 계획")
+        rule.onNodeWithText("썼어요").performScrollTo().performClick()
+        waitText("금액")
+        rule.onAllNodes(hasSetTextAction() and hasText("50,000", substring = true)).onFirst().performTextReplacement("43000")
+        rule.onNodeWithText("저장").performClick()
+        rule.waitUntil(5_000) { readDb { plansNow() }.single().done }
+        waitText("계획보다 7,000원 덜 썼어요")
+        rule.onNodeWithText("쓴 계획 (계획 → 실제)").performScrollTo()
+        shot("82_plan_done")
+        assertEquals(43_000L, readDb { plansNow() }.single().doneAmount)
+    }
 }
