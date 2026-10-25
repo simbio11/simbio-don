@@ -114,7 +114,7 @@ class TransitionsTest {
         rule.waitUntilAtLeastOneExists(hasText("보고 싶은 카드만 켜고", substring = true), 5_000)
         // "이대로 쓰면" 숨기고, "최근 내역"을 맨 위로
         rule.onAllNodes(androidx.compose.ui.test.isToggleable())[1].performClick()
-        repeat(HomeCard.entries.size) { rule.onNodeWithContentDescription("최근 내역 위로").performClick() }
+        repeat(HomeCard.entries.size) { rule.onNodeWithContentDescription("최근 내역 위로").performScrollTo().performClick() }
         assertEquals(HomeCard.RECENT, HomeCards.layout.order.first())
         assertTrue(HomeCard.FORECAST in HomeCards.layout.hidden)
         System.getProperty("screenshotDir")?.let { save("t6_home_cards", capture()) }

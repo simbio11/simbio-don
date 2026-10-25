@@ -11,7 +11,7 @@ import org.junit.Test
 class HomeLayoutTest {
     @Test
     fun 차례를_바꾸고_숨기고_저장했다_되살린다() {
-        val l = HomeLayout.Default.move(HomeCard.SAVED, -5).toggle(HomeCard.ROOM)
+        val l = HomeLayout.Default.move(HomeCard.SAVED, -HomeCard.entries.size).toggle(HomeCard.ROOM)
         assertEquals(HomeCard.SAVED, l.order.first())
         assertFalse(HomeCard.ROOM in l.shown)
         assertEquals(l, HomeLayout.decode(l.encode()))
