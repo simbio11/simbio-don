@@ -54,6 +54,7 @@ import com.simbio.don.app.data.GoalMoveEntity
 import com.simbio.don.app.data.GoalSource
 import com.simbio.don.app.data.AccountBalance
 import com.simbio.don.app.ui.kit.pressable
+import com.simbio.don.app.ui.kit.popIn
 import com.simbio.don.app.ui.kit.FilterChip
 import com.simbio.don.app.data.GoalProgress
 import com.simbio.don.app.data.HomeState
@@ -379,14 +380,20 @@ fun GoalsScreen(
                             }
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            if (!p.linked) SmallButton(onClick = { dialog = GoalDialog.Put(p) }) { Text("넣기") }
-                            if (!p.linked && p.filled > 0) TextButton(onClick = { dialog = GoalDialog.Take(p) }) { Text("빼기") }
+                            if (!p.linked) SmallButton(onClick = { dialog = if (dialog == GoalDialog.Put(p)) null else GoalDialog.Put(p) }) { Text("넣기") }
+                            if (!p.linked && p.filled > 0) TextButton(onClick = { dialog = if (dialog == GoalDialog.Take(p)) null else GoalDialog.Take(p) }) { Text("빼기") }
                             TextButton(onClick = { if (p.goal.accountId != null) onLink(p.goal.id, null) else dialog = GoalDialog.Link(p) }) {
                                 Text(if (p.goal.accountId != null) "통장 떼기" else "통장 잇기")
                             }
                             if (i > 0) TextButton(onClick = { onUpdate(p.goal.copy(sortOrder = goals[i - 1].goal.sortOrder - 1)) }) { Text("위로") }
                             if (p.filled > 0) TextButton(onClick = { onUse(p.goal.id) }, color = DonColors.Good) { Text("썼어요") }
                             TextButton(onClick = { onDelete(p.goal) }, color = DonColors.InkMuted) { Text("지우기") }
+                        }
+                        // 넣기·빼기는 팝업 대신 그 목표 바로 아래에 펼친다
+                        when (val d = dialog) {
+                            is GoalDialog.Put -> if (d.goal.goal.id == p.goal.id) PutPanel(p, split.unallocated, { amount, source -> onPut(p.goal.id, amount, source); dialog = null }) { dialog = null }
+                            is GoalDialog.Take -> if (d.goal.goal.id == p.goal.id) TakePanel(p, { amount -> onTake(p.goal.id, amount); dialog = null }) { dialog = null }
+                            else -> Unit
                         }
                     }
                 }
@@ -431,14 +438,12 @@ fun GoalsScreen(
         }
     }
     when (val d = dialog) {
-        is GoalDialog.Put -> PutDialog(d.goal, split.unallocated, { amount, source -> onPut(d.goal.goal.id, amount, source); dialog = null }) { dialog = null }
-        is GoalDialog.Take -> TakeDialog(d.goal, { amount -> onTake(d.goal.goal.id, amount); dialog = null }) { dialog = null }
         is GoalDialog.Link -> LinkDialog(
             d.goal,
             accounts.filter { !it.account.hidden && it.type != com.simbio.don.app.data.AccountType.CARD && it.account.id !in goals.mapNotNull { g -> g.goal.accountId } },
             { id -> onLink(d.goal.goal.id, id); dialog = null },
         ) { dialog = null }
-        null -> Unit
+        else -> Unit
     }
 }
 
@@ -450,63 +455,63 @@ private fun SplitNumber(label: String, amount: Long, color: Color, modifier: Mod
     }
 }
 
-/** 목표에 넣기: 아낀 돈에서(안 넣은 만큼까지) / 따로 생긴 돈 */
+/** 목표에 넣기 (목표 아래에 펼침): 아낀 돈에서(안 넣은 만큼까지) / 따로 생긴 돈 */
 @Composable
-private fun PutDialog(p: GoalProgress, unallocated: Long, onPut: (Long, GoalSource) -> Unit, onDismiss: () -> Unit) {
+private fun PutPanel(p: GoalProgress, unallocated: Long, onPut: (Long, GoalSource) -> Unit, onClose: () -> Unit) {
     var source by remember { mutableStateOf(if (unallocated > 0) GoalSource.SAVED else GoalSource.EXTRA) }
     var amount by remember { mutableStateOf("") }
     val v = amount.toLongOrNull() ?: 0
     val over = source == GoalSource.SAVED && v > unallocated
     val left = (p.goal.target - p.filled).coerceAtLeast(0)
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("'${p.goal.name}'에 넣기") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(source == GoalSource.SAVED, { source = GoalSource.SAVED }, { Text("아낀 돈에서") }, enabled = unallocated > 0)
-                    FilterChip(source == GoalSource.EXTRA, { source = GoalSource.EXTRA }, { Text("따로 생긴 돈") })
-                }
-                Text(
-                    if (source == GoalSource.SAVED) "안 넣은 아낀 돈 ${won(unallocated)}" else "보너스·용돈·중고 판매처럼 생활비 밖에서 생긴 돈",
-                    fontSize = 12.sp,
-                    color = DonColors.InkMuted,
-                )
-                MoneyField("넣을 금액", amount, { amount = it })
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    listOf(10_000L, 50_000L, 100_000L).forEach { n ->
-                        FilterChip(false, { amount = (v + n).toString() }, { Text("+${compactWon(n)}") })
-                    }
-                    if (source == GoalSource.SAVED && unallocated > 0) FilterChip(false, { amount = minOf(unallocated, left.takeIf { it > 0 } ?: unallocated).toString() }, { Text("채울 만큼") })
-                }
-                if (over) Text("아낀 돈은 ${won(unallocated)}까지 넣을 수 있어요", fontSize = 12.sp, color = DonColors.Warn)
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(DonColors.RealSurface).padding(12.dp).popIn(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("'${p.goal.name}'에 넣기", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(source == GoalSource.SAVED, { source = GoalSource.SAVED }, { Text("아낀 돈에서") }, enabled = unallocated > 0)
+            FilterChip(source == GoalSource.EXTRA, { source = GoalSource.EXTRA }, { Text("따로 생긴 돈") })
+        }
+        Text(
+            if (source == GoalSource.SAVED) "안 넣은 아낀 돈 ${won(unallocated)}" else "보너스·용돈·중고 판매처럼 생활비 밖에서 생긴 돈",
+            fontSize = 12.sp,
+            color = DonColors.InkMuted,
+        )
+        MoneyField("넣을 금액", amount, { amount = it })
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            listOf(10_000L, 50_000L, 100_000L).forEach { n ->
+                FilterChip(false, { amount = (v + n).toString() }, { Text("+${compactWon(n)}") })
             }
-        },
-        confirmButton = { TextButton(onClick = { onPut(v, source) }, enabled = v > 0 && !over, color = DonColors.Real) { Text("넣기") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
-        containerColor = DonColors.Surface,
-    )
+            if (source == GoalSource.SAVED && unallocated > 0) {
+                FilterChip(false, { amount = (if (left > 0) minOf(unallocated, left) else unallocated).toString() }, { Text("채울 만큼") })
+            }
+        }
+        if (over) Text("아낀 돈은 ${won(unallocated)}까지 넣을 수 있어요", fontSize = 12.sp, color = DonColors.Warn)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SubButton(onClick = onClose, modifier = Modifier.weight(1f), containerColor = DonColors.Surface) { Text("닫기") }
+            Button(onClick = { onPut(v, source) }, enabled = v > 0 && !over, modifier = Modifier.weight(2f)) { Text("넣기") }
+        }
+    }
 }
 
 /** 목표에서 빼기 (아낀 돈에서 넣었던 만큼은 아낀 돈으로 돌아간다) */
 @Composable
-private fun TakeDialog(p: GoalProgress, onTake: (Long) -> Unit, onDismiss: () -> Unit) {
+private fun TakePanel(p: GoalProgress, onTake: (Long) -> Unit, onClose: () -> Unit) {
     var amount by remember { mutableStateOf("") }
     val v = amount.toLongOrNull() ?: 0
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("'${p.goal.name}'에서 빼기") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("지금 ${won(p.filled)} 모였어요. 아낀 돈에서 넣었던 만큼은 다시 아낀 돈으로 돌아가요.", fontSize = 12.sp, color = DonColors.InkMuted)
-                MoneyField("뺄 금액", amount, { amount = it })
-                FilterChip(false, { amount = p.filled.toString() }, { Text("전부") })
-            }
-        },
-        confirmButton = { TextButton(onClick = { onTake(v) }, enabled = v in 1..p.filled, color = DonColors.Warn) { Text("빼기") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
-        containerColor = DonColors.Surface,
-    )
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(DonColors.WarnSurface).padding(12.dp).popIn(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("'${p.goal.name}'에서 빼기", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+        Text("지금 ${won(p.filled)} 모였어요. 아낀 돈에서 넣었던 만큼은 다시 아낀 돈으로 돌아가요.", fontSize = 12.sp, color = DonColors.InkSoft)
+        MoneyField("뺄 금액", amount, { amount = it })
+        FilterChip(false, { amount = p.filled.toString() }, { Text("전부") })
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SubButton(onClick = onClose, modifier = Modifier.weight(1f), containerColor = DonColors.Surface) { Text("닫기") }
+            Button(onClick = { onTake(v) }, enabled = v in 1..p.filled, containerColor = DonColors.Warn, modifier = Modifier.weight(2f)) { Text("빼기") }
+        }
+    }
 }
 
 /** 목표에 통장 잇기: 그 통장 잔액이 곧 목표에 모은 돈 (저축 합계에서는 빠진다) */

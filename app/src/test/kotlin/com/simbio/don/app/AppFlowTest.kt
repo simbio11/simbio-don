@@ -716,7 +716,9 @@ class AppFlowTest {
         waitText("이대로 쓰면")
 
         // 달력 날을 누르면 가계부의 그날로
-        rule.onNodeWithContentDescription("달력 ${com.simbio.don.app.ui.shortDate(start.plusDays(4))}").performScrollTo().performClick()
+        // 날짜에 따라 그 칸이 화면 오른쪽 아래 + 버튼 밑에 올 수 있어, 눌림 동작으로 바로 누른다
+        rule.onNodeWithContentDescription("달력 ${com.simbio.don.app.ui.shortDate(start.plusDays(4))}").performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
         waitText("회식")
         rule.onNodeWithText("홈").performClick()
 

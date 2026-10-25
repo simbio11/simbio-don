@@ -171,7 +171,7 @@ fun HomeScreen(
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))
                     StatTile("이번 달 수입", won(home.monthIncome), null, Modifier.weight(1f))
-                    StatTile("아낀 돈", won(home.savedSoFar), "지난 주들 합계", Modifier.weight(1f))
+                    StatTile("이번 달 아낀 돈", won(home.savedSoFar), "끝난 주들 합계", Modifier.weight(1f))
                 }
                 }
                 HomeCard.SAVED -> {
