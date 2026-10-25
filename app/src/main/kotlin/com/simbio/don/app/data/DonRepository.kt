@@ -2009,6 +2009,21 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     val goalMoves: Flow<List<GoalMoveEntity>> = dao.goalMoves()
 
+    // ── 지난달 성적표 ─────────────────────────────────────────
+
+    /** 지난달(월급날 기준) 성적표. 지난달이 없으면 null */
+    suspend fun lastMonthReport(): com.simbio.don.budget.MonthReport? {
+        val s = dao.settingsNow() ?: return null
+        val cs = dao.cyclesNow()
+        if (cs.size < 2) return null
+        fun entriesOf(p: com.simbio.don.budget.CyclePlan) = suspend {
+            dao.entriesBetweenNow(p.cycle.start.toEpochDay(), p.cycle.end.toEpochDay()).mapNotNull { runCatching { it.toEntry() }.getOrNull() }
+        }
+        val plan = Summaries.plan(s.payDay, cs, 1)
+        val before = if (cs.size >= 3) entriesOf(Summaries.plan(s.payDay, cs, 2))() else null
+        return com.simbio.don.budget.MonthReports.of(plan, entriesOf(plan)(), before)
+    }
+
     // ── 더치페이 정산 ──────────────────────────────────────────
 
     /** 최근 넉 달 기록으로 만든 정산 장부. [dismissed]: "아니에요"로 다시 안 물을 기록 */

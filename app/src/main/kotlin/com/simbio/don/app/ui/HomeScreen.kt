@@ -72,6 +72,8 @@ fun HomeScreen(
     onSplits: () -> Unit = {},
     aiOn: Boolean = false,
     onAi: (AiMode) -> Unit = {},
+    report: com.simbio.don.budget.MonthReport? = null,
+    onCanBuy: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
@@ -172,6 +174,9 @@ fun HomeScreen(
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay)
                 HomeCard.UPCOMING -> UpcomingCard(home.insights.upcoming, home.today, onPlans)
                 HomeCard.SPLITS -> SplitHomeCard(splits, onSplits)
+                // 새 달 첫 열흘만
+                HomeCard.REPORT -> if (report != null && home.today.toEpochDay() - home.cycle.start.toEpochDay() < 10) ReportCard(report)
+                HomeCard.CANBUY -> CanBuyHomeCard(onCanBuy)
                 HomeCard.AI -> if (aiOn) AiHomeCard(onAi)
                 HomeCard.TILES -> {
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -137,6 +137,7 @@ private sealed interface Overlay {
     data object Budgets : Overlay
     data object Goals : Overlay
     data object Splits : Overlay
+    data object CanBuy : Overlay
     data class Ai(val mode: com.simbio.don.app.ui.AiMode) : Overlay
     data object Settings : Overlay
     data object Search : Overlay
@@ -452,6 +453,8 @@ class MainActivity : ComponentActivity() {
                         onSplits = { screens.push(Overlay.Splits) },
                         aiOn = remember(screens.entries.size) { com.simbio.don.app.ai.Ai.isOn(this@MainActivity) },
                         onAi = { m -> screens.push(Overlay.Ai(m)) },
+                        report = produceState<com.simbio.don.budget.MonthReport?>(null, home.cycle.start) { value = vm.lastMonthReport() }.value,
+                        onCanBuy = { screens.push(Overlay.CanBuy) },
                         onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
                         onAddFixed = { s ->
                             vm.addFixedExpense(s.label, s.amount, s.day)
@@ -1013,6 +1016,15 @@ class MainActivity : ComponentActivity() {
                     onBack = close,
                 )
             }
+            Overlay.CanBuy -> com.simbio.don.app.ui.CanBuyScreen(
+                home = home,
+                onBought = { d -> open(Overlay.Edit(null, d)) },
+                onSkip = { v ->
+                    Toast.makeText(this, "${"%,d".format(v)}원 참았어요. 잘했어요!", Toast.LENGTH_SHORT).show()
+                    close()
+                },
+                onBack = close,
+            )
             Overlay.Splits -> {
                 val book by vm.splits.collectAsStateWithLifecycle()
                 SplitScreen(

@@ -279,11 +279,20 @@ fun SubscriptionCard(subs: List<Subscription>, onAddFixed: (Subscription) -> Uni
     if (shown.isEmpty()) return
     SectionCard("정기 결제 같아요") {
         Text("매달 비슷한 날 같은 금액이 나가요. 고정비로 넣으면 다음 달부터 생활비에서 미리 빼 둬요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        if (shown.size > 1) {
+            Text(
+                "모두 합치면 한 달 ${won(shown.sumOf { it.amount })} · 1년이면 ${won(shown.sumOf { it.amount } * 12)}",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = DonColors.Ink,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
         shown.take(3).forEach { s ->
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(s.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, maxLines = 1)
-                    Text("${won(s.amount)} · 매달 ${s.day}일쯤 · ${s.months}달째", fontSize = 12.sp, color = DonColors.InkMuted)
+                    Text("${won(s.amount)} · 매달 ${s.day}일쯤 · ${s.months}달째 · 1년이면 ${compactWon(s.amount * 12)}원", fontSize = 12.sp, color = DonColors.InkMuted)
                 }
                 TextButton(onClick = { hidden.hide(s.label); gone = hidden.all() }) { Text("아니에요") }
                 SmallButton(onClick = { onAddFixed(s); hidden.hide(s.label); gone = hidden.all() }) { Text("고정비로") }

@@ -58,17 +58,8 @@ object Summaries {
      */
     fun cycles(payDay: Int, cycles: List<CycleEntity>, entries: List<EntryEntity>, today: LocalDate): List<CycleSummary> =
         cycles.mapIndexed { i, c ->
-            val base = c.toPayCycle(payDay)
-            val next = cycles.getOrNull(i - 1)
-            val cycle = next?.let { base.copy(end = LocalDate.ofEpochDay(it.startEpochDay).minusDays(1).coerceAtLeast(base.start)) } ?: base
-            val plan = BudgetEngine.plan(
-                cycle,
-                salary = c.salary,
-                fixedExpenses = listOf(FixedExpense("고정비", c.fixedTotal)),
-                savings = c.savings,
-                settlementDay = DayOfWeek.of(c.settlementDay),
-                disposableOverride = c.budgetOverride,
-            )
+            val plan = plan(payDay, cycles, i)
+            val cycle = plan.cycle
             val inCycle = entries.filter { it.epochDay in cycle.start.toEpochDay()..cycle.end.toEpochDay() }.map { it.toEntry() }
             val ledger = inCycle.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e) }.getOrDefault(l) }
             val leftover = if (i == 0) ledger.savedSoFar(today) else ledger.results().lastOrNull()?.carryOut ?: 0
@@ -85,6 +76,22 @@ object Summaries {
                 leftover = leftover,
             )
         }
+
+    /** [cycles](최신순)의 [i]번째 달 예산 — 다음 달 시작 전날까지 */
+    fun plan(payDay: Int, cycles: List<CycleEntity>, i: Int): com.simbio.don.budget.CyclePlan {
+        val c = cycles[i]
+        val base = c.toPayCycle(payDay)
+        val next = cycles.getOrNull(i - 1)
+        val cycle = next?.let { base.copy(end = LocalDate.ofEpochDay(it.startEpochDay).minusDays(1).coerceAtLeast(base.start)) } ?: base
+        return BudgetEngine.plan(
+            cycle,
+            salary = c.salary,
+            fixedExpenses = listOf(FixedExpense("고정비", c.fixedTotal)),
+            savings = c.savings,
+            settlementDay = DayOfWeek.of(c.settlementDay),
+            disposableOverride = c.budgetOverride,
+        )
+    }
 
     /**
      * 진행 중인 목표: 목표마다 넣고 뺀 돈의 합. 통장을 이었으면 그 통장 잔액 ([balances]: 통장 id → 잔액).
