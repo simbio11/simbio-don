@@ -31,8 +31,8 @@ import java.time.LocalDateTime
 /** 고를 수 있는 위젯 (설정에서 홈 화면에 바로 놓기) */
 enum class WidgetKind(val label: String, val description: String, val cls: Class<*>) {
     WEEK("이번 주 남은 돈", "남은 돈과 오늘 쓸 수 있는 돈, + 버튼으로 바로 적기", WeekWidget::class.java),
-    GRASS("무지출 잔디", "깃허브 잔디처럼 안 쓴 날일수록 진한 초록, 넘긴 날은 빨강", GrassWidget::class.java),
-    CALENDAR("이번 달 달력", "날마다 쓴 돈·무지출 도장·다가올 계획", CalendarWidget::class.java),
+    GRASS("달력 + 잔디", "큰 달력(날마다 수입·지출, 바탕은 그날 잔디 색)과 오른쪽 아래 작은 잔디", GrassWidget::class.java),
+    CALENDAR("이번 달 달력", "날마다 수입·지출·다가올 계획, + 버튼으로 바로 적기", CalendarWidget::class.java),
     SAVED("모은 돈", "지금까지 모은 돈과 목표까지 남은 돈", SavedWidget::class.java),
     BUDDY("내 캐릭터", "이번 주 씀씀이에 따라 표정이 바뀌어요", BuddyWidget::class.java),
 }
@@ -144,16 +144,28 @@ class GrassWidget : DonWidget() {
             return v
         }
         val (gw, gh) = imageSize(widthDp, heightDp)
-        // 넓으면 왼쪽에 이번 달 달력, 오른쪽에 최근 몇 주 잔디
-        val withCalendar = com.simbio.don.app.UiPrefs.grassCalendar(context) && gw >= WidgetArt.CALENDAR_MIN_WIDTH
-        val rows = if (withCalendar) WidgetArt.monthRows(home.today) else null
-        val weeks = weeks(WidgetArt.grassWeeks(gw, gh, rows), com.simbio.don.app.UiPrefs.grassWeeks(context))
+        val density = context.resources.displayMetrics.density
         val repo = DonRepository.get(context)
         val plan = Widgets.dailyPlan(home)
-        val g = repo.grass(home.today, weeks, plan)
-        val month = if (withCalendar) repo.grass(home.today, 6, plan) else null
+        val chosen = com.simbio.don.app.UiPrefs.grassWeeks(context)
+        if (com.simbio.don.app.UiPrefs.grassCalendar(context)) {
+            // 큰 달력 + (넓으면) 오른쪽 위 이번 달 합계, 오른쪽 아래 작은 잔디
+            val cal = CalendarWidget.cells(home)
+            v.setTextViewText(R.id.widget_title, CalendarWidget.range(home))
+            if (gw >= WidgetArt.CALENDAR_MIN_WIDTH) {
+                val g = repo.grass(home.today, WidgetArt.miniWeeks(gw, gh, chosen), plan)
+                v.setTextViewText(R.id.widget_sub, subtitle(g))
+                v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendarWithGrass(cal, g, home.monthIncome, home.monthSpent, gw, gh, density, st))
+            } else {
+                v.setTextViewText(R.id.widget_sub, subtitle(repo.grass(home.today, 4, plan)))
+                v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendar(cal, gw, gh, density, st))
+            }
+            return v
+        }
+        val g = repo.grass(home.today, weeks(WidgetArt.grassWeeks(gw, gh), chosen), plan)
+        v.setTextViewText(R.id.widget_title, context.getString(R.string.widget_grass_title))
         v.setTextViewText(R.id.widget_sub, subtitle(g))
-        v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, context.resources.displayMetrics.density, st, month))
+        v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, density, st))
         return v
     }
 
@@ -190,7 +202,7 @@ class CalendarWidget : DonWidget() {
             return v
         }
         val cal = cells(home)
-        v.setTextViewText(R.id.widget_title, "${home.cycle.start.monthValue}/${home.cycle.start.dayOfMonth} ~ ${home.cycle.end.monthValue}/${home.cycle.end.dayOfMonth}")
+        v.setTextViewText(R.id.widget_title, range(home))
         v.setTextViewText(R.id.widget_sub, "생활비 ${compactWon(home.monthLiving)}원 · 무지출 ${cal.noSpend.size}일")
         val w = (widthDp - 24f).coerceAtLeast(150f)
         val h = (heightDp - 24f - 40f).coerceAtLeast(110f)
@@ -199,15 +211,23 @@ class CalendarWidget : DonWidget() {
     }
 
     companion object {
-        fun cells(home: HomeState) = CalendarCells(
+        /** "10/23 ~ 11/24" */
+        fun range(home: HomeState) = "${home.cycle.start.monthValue}/${home.cycle.start.dayOfMonth} ~ ${home.cycle.end.monthValue}/${home.cycle.end.dayOfMonth}"
+
+        fun cells(home: HomeState): CalendarCells {
+            val entries = home.entries.mapNotNull { runCatching { it.toEntry() }.getOrNull() }
+            return CalendarCells(
             start = home.cycle.start,
             end = home.cycle.end,
             today = home.today,
-            spent = Stats.daily(home.entries.map { it.toEntry() }, livingOnly = true),
+            spent = Stats.daily(entries, livingOnly = true),
             noSpend = home.insights.noSpend?.days.orEmpty(),
             planned = home.plans.filter { it.open }.groupBy { LocalDate.ofEpochDay(it.epochDay) }.mapValues { (_, l) -> l.sumOf { it.amount } },
             dailyPlan = Widgets.dailyPlan(home),
-        )
+            income = Stats.dailyIncome(entries),
+            expense = Stats.daily(entries),
+            )
+        }
     }
 }
 

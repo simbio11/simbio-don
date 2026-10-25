@@ -6,11 +6,11 @@
     <string name="widget_title">이번 주 남은 돈</string>
     <string name="widget_add">지출 입력</string>
     <string name="widget_description">이번 주 남은 돈과 오늘 쓸 수 있는 돈</string>
-    <string name="widget_grass_label">무지출 잔디</string>
+    <string name="widget_grass_label">달력 + 잔디</string>
     <string name="widget_grass_title">무지출 잔디</string>
-    <string name="widget_grass_description">깃허브 잔디처럼, 안 쓴 날일수록 진한 초록</string>
+    <string name="widget_grass_description">날마다 수입·지출이 적힌 큰 달력과 작은 무지출 잔디</string>
     <string name="widget_calendar_label">이번 달 달력</string>
-    <string name="widget_calendar_description">날마다 쓴 돈과 무지출 도장, 다가올 계획</string>
+    <string name="widget_calendar_description">날마다 수입·지출과 다가올 계획</string>
     <string name="widget_saved_label">모은 돈</string>
     <string name="widget_saved_description">지금까지 모은 돈과 목표까지 남은 돈</string>
     <string name="widget_buddy_label">내 캐릭터</string>

@@ -29,6 +29,25 @@ data class WidgetStyle(val dark: Boolean, val opacity: Int = 100) {
     val goodSurface: Int get() = if (dark) 0xFF17352C.toInt() else 0xFFE8F7F0.toInt()
     val game: Int get() = if (dark) 0xFFBBAEFF.toInt() else 0xFF5A3FE0.toInt()
 
+    /** 달력 칸 바탕: 그날 잔디 색을 흐리게 (덜 쓸수록 조금 더 진한 초록, 넘긴 날은 옅은 빨강) */
+    fun grassFaint(level: GrassLevel): Int = if (dark) {
+        when (level) {
+            GrassLevel.EMPTY -> 0xFF262B32.toInt()
+            GrassLevel.OK -> 0xFF1B2E24.toInt()
+            GrassLevel.LOW -> 0xFF1D3D2A.toInt()
+            GrassLevel.NO_SPEND -> 0xFF1F4D31.toInt()
+            GrassLevel.OVER -> 0xFF4A2A2A.toInt()
+        }
+    } else {
+        when (level) {
+            GrassLevel.EMPTY -> 0xFFF2F4F6.toInt()
+            GrassLevel.OK -> 0xFFEDF9EF.toInt()
+            GrassLevel.LOW -> 0xFFDDF4E3.toInt()
+            GrassLevel.NO_SPEND -> 0xFFC9EDD4.toInt()
+            GrassLevel.OVER -> 0xFFFFE5E1.toInt()
+        }
+    }
+
     /** 깃허브 잔디 색: 무지출이 가장 진하다 (어둡게는 가장 밝다) */
     fun grass(level: GrassLevel): Int = if (dark) {
         when (level) {

@@ -58,7 +58,7 @@ object UiPrefs {
 
     fun setGrassWeeks(c: Context, weeks: Int) = prefs(c).edit().putInt("grass_weeks", weeks).apply()
 
-    /** 잔디 위젯 왼쪽에 이번 달 달력도 (위젯이 넓을 때) */
+    /** 잔디 위젯을 큰 달력 + 작은 잔디로 (끄면 잔디만) */
     fun grassCalendar(c: Context): Boolean = prefs(c).getBoolean("grass_calendar", true)
 
     fun setGrassCalendar(c: Context, on: Boolean) = prefs(c).edit().putBoolean("grass_calendar", on).apply()
@@ -67,7 +67,7 @@ object UiPrefs {
     val GRASS_PERIODS = listOf(4, 8, 12, 26, 0)
 
     fun grassPeriodLabel(weeks: Int) = when (weeks) {
-        0 -> "크기에 맞춤"
+        0 -> "자동"
         4 -> "4주"
         8 -> "8주"
         12 -> "12주"

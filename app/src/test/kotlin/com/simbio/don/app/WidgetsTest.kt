@@ -104,19 +104,20 @@ class WidgetsTest {
             val amount = listOf(0L, 0L, 8_000L, 15_000L, 22_000L, 28_000L, 45_000L)[rnd.nextInt(7)]
             if (amount == 0L) null else com.simbio.don.budget.Entry(day.minusDays(i.toLong()), amount, "가게", EntryType.SPEND)
         } + com.simbio.don.budget.Entry(day, 9_000, "카페", EntryType.SPEND)
-        val (gw, gh) = GrassWidget.imageSize(330f, 170f)
-        val rows = WidgetArt.monthRows(day)
-        val grass = com.simbio.don.budget.Grasses.of(entries, day, WidgetArt.grassWeeks(gw, gh, rows), 30_000, since = day.minusDays(400))
-        val month = com.simbio.don.budget.Grasses.of(entries, day, 6, 30_000, since = day.minusDays(400))
-        save("grass", WidgetArt.grass(grass, gw, gh, 2f, month = month))
         val start = LocalDate.of(2026, 10, 1)
+        val inMonth = entries.filter { it.date >= start } + com.simbio.don.budget.Entry(LocalDate.of(2026, 10, 10), 3_300_000, "월급", EntryType.INCOME)
         val cal = com.simbio.don.app.widget.CalendarCells(
             start, LocalDate.of(2026, 10, 31), day,
-            spent = com.simbio.don.budget.Stats.daily(entries.filter { it.date >= start }, livingOnly = true),
+            spent = com.simbio.don.budget.Stats.daily(inMonth, livingOnly = true),
             noSpend = (1..23).map { start.plusDays(it - 1L) }.filter { d -> entries.none { it.date == d } }.toSet(),
             planned = mapOf(LocalDate.of(2026, 10, 28) to 50_000L),
             dailyPlan = 30_000,
+            income = com.simbio.don.budget.Stats.dailyIncome(inMonth),
+            expense = com.simbio.don.budget.Stats.daily(inMonth),
         )
+        val (gw, gh) = GrassWidget.imageSize(330f, 250f)
+        val grass = com.simbio.don.budget.Grasses.of(entries, day, WidgetArt.miniWeeks(gw, gh, 0), 30_000, since = day.minusDays(400))
+        save("grass", WidgetArt.calendarWithGrass(cal, grass, 3_300_000, com.simbio.don.budget.Stats.total(inMonth), gw, gh, 2f))
         save("calendar", WidgetArt.calendar(cal, 306f, 256f, 2f))
         val px = com.simbio.don.app.ui.kit.CharacterRenderer.pixels(context, com.simbio.don.game.CharacterLook.MALE, com.simbio.don.game.Mood.HAPPY)
         save("buddy", WidgetArt.pixels(px, com.simbio.don.app.ui.kit.CharacterRenderer.W, com.simbio.don.app.ui.kit.CharacterRenderer.H, 6))
@@ -161,10 +162,10 @@ class WidgetsTest {
         assertTrue(WidgetArt.grassWeeks(600f, 120f) > WidgetArt.grassWeeks(300f, 120f))
         assertEquals(53, WidgetArt.grassWeeks(3000f, 120f))
         assertEquals(4, WidgetArt.grassWeeks(10f, 120f))
-        // 달력을 같이 그리면 그 자리만큼 잔디가 준다
-        assertTrue(WidgetArt.grassWeeks(300f, 120f, 5) < WidgetArt.grassWeeks(300f, 120f))
-        assertEquals(5, WidgetArt.monthRows(LocalDate.of(2026, 10, 24)))
-        assertEquals(6, WidgetArt.monthRows(LocalDate.of(2026, 8, 1)))
+        // 달력 옆 작은 잔디: 고른 기간(자동은 10주), 너비의 38%까지
+        assertEquals(10, WidgetArt.miniWeeks(400f, 200f, 0))
+        assertEquals(4, WidgetArt.miniWeeks(400f, 200f, 4))
+        assertTrue(WidgetArt.miniWeeks(300f, 120f, 26) < 26)
     }
     /** 0.17: 잔디 기간을 고르면 그 주 수만큼만 (위젯이 작으면 들어가는 만큼) */
     @Test
@@ -186,6 +187,9 @@ class WidgetsTest {
         UiPrefs.setGrassWeeks(context, 0)
         render(runBlocking { GrassWidget().views(context, 1, 200f, 170f) }, 200, 170, "w14_grass_narrow")
         render(runBlocking { GrassWidget().views(context, 1, 420f, 200f) }, 420, 200, "w15_grass_wide")
+        // 새 기본 크기 (4×3)
+        val tall = render(runBlocking { GrassWidget().views(context, 1, 330f, 250f) }, 330, 250, "w16_grass_4x3")
+        assertTrue(tall.text(R.id.widget_title).contains("~"))
         // 모르는 값은 크기에 맞춤으로
         UiPrefs.setGrassWeeks(context, 5)
         assertEquals(0, UiPrefs.grassWeeks(context))

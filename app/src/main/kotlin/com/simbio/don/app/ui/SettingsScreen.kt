@@ -292,7 +292,7 @@ fun SettingsScreen(
                 }
             }
             WidgetPreview(widgetTheme, widgetOpacity)
-            Text("잔디 위젯 기간", fontSize = 15.sp, color = DonColors.Ink)
+            Text("달력 + 잔디 위젯: 잔디 기간", fontSize = 15.sp, color = DonColors.Ink)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 com.simbio.don.app.UiPrefs.GRASS_PERIODS.forEach { w ->
                     FilterChip(selected = grassWeeks == w, onClick = { onGrassWeeks(w) }, label = { Text(com.simbio.don.app.UiPrefs.grassPeriodLabel(w)) })
@@ -300,8 +300,8 @@ fun SettingsScreen(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("잔디 옆에 이번 달 달력", fontSize = 14.sp, color = DonColors.Ink)
-                    Text("위젯이 넓으면 왼쪽에 날짜가 적힌 이번 달, 오른쪽에 고른 기간 잔디를 같이 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    Text("큰 달력과 같이 보기", fontSize = 14.sp, color = DonColors.Ink)
+                    Text("달력에 날마다 수입·지출, 칸 바탕은 그날 잔디 색이에요. 잔디는 오른쪽 아래에 작게. 끄면 잔디만 크게 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
                 }
                 Switch(checked = grassCalendar, onCheckedChange = onGrassCalendar)
             }
