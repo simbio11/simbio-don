@@ -90,6 +90,8 @@ fun SettingsScreen(
     onWidgetOpacity: (Int) -> Unit = {},
     grassWeeks: Int = 0,
     onGrassWeeks: (Int) -> Unit = {},
+    grassCalendar: Boolean = true,
+    onGrassCalendar: (Boolean) -> Unit = {},
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -254,7 +256,13 @@ fun SettingsScreen(
                     FilterChip(selected = grassWeeks == w, onClick = { onGrassWeeks(w) }, label = { Text(com.simbio.don.app.UiPrefs.grassPeriodLabel(w)) })
                 }
             }
-            Text("짧게 고르면 칸은 그대로 크고, 남는 자리에 그 기간 요약(무지출·지킨 날·넘긴 날)이 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("잔디 옆에 이번 달 달력", fontSize = 14.sp, color = DonColors.Ink)
+                    Text("위젯이 넓으면 왼쪽에 날짜가 적힌 이번 달, 오른쪽에 고른 기간 잔디를 같이 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                }
+                Switch(checked = grassCalendar, onCheckedChange = onGrassCalendar)
+            }
             Text("투명하게 하면 배경화면이 비쳐요. 어두운 배경화면이면 위젯 색을 \"어둡게\"(밝은 글자)로 고르세요.", fontSize = 12.sp, color = DonColors.InkMuted)
         }
 

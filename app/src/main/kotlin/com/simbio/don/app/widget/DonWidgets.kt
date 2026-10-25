@@ -144,10 +144,16 @@ class GrassWidget : DonWidget() {
             return v
         }
         val (gw, gh) = imageSize(widthDp, heightDp)
-        val weeks = weeks(WidgetArt.grassWeeks(gw, gh), com.simbio.don.app.UiPrefs.grassWeeks(context))
-        val g = DonRepository.get(context).grass(home.today, weeks, Widgets.dailyPlan(home))
+        // 넓으면 왼쪽에 이번 달 달력, 오른쪽에 최근 몇 주 잔디
+        val withCalendar = com.simbio.don.app.UiPrefs.grassCalendar(context) && gw >= WidgetArt.CALENDAR_MIN_WIDTH
+        val rows = if (withCalendar) WidgetArt.monthRows(home.today) else null
+        val weeks = weeks(WidgetArt.grassWeeks(gw, gh, rows), com.simbio.don.app.UiPrefs.grassWeeks(context))
+        val repo = DonRepository.get(context)
+        val plan = Widgets.dailyPlan(home)
+        val g = repo.grass(home.today, weeks, plan)
+        val month = if (withCalendar) repo.grass(home.today, 6, plan) else null
         v.setTextViewText(R.id.widget_sub, subtitle(g))
-        v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, context.resources.displayMetrics.density, st))
+        v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, context.resources.displayMetrics.density, st, month))
         return v
     }
 

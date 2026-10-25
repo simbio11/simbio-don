@@ -43,108 +43,134 @@ object WidgetArt {
     /** 깃허브 잔디 색: 무지출이 가장 진하다 */
     fun color(level: GrassLevel, st: WidgetStyle = WidgetStyle.Light): Int = st.grass(level)
 
-    // 잔디 여백 (dp): 위 달 이름, 왼쪽 요일, 아래 범례
-    private const val TOP = 13f
-    private const val LEFT = 15f
+    // 잔디 여백 (dp): 위 달 이름, 아래 범례
+    private const val TOP = 14f
     private const val LEGEND = 15f
 
-    /** 높이에 일곱 칸이 들어가는 크기로 가로를 채울 주 수 */
-    fun grassWeeks(widthDp: Float, heightDp: Float): Int {
-        val pitch = ((heightDp - TOP - LEGEND) / 7f).coerceIn(9f, 20f)
-        return floor((widthDp - LEFT) / pitch).toInt().coerceIn(4, 53)
+    /** 달력과 잔디 사이 */
+    private const val GAP = 14f
+
+    /** 이 너비부터 잔디 옆에 이번 달 달력을 같이 그린다 */
+    const val CALENDAR_MIN_WIDTH = 230f
+
+    /** 잔디 한 칸 간격 (높이에 일곱 칸) */
+    private fun grassPitch(heightDp: Float) = ((heightDp - TOP - LEGEND) / 7f).coerceIn(9f, 20f)
+
+    /** 이번 달 달력이 몇 줄인지 (일요일부터) */
+    fun monthRows(today: LocalDate, firstDay: java.time.DayOfWeek = java.time.DayOfWeek.SUNDAY): Int {
+        val first = today.withDayOfMonth(1)
+        val lead = (first.dayOfWeek.value - firstDay.value + 7) % 7
+        return (lead + today.lengthOfMonth() + 6) / 7
     }
 
-    fun grass(g: Grass, widthDp: Float, heightDp: Float, density: Float, st: WidgetStyle = WidgetStyle.Light): Bitmap {
+    /** 달력 칸 간격 (숫자가 들어가게 잔디보다 크게, 22dp까지) */
+    private fun calendarPitch(heightDp: Float, rows: Int) = ((heightDp - TOP - LEGEND) / rows).coerceIn(10f, 22f)
+
+    fun calendarWidth(heightDp: Float, rows: Int) = calendarPitch(heightDp, rows) * 7
+
+    /** 가로를 채울 잔디 주 수. [calendarRows]가 있으면 달력 자리를 빼고 */
+    fun grassWeeks(widthDp: Float, heightDp: Float, calendarRows: Int? = null): Int {
+        val room = if (calendarRows != null) widthDp - calendarWidth(heightDp, calendarRows) - GAP else widthDp
+        return floor(room / grassPitch(heightDp)).toInt().coerceIn(4, 53)
+    }
+
+    /**
+     * 잔디 (오른쪽, 최근 몇 주) + [month]가 있으면 왼쪽에 이번 달 달력 (날짜 숫자, 같은 색).
+     * 요일 글자는 없이, 위에는 달 이름만.
+     */
+    fun grass(g: Grass, widthDp: Float, heightDp: Float, density: Float, st: WidgetStyle = WidgetStyle.Light, month: Grass? = null): Bitmap {
         val d = density
         val w = (widthDp * d).roundToInt().coerceAtLeast(1)
         val h = (heightDp * d).roundToInt().coerceAtLeast(1)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val weeks = g.weeks.size
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        val label = text(9.5f * d, st.inkMuted)
+        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.4f * d; color = st.ink }
+        val rect = RectF()
+        val y0 = TOP * d
         val gridH = h - (TOP + LEGEND) * d
-        val pitch = min(gridH / 7f, (w - LEFT * d) / weeks)
+
+        // 왼쪽: 이번 달 달력
+        var left = 0f
+        if (month != null) {
+            val today = g.today
+            val rows = monthRows(today, g.firstDay)
+            val pitch = calendarPitch(heightDp, rows) * d
+            val gap = (pitch * 0.12f).coerceAtLeast(1.5f * d)
+            val size = pitch - gap
+            val r = (size * 0.24f).coerceAtMost(4f * d)
+            val levels = month.days.associate { it.date to it.level }
+            val first = today.withDayOfMonth(1)
+            val lead = (first.dayOfWeek.value - g.firstDay.value + 7) % 7
+            c.drawText("${today.monthValue}월", 0f, y0 - 4f * d, text(10f * d, st.ink).apply { isFakeBoldText = true })
+            val num = text((size * 0.5f).coerceAtMost(10f * d), st.ink).apply { textAlign = Paint.Align.CENTER }
+            for (day in 1..today.lengthOfMonth()) {
+                val date = first.withDayOfMonth(day)
+                val i = lead + day - 1
+                val x = (i % 7) * pitch
+                val y = y0 + (i / 7) * pitch
+                rect.set(x, y, x + size, y + size)
+                val lv = if (date.isAfter(today)) null else levels[date] ?: GrassLevel.EMPTY
+                fill.color = if (lv == null) st.grass(GrassLevel.EMPTY) and 0x00FFFFFF or 0x66000000 else color(lv, st)
+                c.drawRoundRect(rect, r, r, fill)
+                if (date == today) c.drawRoundRect(rect, r, r, ring)
+                // 칸 색이 어두우면 흰 글자, 밝으면 검은 글자
+                num.color = when {
+                    lv == null -> st.inkFaint
+                    lv == GrassLevel.EMPTY -> st.inkMuted
+                    luminance(fill.color) > 0.42f -> 0xFF1B1F24.toInt()
+                    else -> 0xFFFFFFFF.toInt()
+                }
+                c.drawText(day.toString(), x + size / 2, y + size / 2 + num.textSize * 0.36f, num)
+            }
+            left = 7 * pitch + GAP * d
+        }
+
+        // 오른쪽: 최근 몇 주 잔디 (남는 자리는 가운데로)
+        val weeks = g.weeks.size
+        val pitch = min(gridH / 7f, (w - left) / weeks)
         val gap = (pitch * 0.16f).coerceAtLeast(1.5f * d)
         val size = pitch - gap
-        val x0 = w - weeks * pitch + gap / 2
-        val y0 = TOP * d
-        val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-        val text = text(9f * d, st.inkMuted)
-
-        // 요일 (일요일부터면 월·수·금 줄)
-        listOf(1 to "월", 3 to "수", 5 to "금").forEach { (row, name) ->
-            c.drawText(name, x0 - gap - 2 * d, y0 + row * pitch + size / 2 + text.textSize * 0.36f, text.apply { textAlign = Paint.Align.RIGHT })
-        }
-        text.textAlign = Paint.Align.LEFT
-        // 달 이름: 그 달 1일이 든 주 위에
+        val x0 = left + ((w - left) - weeks * pitch) / 2 + gap / 2
         var labelEnd = -1f
         g.weeks.forEachIndexed { i, week ->
             val first = week.filterNotNull().firstOrNull { it.date.dayOfMonth == 1 }?.date
                 ?: if (i == 0) week.firstNotNullOfOrNull { it }?.date else null
             if (first != null) {
                 val x = x0 + i * pitch
-                val label = "${first.monthValue}월"
+                val name = "${first.monthValue}월"
                 if (x > labelEnd) {
-                    c.drawText(label, x, y0 - 3.5f * d, text)
-                    labelEnd = x + text.measureText(label) + 4 * d
+                    c.drawText(name, x, y0 - 4f * d, label)
+                    labelEnd = x + label.measureText(name) + 4 * d
                 }
             }
         }
-        // 칸
         val r = (size * 0.22f).coerceAtMost(3f * d)
-        val rect = RectF()
         g.weeks.forEachIndexed { i, week ->
             week.forEachIndexed { row, day ->
                 if (day == null) return@forEachIndexed
                 rect.set(x0 + i * pitch, y0 + row * pitch, x0 + i * pitch + size, y0 + row * pitch + size)
                 fill.color = color(day.level, st)
                 c.drawRoundRect(rect, r, r, fill)
-                if (day.date == g.today) {
-                    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.4f * d; color = st.ink }
-                    c.drawRoundRect(rect, r, r, ring)
-                }
+                if (day.date == g.today) c.drawRoundRect(rect, r, r, ring)
             }
         }
-        // 범례: 많이 ■■■■ 무지출
-        val ly = h - 4f * d
+
+        // 범례: 많이 씀 ■■■■ 무지출
+        val ly = h - 3f * d
         val ls = 9f * d
-        val legend = listOf(GrassLevel.OVER, GrassLevel.OK, GrassLevel.LOW, GrassLevel.NO_SPEND)
-        text.textAlign = Paint.Align.RIGHT
+        label.textAlign = Paint.Align.RIGHT
         var x = w.toFloat()
-        c.drawText("무지출", x, ly, text)
-        x -= text.measureText("무지출") + 4 * d
-        legend.asReversed().forEach { lv ->
+        c.drawText("무지출", x, ly, label)
+        x -= label.measureText("무지출") + 4 * d
+        listOf(GrassLevel.OVER, GrassLevel.OK, GrassLevel.LOW, GrassLevel.NO_SPEND).asReversed().forEach { lv ->
             rect.set(x - ls, ly - ls + 1 * d, x, ly + 1 * d)
             fill.color = color(lv, st)
             c.drawRoundRect(rect, 2 * d, 2 * d, fill)
             x -= ls + 2.5f * d
         }
-        c.drawText("많이 씀", x - 1.5f * d, ly, text)
-        val legendLeft = x - 1.5f * d - text.measureText("많이 씀")
-        text.textAlign = Paint.Align.LEFT
-        val caption = "하루 몫과 견준 생활비"
-        val cx = min(x0 - gap / 2, legendLeft - text.measureText(caption) - 6 * d)
-        if (cx >= 0) c.drawText(caption, cx, ly, text.apply { color = st.inkFaint })
-
-        // 기간을 짧게 고르면 칸이 가로를 다 못 채운다 — 남는 왼쪽에 그 기간 요약
-        val free = x0 - gap - LEFT * d
-        if (free >= 92 * d) {
-            val title = text(12f * d, st.ink).apply { isFakeBoldText = true }
-            val line = text(10.5f * d, st.inkMuted)
-            var y = y0 + 10 * d
-            c.drawText("최근 ${weeks}주", 0f, y, title)
-            y += 7 * d
-            listOf(
-                GrassLevel.NO_SPEND to "무지출 ${g.noSpend}일",
-                GrassLevel.OK to "예산 지킨 날 ${g.kept}일",
-                GrassLevel.OVER to "넘긴 날 ${g.over}일",
-            ).forEach { (lv, label) ->
-                y += 16 * d
-                rect.set(0f, y - 8.5f * d, 8.5f * d, y)
-                fill.color = color(lv, st)
-                c.drawRoundRect(rect, 2 * d, 2 * d, fill)
-                c.drawText(label, 13 * d, y, line)
-            }
-        }
+        c.drawText("많이 씀", x - 1.5f * d, ly, label)
         return bmp
     }
 
@@ -244,6 +270,14 @@ object WidgetArt {
     fun pixels(px: IntArray, w: Int, h: Int, scale: Int): Bitmap {
         val src = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
         return Bitmap.createScaledBitmap(src, w * scale, h * scale, false)
+    }
+
+    /** 색 밝기 (0~1) */
+    private fun luminance(c: Int): Float {
+        val r = (c shr 16 and 0xFF) / 255f
+        val g = (c shr 8 and 0xFF) / 255f
+        val b = (c and 0xFF) / 255f
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b
     }
 
     private fun text(size: Float, color: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply {

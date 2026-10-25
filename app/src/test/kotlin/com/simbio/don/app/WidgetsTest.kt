@@ -105,8 +105,10 @@ class WidgetsTest {
             if (amount == 0L) null else com.simbio.don.budget.Entry(day.minusDays(i.toLong()), amount, "가게", EntryType.SPEND)
         } + com.simbio.don.budget.Entry(day, 9_000, "카페", EntryType.SPEND)
         val (gw, gh) = GrassWidget.imageSize(330f, 170f)
-        val grass = com.simbio.don.budget.Grasses.of(entries, day, WidgetArt.grassWeeks(gw, gh), 30_000, since = day.minusDays(400))
-        save("grass", WidgetArt.grass(grass, gw, gh, 2f))
+        val rows = WidgetArt.monthRows(day)
+        val grass = com.simbio.don.budget.Grasses.of(entries, day, WidgetArt.grassWeeks(gw, gh, rows), 30_000, since = day.minusDays(400))
+        val month = com.simbio.don.budget.Grasses.of(entries, day, 6, 30_000, since = day.minusDays(400))
+        save("grass", WidgetArt.grass(grass, gw, gh, 2f, month = month))
         val start = LocalDate.of(2026, 10, 1)
         val cal = com.simbio.don.app.widget.CalendarCells(
             start, LocalDate.of(2026, 10, 31), day,
@@ -159,6 +161,10 @@ class WidgetsTest {
         assertTrue(WidgetArt.grassWeeks(600f, 120f) > WidgetArt.grassWeeks(300f, 120f))
         assertEquals(53, WidgetArt.grassWeeks(3000f, 120f))
         assertEquals(4, WidgetArt.grassWeeks(10f, 120f))
+        // 달력을 같이 그리면 그 자리만큼 잔디가 준다
+        assertTrue(WidgetArt.grassWeeks(300f, 120f, 5) < WidgetArt.grassWeeks(300f, 120f))
+        assertEquals(5, WidgetArt.monthRows(LocalDate.of(2026, 10, 24)))
+        assertEquals(6, WidgetArt.monthRows(LocalDate.of(2026, 8, 1)))
     }
     /** 0.17: 잔디 기간을 고르면 그 주 수만큼만 (위젯이 작으면 들어가는 만큼) */
     @Test
@@ -173,6 +179,13 @@ class WidgetsTest {
         render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w11_grass_8weeks")
         UiPrefs.setGrassWeeks(context, 4)
         render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w12_grass_4weeks")
+        // 달력 없이, 좁은 위젯
+        UiPrefs.setGrassCalendar(context, false)
+        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w13_grass_4weeks_no_calendar")
+        UiPrefs.setGrassCalendar(context, true)
+        UiPrefs.setGrassWeeks(context, 0)
+        render(runBlocking { GrassWidget().views(context, 1, 200f, 170f) }, 200, 170, "w14_grass_narrow")
+        render(runBlocking { GrassWidget().views(context, 1, 420f, 200f) }, 420, 200, "w15_grass_wide")
         // 모르는 값은 크기에 맞춤으로
         UiPrefs.setGrassWeeks(context, 5)
         assertEquals(0, UiPrefs.grassWeeks(context))
