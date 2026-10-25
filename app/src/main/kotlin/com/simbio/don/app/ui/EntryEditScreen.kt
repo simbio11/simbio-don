@@ -244,7 +244,15 @@ fun EntryEditScreen(
                         }
                     }
                 }
-                MoneyField("금액", amount, { amount = it })
+                MoneyField(
+                    when (split) {
+                        SplitMode.THEY_PAID -> "내 몫 (보낼 돈)"
+                        SplitMode.I_PAID -> "낸 돈 (전체)"
+                        SplitMode.NONE -> "금액"
+                    },
+                    amount,
+                    { amount = it },
+                )
                 AmountQuickAdd(amount) { amount = it }
             }
 

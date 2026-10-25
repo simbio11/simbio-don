@@ -131,6 +131,8 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
     val plan = home.plan.disposable / home.cycle.days.coerceAtLeast(1)
     // 아직 안 쓴 계획 (회색 점선)
     val planned = home.plans.filter { it.open }.groupBy { LocalDate.ofEpochDay(it.epochDay) }.mapValues { (_, l) -> l.sumOf { it.amount } }
+    // 칸 바탕: 위젯 달력과 같은 흐린 잔디 색 (덜 쓸수록 진한 초록, 넘긴 날은 옅은 빨강)
+    val tint = com.simbio.don.app.widget.WidgetStyle(DonColors.dark, 100)
     RealCard(
         "이번 달 달력",
         icon = { Icon(UiIcon.CALENDAR, 18.dp, DonColors.Real) },
@@ -160,9 +162,14 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
                     val past = d.isBefore(home.today)
                     val isToday = d == home.today
                     val stamp = inside && noSpend != null && d in noSpend.days
+                    val level = when {
+                        !inside || d.isAfter(home.today) || (isToday && spent <= 0) -> null
+                        stamp -> com.simbio.don.budget.GrassLevel.NO_SPEND
+                        else -> com.simbio.don.budget.Grasses.level(spent, plan)
+                    }
                     Column(
                         Modifier.weight(1f).aspectRatio(0.82f).padding(1.dp).clip(RoundedCornerShape(8.dp))
-                            .background(if (stamp) DonColors.GoodSurface else Color.Transparent)
+                            .background(level?.let { Color(tint.grassFaint(it)) } ?: Color.Transparent)
                             .let { if (isToday) it.border(1.5.dp, DonColors.Real, RoundedCornerShape(8.dp)) else it }
                             .let { if (!isToday && inside && planned[d] != null && !past) it.dashedBorder(DonColors.InkFaint, 8.dp, 1.dp) else it }
                             .let { if (inside) it.pressable(role = null) { onDay(d) } else it }
@@ -198,7 +205,7 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
                 }
             }
         }
-        Text("하루 몫 ${won(plan)} · 넘긴 날은 빨강, 안 쓴 날은 도장, 점선은 계획", fontSize = 11.sp, color = DonColors.InkMuted)
+        Text("하루 몫 ${won(plan)} · 덜 쓴 날일수록 진한 초록, 넘긴 날은 빨강, 점선은 계획", fontSize = 11.sp, color = DonColors.InkMuted)
     }
 }
 

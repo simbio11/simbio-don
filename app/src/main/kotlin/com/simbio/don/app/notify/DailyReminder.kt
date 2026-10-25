@@ -74,7 +74,7 @@ object DailyReminder {
     )
 
     /** 알림 문구 (제목, 본문) */
-    internal fun message(home: HomeState): Pair<String, String> {
+    internal fun message(home: HomeState, splits: com.simbio.don.app.data.SplitBook = com.simbio.don.app.data.SplitBook.Empty): Pair<String, String> {
         if (home.settleable.isNotEmpty()) {
             return "지난주 결산이 준비됐어요" to "예산을 지켰는지 보고, 모의로 산 물건을 받아보세요."
         }
@@ -84,6 +84,8 @@ object DailyReminder {
         val body = buildString {
             if (week != null) append("이번 주 남은 돈 ${Won.format(week.available)}")
             if (home.reviewCount > 0) append(if (isEmpty()) "" else " · ").append("확인할 결제 알림 ${home.reviewCount}건")
+            // 정산 같은 입금·송금이 있으면 묶으라고
+            if (splits.hints.isNotEmpty()) append(if (isEmpty()) "" else " · ").append("정산 같은 돈 ${splits.hints.size}건")
             if (isEmpty()) append("현금으로 쓴 돈이 있으면 적어 두세요.")
         }
         return title to body
@@ -120,7 +122,9 @@ object DailyReminder {
                     // 앱을 안 켠 날에도 월급날·고정 지출은 챙긴다
                     repo.dailyUpkeep(LocalDateTime.now())
                     val home = repo.home(flowOf(LocalDateTime.now())).first() ?: return@launch
-                    val (title, body) = message(home)
+                    val dismissed = context.getSharedPreferences("splits", Context.MODE_PRIVATE)
+                        .getStringSet("dismissed", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+                    val (title, body) = message(home, repo.splitBookNow(dismissed))
                     notify(context, title, body)
                 } finally {
                     pending.finish()

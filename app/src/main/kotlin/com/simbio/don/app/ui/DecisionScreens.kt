@@ -153,7 +153,7 @@ fun CanBuyHomeCard(onOpen: () -> Unit) {
     }
 }
 
-/** 지난달 성적표 (새 달 첫 열흘 동안 홈에) */
+/** 지난달 성적표 (새 달 첫 두 주 동안 홈에) */
 @Composable
 fun ReportCard(r: MonthReport) {
     SectionCard("지난달 성적표") {

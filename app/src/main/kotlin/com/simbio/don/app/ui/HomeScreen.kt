@@ -151,7 +151,12 @@ fun HomeScreen(
                             color = if (week.available >= 0) DonColors.Ink else DonColors.Warn,
                         )
                         Text(
-                            if (week.available > 0) "오늘은 ${won(home.todayAllowance)}까지 쓰면 딱 맞아요" else "이번 주 예산을 다 썼어요",
+                            when {
+                                week.available <= 0 -> "이번 주 예산을 다 썼어요"
+                                // 주 마지막 날: 남은 돈 전부가 "오늘 쓸 수 있는 돈"처럼 보이지 않게
+                                home.today == week.week.end -> "오늘이 이번 주 마지막 날 · 남기면 아낀 돈이 돼요"
+                                else -> "오늘은 ${won(home.todayAllowance)}까지 쓰면 딱 맞아요"
+                            },
                             fontSize = 14.sp,
                             color = if (week.available > 0) DonColors.Real else DonColors.Warn,
                             fontWeight = FontWeight.SemiBold,
@@ -174,8 +179,8 @@ fun HomeScreen(
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay)
                 HomeCard.UPCOMING -> UpcomingCard(home.insights.upcoming, home.today, onPlans)
                 HomeCard.SPLITS -> SplitHomeCard(splits, onSplits)
-                // 새 달 첫 열흘만
-                HomeCard.REPORT -> if (report != null && home.today.toEpochDay() - home.cycle.start.toEpochDay() < 10) ReportCard(report)
+                // 새 달 첫 두 주만
+                HomeCard.REPORT -> if (report != null && home.today.toEpochDay() - home.cycle.start.toEpochDay() < 14) ReportCard(report)
                 HomeCard.CANBUY -> CanBuyHomeCard(onCanBuy)
                 HomeCard.AI -> if (aiOn) AiHomeCard(onAi)
                 HomeCard.TILES -> {

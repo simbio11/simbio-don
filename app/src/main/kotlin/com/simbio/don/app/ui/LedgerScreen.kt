@@ -64,6 +64,8 @@ enum class LedgerMode(val label: String) { DAILY("일일"), CALENDAR("달력"), 
 /** 기록 금액: 수입·환불 +파랑, 지출 −빨강, 이체 회색 */
 fun entryAmountText(e: EntryEntity): String = when {
     e.settleFor != null -> "+${won(e.amount)}"
+    // 나눠 낸 지출은 내 몫 (낸 돈 전부는 아래 줄에)
+    e.share != null && e.type != EntryType.INCOME.name && e.type != EntryType.TRANSFER.name -> "−${won(e.share)}"
     else -> when (e.type) {
         EntryType.INCOME.name, EntryType.REFUND.name -> "+${won(e.amount)}"
         EntryType.TRANSFER.name -> won(e.amount)
@@ -108,7 +110,7 @@ fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEnt
                         }
                         } + (e.sub?.let { " > $it" } ?: ""),
                     )
-                    e.share?.let { add("나눠 냄 · 내 몫 ${won(it)}") }
+                    e.share?.let { add("나눠 냄 · 낸 돈 ${won(e.amount)}" + (e.people?.let { p -> " · ${p}명" } ?: "")) }
                     if (e.owe) add("보낼 돈")
                     e.installmentNo?.let { add("할부 $it") }
                     if (type != EntryType.TRANSFER) e.accountId?.let(accountNames::get)?.let(::add)
