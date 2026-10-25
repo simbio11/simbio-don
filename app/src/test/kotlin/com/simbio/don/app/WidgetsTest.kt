@@ -160,6 +160,25 @@ class WidgetsTest {
         assertEquals(53, WidgetArt.grassWeeks(3000f, 120f))
         assertEquals(4, WidgetArt.grassWeeks(10f, 120f))
     }
+    /** 0.17: 잔디 기간을 고르면 그 주 수만큼만 (위젯이 작으면 들어가는 만큼) */
+    @Test
+    fun 잔디_기간_고르기() {
+        seed()
+        assertEquals(0, UiPrefs.grassWeeks(context))
+        assertEquals(20, GrassWidget.weeks(20, 0))
+        assertEquals(8, GrassWidget.weeks(20, 8))
+        assertEquals(20, GrassWidget.weeks(20, 26))
+        UiPrefs.setGrassWeeks(context, 8)
+        assertEquals(8, UiPrefs.grassWeeks(context))
+        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w11_grass_8weeks")
+        UiPrefs.setGrassWeeks(context, 4)
+        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w12_grass_4weeks")
+        // 모르는 값은 크기에 맞춤으로
+        UiPrefs.setGrassWeeks(context, 5)
+        assertEquals(0, UiPrefs.grassWeeks(context))
+        UiPrefs.setGrassWeeks(context, 0)
+    }
+
     /** 0.15: 위젯 색(어둡게)·바탕 투명 — 배경화면 위에 놓인 모습 */
     @Test
     fun 위젯_색과_투명() {

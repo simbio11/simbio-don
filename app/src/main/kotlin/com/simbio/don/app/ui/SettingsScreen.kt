@@ -88,6 +88,8 @@ fun SettingsScreen(
     onWidgetTheme: (ThemeMode) -> Unit = {},
     widgetOpacity: Int = 100,
     onWidgetOpacity: (Int) -> Unit = {},
+    grassWeeks: Int = 0,
+    onGrassWeeks: (Int) -> Unit = {},
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -246,6 +248,13 @@ fun SettingsScreen(
                 }
             }
             WidgetPreview(widgetTheme, widgetOpacity)
+            Text("잔디 위젯 기간", fontSize = 15.sp, color = DonColors.Ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                com.simbio.don.app.UiPrefs.GRASS_PERIODS.forEach { w ->
+                    FilterChip(selected = grassWeeks == w, onClick = { onGrassWeeks(w) }, label = { Text(com.simbio.don.app.UiPrefs.grassPeriodLabel(w)) })
+                }
+            }
+            Text("짧게 고르면 칸은 그대로 크고, 남는 자리에 그 기간 요약(무지출·지킨 날·넘긴 날)이 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
             Text("투명하게 하면 배경화면이 비쳐요. 어두운 배경화면이면 위젯 색을 \"어둡게\"(밝은 글자)로 고르세요.", fontSize = 12.sp, color = DonColors.InkMuted)
         }
 

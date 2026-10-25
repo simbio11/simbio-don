@@ -119,8 +119,32 @@ object WidgetArt {
             x -= ls + 2.5f * d
         }
         c.drawText("많이 씀", x - 1.5f * d, ly, text)
+        val legendLeft = x - 1.5f * d - text.measureText("많이 씀")
         text.textAlign = Paint.Align.LEFT
-        c.drawText("하루 몫과 견준 생활비", x0 - gap / 2, ly, text.apply { color = st.inkFaint })
+        val caption = "하루 몫과 견준 생활비"
+        val cx = min(x0 - gap / 2, legendLeft - text.measureText(caption) - 6 * d)
+        if (cx >= 0) c.drawText(caption, cx, ly, text.apply { color = st.inkFaint })
+
+        // 기간을 짧게 고르면 칸이 가로를 다 못 채운다 — 남는 왼쪽에 그 기간 요약
+        val free = x0 - gap - LEFT * d
+        if (free >= 92 * d) {
+            val title = text(12f * d, st.ink).apply { isFakeBoldText = true }
+            val line = text(10.5f * d, st.inkMuted)
+            var y = y0 + 10 * d
+            c.drawText("최근 ${weeks}주", 0f, y, title)
+            y += 7 * d
+            listOf(
+                GrassLevel.NO_SPEND to "무지출 ${g.noSpend}일",
+                GrassLevel.OK to "예산 지킨 날 ${g.kept}일",
+                GrassLevel.OVER to "넘긴 날 ${g.over}일",
+            ).forEach { (lv, label) ->
+                y += 16 * d
+                rect.set(0f, y - 8.5f * d, 8.5f * d, y)
+                fill.color = color(lv, st)
+                c.drawRoundRect(rect, 2 * d, 2 * d, fill)
+                c.drawText(label, 13 * d, y, line)
+            }
+        }
         return bmp
     }
 

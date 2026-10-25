@@ -144,7 +144,7 @@ class GrassWidget : DonWidget() {
             return v
         }
         val (gw, gh) = imageSize(widthDp, heightDp)
-        val weeks = WidgetArt.grassWeeks(gw, gh)
+        val weeks = weeks(WidgetArt.grassWeeks(gw, gh), com.simbio.don.app.UiPrefs.grassWeeks(context))
         val g = DonRepository.get(context).grass(home.today, weeks, Widgets.dailyPlan(home))
         v.setTextViewText(R.id.widget_sub, subtitle(g))
         v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, context.resources.displayMetrics.density, st))
@@ -154,6 +154,9 @@ class GrassWidget : DonWidget() {
     companion object {
         /** 바깥 여백 14dp씩, 제목 줄 22dp */
         fun imageSize(widthDp: Float, heightDp: Float) = (widthDp - 28f).coerceAtLeast(120f) to (heightDp - 28f - 24f).coerceAtLeast(70f)
+
+        /** 고른 기간 (0이면 크기에 맞춤). 위젯이 작으면 들어가는 만큼만 */
+        fun weeks(fit: Int, chosen: Int): Int = if (chosen <= 0) fit else minOf(chosen, fit)
 
         fun subtitle(g: Grass): String = when {
             g.streak >= 1 -> "무지출 ${g.streak}일째"

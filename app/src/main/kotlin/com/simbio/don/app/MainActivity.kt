@@ -554,6 +554,7 @@ class MainActivity : ComponentActivity() {
         var haptics by remember { mutableStateOf(UiPrefs.haptics(this)) }
         var widgetTheme by remember { mutableStateOf(UiPrefs.widgetTheme(this)) }
         var widgetOpacity by remember { mutableStateOf(UiPrefs.widgetOpacity(this)) }
+        var grassWeeks by remember { mutableStateOf(UiPrefs.grassWeeks(this)) }
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
         var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
         // 앱 잠금은 위에 연 화면(암호 정하기)에서 바뀌므로 이 화면으로 돌아올 때 다시 읽는다
@@ -642,6 +643,12 @@ class MainActivity : ComponentActivity() {
                 onWidgetOpacity = { o ->
                     UiPrefs.setWidgetOpacity(this, o)
                     widgetOpacity = o
+                    Widgets.refresh(this)
+                },
+                grassWeeks = grassWeeks,
+                onGrassWeeks = { w ->
+                    UiPrefs.setGrassWeeks(this, w)
+                    grassWeeks = w
                     Widgets.refresh(this)
                 },
                 onHomeCards = { open(Overlay.HomeCards) },
