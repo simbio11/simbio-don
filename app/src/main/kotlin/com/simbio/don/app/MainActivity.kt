@@ -947,13 +947,20 @@ class MainActivity : ComponentActivity() {
             )
             Overlay.Goals -> {
                 val all by vm.goals.collectAsStateWithLifecycle()
+                val moves by vm.goalMoves.collectAsStateWithLifecycle()
                 GoalsScreen(
-                    savedTotal = home.savedTotal,
+                    split = home.split,
                     goals = home.goals,
                     usedGoals = all.filter { it.used },
+                    moves = moves,
+                    accounts = home.accounts,
                     onAdd = { n, t, i -> vm.addGoal(n, t, i) },
                     onUpdate = { vm.updateGoal(it) },
                     onDelete = { vm.deleteGoal(it) },
+                    onPut = { id, amount, source -> vm.putIntoGoal(id, amount, source) },
+                    onTake = { id, amount -> vm.takeFromGoal(id, amount) },
+                    onLink = { id, account -> vm.linkGoal(id, account) },
+                    onUse = { vm.useGoal(it) },
                     onBack = close,
                 )
             }

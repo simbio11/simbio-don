@@ -258,7 +258,7 @@ fun AccountEditScreen(
                 )
                 if (type.grows) {
                     Text(
-                        "모으는 돈이에요. 홈의 \"모은 돈\"에 들어가고, 월급날마다 자산 점검으로 넣은 돈과 지금 금액을 적으면 얼마나 불었는지 보여요.",
+                        "저축·투자예요. 홈 \"모은 돈\"의 저축에 들어가고, 월급날마다 자산 점검으로 넣은 돈과 지금 금액을 적으면 얼마나 불었는지 보여요. 여행처럼 쓰려고 모으는 통장이면 목표에 이어 주세요.",
                         fontSize = 12.sp,
                         color = DonColors.Good,
                     )
@@ -334,8 +334,8 @@ fun AccountEditScreen(
 }
 
 /**
- * 순자산 = 쓰는 돈(현금·통장) + 모으는 돈(저축·투자) − 부채(카드값 등).
- * 생활비 통장만 넣으면 이번 달 쓸 돈과 다를 게 없으니, 모으는 돈이 없을 때는 넣어 보라고 권한다.
+ * 순자산 = 쓰는 돈(현금·통장) + 저축·투자 − 부채(카드값 등).
+ * 생활비 통장만 넣으면 이번 달 쓸 돈과 다를 게 없으니, 저축·투자가 없을 때는 넣어 보라고 권한다.
  */
 @Composable
 private fun NetWorthCard(balances: List<AccountBalance>, canTransfer: Boolean, onTransfer: () -> Unit) {
@@ -345,7 +345,7 @@ private fun NetWorthCard(balances: List<AccountBalance>, canTransfer: Boolean, o
     val debt = AccountBalances.debts(balances)
     RealCard("순자산") {
         Text((if (net < 0) "−" else "") + won(kotlin.math.abs(net)), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
-        // 쓰는 돈과 모으는 돈의 몫
+        // 쓰는 돈과 저축·투자의 몫
         if (spend + grow > 0) {
             Row(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(DonColors.Line)) {
                 if (spend > 0) Box(Modifier.weight(spend.toFloat()).fillMaxSize().background(DonColors.Real))
@@ -354,12 +354,12 @@ private fun NetWorthCard(balances: List<AccountBalance>, canTransfer: Boolean, o
         }
         Row(Modifier.fillMaxWidth().card(DonColors.SurfaceAlt, 12.dp).padding(vertical = 12.dp)) {
             NetPart("쓰는 돈", "현금·통장", "+" + won(spend), DonColors.Real)
-            NetPart("모으는 돈", "저축·투자", "+" + won(grow), DonColors.Good)
+            NetPart("저축·투자", "예금·적금·주식", "+" + won(grow), DonColors.Good)
             NetPart("부채", "카드값 등", "−" + won(debt), DonColors.Expense)
         }
         if (grow == 0L) {
             Text(
-                "지금은 쓰는 돈만 들어 있어요. 적금·주식·보증금처럼 모아 둔 돈도 아래 \"모으는 돈\"에 넣어야 진짜 순자산이에요.",
+                "지금은 쓰는 돈만 들어 있어요. 적금·주식·보증금처럼 모아 둔 돈도 아래 \"저축·투자\"에 넣어야 진짜 순자산이에요.",
                 fontSize = 12.sp,
                 color = DonColors.Good,
                 fontWeight = FontWeight.SemiBold,

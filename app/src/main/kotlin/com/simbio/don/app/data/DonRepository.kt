@@ -124,9 +124,9 @@ data class HomeState(
     /** 이번 달 수입 */
     val monthIncome: Long = 0,
     val categoryBudgets: Map<Category, Long> = emptyMap(),
-    /** 지금까지 모은 돈 (모든 달) */
+    /** 지금까지 모은 돈 모두 (저축 + 목표 + 아직 목표에 안 넣은 아낀 돈) */
     val savedTotal: Long = 0,
-    /** 이번 달 모은 돈 (먼저 뗀 저축 + 지금까지 아낀 돈) */
+    /** 이번 달 생활비에서 아낀 돈 (지금까지) */
     val savedThisMonth: Long = 0,
     val goals: List<GoalProgress> = emptyList(),
     /** 예산을 지킨 결산이 몇 주 연속인지 */
@@ -155,6 +155,9 @@ data class HomeState(
     val insights: HomeInsights = HomeInsights(),
     /** 돈 나갈 계획 (전부) */
     val plans: List<PlanEntity> = emptyList(),
+    // ── 0.16 ──
+    /** 모은 돈 나눠 보기 (저축 · 목표 · 아낀 돈) */
+    val split: SavingsSplit = SavingsSplit(),
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
 
@@ -288,10 +291,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val budgets: Map<Category, Long>,
         val goals: List<SavingsGoalEntity>,
         val settled: List<SettledWeekEntity>,
+        val moves: List<GoalMoveEntity> = emptyList(),
     )
 
-    private val extras: Flow<HomeExtras> = combine(dao.categoryBudgets(), dao.goals(), dao.allSettledWeeks()) { b, g, w ->
-        HomeExtras(b.associate { Category.of(it.category) to it.amount }, g, w)
+    private val extras: Flow<HomeExtras> = combine(dao.categoryBudgets(), dao.goals(), dao.allSettledWeeks(), dao.goalMoves()) { b, g, w, m ->
+        HomeExtras(b.associate { Category.of(it.category) to it.amount }, g, w, m)
     }
 
     /** 달마다 요약 (최신 달 먼저): 월별 추이·모은 돈 */
@@ -308,7 +312,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 모으는 돈 (저축·투자 통장): 지금 금액·넣은 돈·달마다 */
     fun wealth(now: Flow<LocalDateTime>): Flow<Wealth> =
-        combine(accountBalances, dao.accountEntries(), dao.assetChecks(), now) { b, e, c, t -> AccountBalances.wealth(b, e, c, t.toLocalDate()) }
+        combine(accountBalances, dao.accountEntries(), dao.assetChecks(), dao.goals(), now) { b, e, c, g, t ->
+            // 목표에 이은 통장은 저축이 아니라 그 목표의 돈
+            val forGoals = g.filter { !it.used }.mapNotNull { it.accountId }.toSet()
+            AccountBalances.wealth(b.filter { it.account.id !in forGoals }, e, c, t.toLocalDate())
+        }
 
     /** 최근 100일 기록 (한 줄 분석·정기 결제 찾기) */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -334,7 +342,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         ) { mgw, f, r, p -> HomeMore(mgw.first, mgw.second, mgw.third, f, r, p) }
         return combine(homeBase(now), extras, summaries(now), accountBalances, more) { h, x, sums, accounts, mo ->
             h?.let {
-                val total = sums.sumOf { s -> s.saved }
+                val goals = Summaries.goals(x.goals, x.moves, accounts.associate { b -> b.account.id to b.balance })
+                val split = Summaries.split(sums, mo.wealth.pots.takeIf { p -> p.isNotEmpty() }?.let { mo.wealth.total }, goals, x.moves)
                 val miles = mo.miles
                 val plays = mo.plays
                 it.copy(
@@ -345,10 +354,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                     insights = insightsOf(it, mo.fixed, mo.recent, mo.plans),
                     plans = mo.plans,
                     categoryBudgets = x.budgets,
-                    savedTotal = total,
-                    savedThisMonth = sums.firstOrNull()?.saved ?: 0,
-                    // 모으는 통장이 있으면 그 금액으로 목표를 채운다
-                    goals = Summaries.goals(if (mo.wealth.pots.isNotEmpty()) mo.wealth.total else total, x.goals),
+                    // 목표는 넣은 돈(또는 이은 통장)으로만 찬다 — 예금·적금(저축)은 목표에 저절로 안 들어간다
+                    goals = goals,
+                    split = split,
+                    savedTotal = split.total,
+                    savedThisMonth = split.leftoverThisMonth,
                     streak = Summaries.streak(x.settled),
                     accounts = accounts,
                 )
@@ -1979,7 +1989,43 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     suspend fun updateGoal(g: SavingsGoalEntity) = dao.saveGoal(g)
 
-    suspend fun deleteGoal(g: SavingsGoalEntity) = dao.deleteGoal(g)
+    /** 목표 지우기: 넣은 돈 기록도 지워 아낀 돈은 다시 넣을 수 있게 된다 */
+    suspend fun deleteGoal(g: SavingsGoalEntity) = writeLock.withLock {
+        dao.deleteGoalMoves(g.id)
+        dao.deleteGoal(g)
+    }
+
+    val goalMoves: Flow<List<GoalMoveEntity>> = dao.goalMoves()
+
+    /** 목표에 넣기. [source]: 아낀 돈에서 / 따로 생긴 돈 */
+    suspend fun putIntoGoal(goalId: Long, amount: Long, source: GoalSource, today: LocalDate) = writeLock.withLock {
+        if (amount <= 0) return@withLock
+        dao.insertGoalMove(GoalMoveEntity(goalId = goalId, epochDay = today.toEpochDay(), amount = amount, source = source.name))
+    }
+
+    /** 목표에서 빼기: 아낀 돈에서 넣었던 만큼은 아낀 돈으로 돌아가고, 나머지는 따로 생긴 돈에서 뺀다 */
+    suspend fun takeFromGoal(goalId: Long, amount: Long, today: LocalDate) = writeLock.withLock {
+        if (amount <= 0) return@withLock
+        val mine = dao.goalMovesNow().filter { it.goalId == goalId }
+        val total = mine.sumOf { it.amount }.coerceAtLeast(0)
+        val out = minOf(amount, total)
+        val fromSaved = minOf(out, mine.filter { it.source == GoalSource.SAVED.name }.sumOf { it.amount }.coerceAtLeast(0))
+        val day = today.toEpochDay()
+        if (fromSaved > 0) dao.insertGoalMove(GoalMoveEntity(goalId = goalId, epochDay = day, amount = -fromSaved, source = GoalSource.SAVED.name))
+        if (out - fromSaved > 0) dao.insertGoalMove(GoalMoveEntity(goalId = goalId, epochDay = day, amount = -(out - fromSaved), source = GoalSource.EXTRA.name))
+    }
+
+    /** 목표에 통장 잇기 (null이면 떼기). 이으면 그 통장 잔액이 목표에 모은 돈 */
+    suspend fun linkGoal(goalId: Long, accountId: Long?) {
+        val g = dao.goalsNow().firstOrNull { it.id == goalId } ?: return
+        dao.saveGoal(g.copy(accountId = accountId))
+    }
+
+    /** 목표를 이루고 실제로 썼어요 — 모은 돈은 쓴 것으로 남는다 */
+    suspend fun useGoal(goalId: Long, today: LocalDate) {
+        val g = dao.goalsNow().firstOrNull { it.id == goalId } ?: return
+        dao.saveGoal(g.copy(used = true, achievedAtEpochDay = g.achievedAtEpochDay ?: today.toEpochDay()))
+    }
 
     // ── 자산 ─────────────────────────────────────────────────
 
@@ -2094,6 +2140,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             gamePlays = dao.gamePlaysNow(),
             assetChecks = dao.assetChecksNow(),
             plans = dao.plansNow(),
+            goalMoves = dao.goalMovesNow(),
         ),
         now,
     )
@@ -2107,14 +2154,14 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.wipeRules(); dao.wipeSeen(); dao.wipeSettled(); dao.wipeCategoryRules(); dao.wipeMocks(); dao.wipeHouses()
                 dao.wipeCategoryBudgets(); dao.wipeGoals(); dao.wipeAccounts()
                 dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes(); dao.wipeMileTx()
-                dao.wipeGamePlays(); dao.wipeAssetChecks(); dao.wipePlans()
+                dao.wipeGamePlays(); dao.wipeAssetChecks(); dao.wipePlans(); dao.wipeGoalMoves()
                 dao.putSettings(d.settings); dao.putFixed(d.fixed); dao.putCycles(d.cycles); dao.putEntries(d.entries)
                 dao.putReviews(d.reviews); dao.putRules(d.rules); dao.putSettled(d.settled); dao.putCategoryRules(d.categoryRules)
                 dao.putMocks(d.mocks); dao.putHouses(d.houses); dao.putCategoryBudgets(d.categoryBudgets); dao.putGoals(d.goals)
                 dao.putAccounts(d.accounts)
                 dao.putCategoryDefs(d.categoryDefs); dao.putSubcategories(d.subcategories); dao.putInstallments(d.installments)
                 dao.putRecurringIncomes(d.recurringIncomes); dao.putMileTx(d.mileTx)
-                dao.putGamePlays(d.gamePlays); dao.putAssetChecks(d.assetChecks); dao.putPlans(d.plans)
+                dao.putGamePlays(d.gamePlays); dao.putAssetChecks(d.assetChecks); dao.putPlans(d.plans); dao.putGoalMoves(d.goalMoves)
             }
             Category.register(dao.categoryDefsNow().map { it.toCategory() })
         }

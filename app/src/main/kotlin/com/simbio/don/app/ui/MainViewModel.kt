@@ -105,6 +105,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateGoal(g: com.simbio.don.app.data.SavingsGoalEntity) = viewModelScope.launch { repo.updateGoal(g) }
 
     fun deleteGoal(g: com.simbio.don.app.data.SavingsGoalEntity) = viewModelScope.launch { repo.deleteGoal(g) }
+
+    fun putIntoGoal(goalId: Long, amount: Long, source: com.simbio.don.app.data.GoalSource) =
+        viewModelScope.launch { repo.putIntoGoal(goalId, amount, source, clock.value.toLocalDate()) }
+
+    fun takeFromGoal(goalId: Long, amount: Long) = viewModelScope.launch { repo.takeFromGoal(goalId, amount, clock.value.toLocalDate()) }
+
+    fun linkGoal(goalId: Long, accountId: Long?) = viewModelScope.launch { repo.linkGoal(goalId, accountId) }
+
+    fun useGoal(goalId: Long) = viewModelScope.launch { repo.useGoal(goalId, clock.value.toLocalDate()) }
+
+    val goalMoves = repo.goalMoves.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val selectedNominal = MutableStateFlow<String?>(null)
 
     @OptIn(ExperimentalCoroutinesApi::class)

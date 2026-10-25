@@ -11,7 +11,7 @@ import java.time.LocalDateTime
 object Backup {
     const val FORMAT = "dont-backup"
     /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12), 5: 자산 점검 (0.13), 6: 돈 나갈 계획·내 이름 (0.14) */
-    const val VERSION = 6
+    const val VERSION = 7
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -35,6 +35,7 @@ object Backup {
         val gamePlays: List<GamePlayEntity> = emptyList(),
         val assetChecks: List<AssetCheckEntity> = emptyList(),
         val plans: List<PlanEntity> = emptyList(),
+        val goalMoves: List<GoalMoveEntity> = emptyList(),
     )
 
     class BadBackup(message: String) : Exception(message)
@@ -94,7 +95,7 @@ object Backup {
         put("goals", arr(d.goals) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("target", x.target); o.put("icon", x.icon)
             o.put("createdAtEpochDay", x.createdAtEpochDay); o.put("sortOrder", x.sortOrder)
-            o.putOpt("achievedAtEpochDay", x.achievedAtEpochDay); o.put("used", x.used)
+            o.putOpt("achievedAtEpochDay", x.achievedAtEpochDay); o.put("used", x.used); o.putOpt("accountId", x.accountId)
         })
         put("accounts", arr(d.accounts) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("type", x.type); o.put("opening", x.opening)
@@ -129,6 +130,9 @@ object Backup {
             o.put("id", x.id); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("label", x.label); o.put("category", x.category)
             o.put("memo", x.memo); o.putOpt("doneEntryId", x.doneEntryId); o.putOpt("doneAmount", x.doneAmount)
             o.putOpt("doneEpochDay", x.doneEpochDay); o.put("canceled", x.canceled)
+        })
+        put("goalMoves", arr(d.goalMoves) { o, x ->
+            o.put("id", x.id); o.put("goalId", x.goalId); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("source", x.source)
         })
     }.toString()
 
@@ -189,7 +193,8 @@ object Backup {
                 categoryBudgets = list(root, "categoryBudgets") { o -> CategoryBudgetEntity(o.getString("category"), o.getLong("amount")) },
                 goals = list(root, "goals") { o ->
                     SavingsGoalEntity(o.getLong("id"), o.getString("name"), o.getLong("target"), o.getString("icon"),
-                        o.getLong("createdAtEpochDay"), o.getInt("sortOrder"), o.longOrNull("achievedAtEpochDay"), o.getBoolean("used"))
+                        o.getLong("createdAtEpochDay"), o.getInt("sortOrder"), o.longOrNull("achievedAtEpochDay"), o.getBoolean("used"),
+                        o.longOrNull("accountId"))
                 },
                 accounts = list(root, "accounts") { o ->
                     AccountEntity(o.getLong("id"), o.getString("name"), o.getString("type"), o.getLong("opening"), o.getInt("sortOrder"),
@@ -224,6 +229,9 @@ object Backup {
                     PlanEntity(o.getLong("id"), o.getLong("epochDay"), o.getLong("amount"), o.getString("label"), o.optString("category", "ETC"),
                         o.optString("memo", ""), o.longOrNull("doneEntryId"), o.longOrNull("doneAmount"), o.longOrNull("doneEpochDay"),
                         o.optBoolean("canceled", false))
+                },
+                goalMoves = list(root, "goalMoves") { o ->
+                    GoalMoveEntity(o.getLong("id"), o.getLong("goalId"), o.getLong("epochDay"), o.getLong("amount"), o.optString("source", GoalSource.EXTRA.name))
                 },
             ).also {
                 if (it.settings.isEmpty() || it.cycles.isEmpty()) throw BadBackup("백업에 설정이 없어요")

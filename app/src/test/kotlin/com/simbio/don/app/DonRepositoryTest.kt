@@ -31,6 +31,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -362,18 +363,41 @@ class DonRepositoryTest {
     }
 
     @Test
-    fun `모은 돈은 먼저 뗀 저축과 아낀 돈, 목표는 순서대로 채우고, 연속 기록을 센다`() = runTest {
+    fun `모은 돈은 저축과 목표와 아낀 돈으로 나누고, 목표는 넣은 만큼만 차고, 연속 기록을 센다`() = runTest {
         repo.addManual(LocalDate.of(2026, 10, 24), 100_000, "장보기", EntryType.SPEND)
         repo.addGoal("이어폰", 300_000, "COMPUTER", today)
         repo.addGoal("여행", 1_000_000, "FLIGHT", today)
         val week = home(at(11, 2, 12)).settleable.single()
         repo.settle(week, at(11, 2, 12), emptySet())
         val h = home(at(11, 2, 13))
-        // 저축 320,000 + 첫 주 아낀 500,000
+        // 저축(먼저 뗀 320,000, 통장이 없어 어림) + 첫 주 아낀 500,000 — 목표에는 저절로 안 들어간다
         assertEquals(820_000L, h.savedTotal)
-        assertEquals(listOf(300_000L, 520_000L), h.goals.map { it.filled })
-        assertTrue(h.goals[0].done)
+        assertEquals(320_000L, h.split.savings)
+        assertFalse(h.split.savingsFromAccounts)
+        assertEquals(500_000L, h.split.unallocated)
+        assertEquals(listOf(0L, 0L), h.goals.map { it.filled })
         assertEquals(1, h.streak)
+
+        // 아낀 돈에서 이어폰에 300,000, 보너스로 여행에 100,000
+        val (earphone, trip) = h.goals.map { it.goal.id }
+        repo.putIntoGoal(earphone, 300_000, com.simbio.don.app.data.GoalSource.SAVED, LocalDate.of(2026, 11, 2))
+        repo.putIntoGoal(trip, 100_000, com.simbio.don.app.data.GoalSource.EXTRA, LocalDate.of(2026, 11, 2))
+        val h2 = home(at(11, 2, 14))
+        assertEquals(listOf(300_000L, 100_000L), h2.goals.map { it.filled })
+        assertTrue(h2.goals[0].done)
+        assertEquals(400_000L, h2.split.goals)
+        assertEquals(200_000L, h2.split.unallocated)
+        assertEquals(920_000L, h2.savedTotal)
+
+        // 빼면 아낀 돈에서 넣은 만큼은 아낀 돈으로 돌아가고, 목표를 지우면 넣은 돈도 돌아간다
+        repo.takeFromGoal(trip, 50_000, LocalDate.of(2026, 11, 2))
+        assertEquals(200_000L, home(at(11, 2, 14)).split.unallocated)
+        repo.takeFromGoal(earphone, 100_000, LocalDate.of(2026, 11, 2))
+        assertEquals(300_000L, home(at(11, 2, 14)).split.unallocated)
+        repo.deleteGoal(db.dao().goalsNow().first { it.id == earphone })
+        val h3 = home(at(11, 2, 14))
+        assertEquals(500_000L, h3.split.unallocated)
+        assertEquals(listOf(50_000L), h3.goals.map { it.filled })
         val settled = db.dao().settledWeeksNow("2026-10").single()
         assertEquals(100_000L, settled.spent)
         assertEquals(8_333, settled.savedBps)

@@ -101,17 +101,37 @@ class WealthRepoTest {
     }
 
     @Test
-    fun `목표는 모으는 돈으로 채우고 백업·자산 지우기에도 점검이 따라간다`() = runTest {
+    fun `예금·적금은 목표에 저절로 안 들어가고, 목표에 이은 통장은 저축에서 빠진다`() = runTest {
         repo.addGoal("여행", 10_000_000, "FLIGHT", today)
-        assertEquals(8_000_000L, home(at(10, 24)).goals.single().filled)
-        val stock = home(at(10, 24)).accounts.single { it.account.name == "주식" }.account
+        val h = home(at(10, 24))
+        assertEquals(0L, h.goals.single().filled)
+        assertEquals(8_000_000L, h.wealth.total)
+        assertEquals(8_000_000L, h.split.savings)
+        assertTrue(h.split.savingsFromAccounts)
+
+        // 적금 통장을 여행 목표에 이으면 그 잔액이 목표의 돈, 저축 합계에서는 빠진다
+        val goal = h.goals.single().goal
+        val deposit = h.accounts.single { it.account.name == "적금" }.account
+        repo.linkGoal(goal.id, deposit.id)
+        val linked = home(at(10, 24))
+        assertEquals(5_000_000L, linked.goals.single().filled)
+        assertTrue(linked.goals.single().linked)
+        assertEquals(3_000_000L, linked.wealth.total)
+        assertEquals(3_000_000L, linked.split.savings)
+        assertEquals(5_000_000L, linked.split.goals)
+
+        // 백업·자산 지우기에도 점검과 목표 연결이 따라간다
+        val stock = linked.accounts.single { it.account.name == "주식" }.account
         repo.checkAssets(listOf(DonRepository.AssetCheckInput(stock.id, 0, 3_600_000)), null, d(10, 24))
         val json = repo.exportBackup(at(10, 24))
         repo.deleteAccount(stock)
-        assertEquals(5_000_000L, home(at(10, 24)).wealth.total)
+        assertEquals(0L, home(at(10, 24)).wealth.total)
         assertTrue(db.dao().assetChecksNow().none { it.accountId == stock.id })
+        repo.linkGoal(goal.id, null)
         repo.restoreBackup(json)
-        assertEquals(8_600_000L, home(at(10, 24)).wealth.total)
+        val back = home(at(10, 24))
+        assertEquals(3_600_000L, back.wealth.total)
+        assertEquals(deposit.id, back.goals.single().goal.accountId)
     }
 
     @Test

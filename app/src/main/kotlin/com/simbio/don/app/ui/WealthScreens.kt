@@ -62,15 +62,15 @@ fun gainColor(gain: Long): Color = when {
 }
 
 /**
- * 모으는 돈 카드 (자산 탭): 지금 금액 · 넣은 돈 · 불어난 돈, 달마다 그래프, 자산 점검.
+ * 저축·투자 카드 (자산 탭): 지금 금액 · 넣은 돈 · 불어난 돈, 달마다 그래프, 자산 점검.
  * 주식처럼 오르면 빨강, 내리면 파랑 (한국 증권 앱 관례).
  */
 @Composable
 fun WealthCard(w: Wealth, due: Boolean, onCheck: () -> Unit, onAdd: () -> Unit) {
-    RealCard("모으는 돈", icon = { com.simbio.don.app.ui.kit.Icon(UiIcon.SAVINGS, 18.dp, DonColors.Good) }) {
+    RealCard("저축·투자", icon = { com.simbio.don.app.ui.kit.Icon(UiIcon.SAVINGS, 18.dp, DonColors.Good) }) {
         if (w.pots.isEmpty()) {
-            Text("적금·예금·주식처럼 모으는 돈을 넣어 두면, 월급날마다 넣은 돈과 지금 금액을 적어 얼마나 불었는지 볼 수 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
-            SmallButton(onClick = onAdd) { Text("모으는 통장 추가") }
+            Text("적금·예금·주식처럼 오래 모으는 돈을 넣어 두면, 월급날마다 넣은 돈과 지금 금액을 적어 얼마나 불었는지 볼 수 있어요. 여행처럼 쓰려고 모으는 돈은 홈의 목표에서 따로 모아요.", fontSize = 13.sp, color = DonColors.InkSoft)
+            SmallButton(onClick = onAdd) { Text("저축 통장 추가") }
             return@RealCard
         }
         CountUpWon(w.total, 30.sp)
@@ -131,7 +131,7 @@ private fun Legend(color: Color, label: String, dashed: Boolean = false) {
     }
 }
 
-/** 달마다 모으는 돈: 지금 금액(채운 선)과 넣은 돈(점선) */
+/** 달마다 저축·투자: 지금 금액(채운 선)과 넣은 돈(점선) */
 @Composable
 fun WealthChart(points: List<WealthPoint>, modifier: Modifier = Modifier) {
     val good = DonColors.Good
@@ -158,7 +158,7 @@ fun WealthChart(points: List<WealthPoint>, modifier: Modifier = Modifier) {
 }
 
 /**
- * 월급날 자산 점검: 모으는 통장마다 이번에 넣은 돈과 넣은 뒤 지금 금액(평가액)을 적는다.
+ * 월급날 자산 점검: 저축·투자 통장마다 이번에 넣은 돈과 넣은 뒤 지금 금액(평가액)을 적는다.
  * 넣은 돈은 고른 통장에서 옮긴 이체로 가계부에 남고, 지금 금액과의 차이가 그동안 불어난 돈이다.
  */
 @Composable
@@ -172,7 +172,7 @@ fun AssetCheckScreen(
     val added = remember { mutableStateMapOf<Long, String>() }
     val values = remember { mutableStateMapOf<Long, String>() }
     var from by remember { mutableStateOf(sources.firstOrNull { it.type == AccountType.BANK }?.account?.id ?: sources.firstOrNull()?.account?.id) }
-    // 점검을 마치면 (불어난 돈, 모으는 돈) — 저장하면 위 금액들이 바뀌므로 그때 값으로 둔다
+    // 점검을 마치면 (불어난 돈, 저축·투자) — 저장하면 위 금액들이 바뀌므로 그때 값으로 둔다
     var done by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     // 처음엔 매달 먼저 떼는 저축을 첫 통장에 넣은 것으로
     remember(wealth.pots.size) {
@@ -207,7 +207,7 @@ fun AssetCheckScreen(
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center,
                         )
-                        Text("모으는 돈 ${won(total)}", fontSize = 14.sp, color = DonColors.InkSoft)
+                        Text("저축·투자 ${won(total)}", fontSize = 14.sp, color = DonColors.InkSoft)
                     }
                     if (gain > 0) Confetti(Modifier.matchParentSize())
                 }
@@ -215,7 +215,7 @@ fun AssetCheckScreen(
                 return@Column
             }
             Text(
-                "월급날 모으는 통장에 돈을 옮겼다면 넣은 돈을, 주식처럼 값이 바뀌는 건 지금 금액을 적어요. " +
+                "월급날 저축 통장에 돈을 옮겼다면 넣은 돈을, 주식처럼 값이 바뀌는 건 지금 금액을 적어요. " +
                     "비워 두면 지난 금액 + 넣은 돈으로 봐요.",
                 fontSize = 13.sp,
                 color = DonColors.InkSoft,
@@ -264,7 +264,7 @@ fun AssetCheckScreen(
                 Line("지금까지", won(before))
                 Line("이번에 넣은 돈", "+${won(addedSum)}")
                 Line(if (change >= 0) "불어난 돈" else "줄어든 돈", (if (change >= 0) "+" else "−") + won(kotlin.math.abs(change)))
-                Line("모으는 돈", won(after), bold = true)
+                Line("저축·투자", won(after), bold = true)
             }
             Spacer(Modifier.height(16.dp))
         }

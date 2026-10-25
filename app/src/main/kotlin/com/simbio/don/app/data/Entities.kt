@@ -2,6 +2,7 @@ package com.simbio.don.app.data
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /** 초기 설정. 한 줄만 쓴다 (id = 0). */
@@ -220,7 +221,11 @@ data class CategoryBudgetEntity(
     val amount: Long,
 )
 
-/** 저축 목표. 모은 돈을 순서대로 채운다. 쓴 목표(used)는 그 금액만큼 모은 돈에서 빠진다. */
+/**
+ * 모으는 목표 (작은 목표: 여행·새 폰 등). 예금·적금·투자(저축)와 따로, 목표마다 넣은 돈([GoalMoveEntity])으로 찬다.
+ * [accountId]를 이으면 그 통장 잔액이 곧 목표에 모은 돈 (그 통장은 저축 합계에서 빠진다).
+ * 쓴 목표(used)는 모은 돈을 쓴 것으로 남는다.
+ */
 @Entity(tableName = "savings_goal")
 data class SavingsGoalEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -232,7 +237,27 @@ data class SavingsGoalEntity(
     val sortOrder: Int,
     val achievedAtEpochDay: Long? = null,
     val used: Boolean = false,
+    val accountId: Long? = null,
 )
+
+/** 목표에 넣거나 뺀 돈 ([amount] 음수면 뺌). [source]: 아낀 돈에서(SAVED) / 따로 생긴 돈(EXTRA) */
+@Entity(tableName = "goal_move", indices = [Index("goalId")])
+data class GoalMoveEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val goalId: Long,
+    val epochDay: Long,
+    val amount: Long,
+    val source: String,
+)
+
+/** 목표에 넣은 돈이 어디서 왔는지 */
+enum class GoalSource(val label: String) {
+    /** 생활비에서 아낀 돈 (결산으로 남은 돈) */
+    SAVED("아낀 돈에서"),
+
+    /** 보너스·용돈처럼 따로 생긴 돈 */
+    EXTRA("따로 생긴 돈"),
+}
 
 /** 모의로 산 물건. 실제 돈과 무관한 게임 기록이다. */
 @Entity(tableName = "mock_purchase")

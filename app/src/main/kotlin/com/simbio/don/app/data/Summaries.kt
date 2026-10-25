@@ -23,10 +23,30 @@ data class CycleSummary(
     val isCurrent: Boolean,
     /** 가계부 지출 (고정 지출 포함) */
     val expense: Long = spent,
+    /** 생활비에서 남긴 돈 (지난 달은 마지막 주 남은 돈, 이번 달은 지금까지 아낀 돈). 넘게 썼으면 음수 */
+    val leftover: Long = 0,
 )
 
-/** 저축 목표 하나의 진행 */
-data class GoalProgress(val goal: SavingsGoalEntity, val filled: Long) {
+/**
+ * 모은 돈 나눠 보기.
+ * - 저축: 예금·적금·투자처럼 오래 모으는 돈 (목표에 이은 통장은 뺌). 그런 통장이 없으면 월급에서 먼저 뗀 저축의 합(어림).
+ * - 목표 모으기: 여행·새 폰처럼 쓰려고 모으는 돈. 목표마다 넣은 만큼만 찬다.
+ * - 아낀 돈: 생활비에서 남긴 돈. 목표에 넣을 수 있다 ([unallocated]가 아직 안 넣은 돈).
+ */
+data class SavingsSplit(
+    val savings: Long = 0,
+    val savingsFromAccounts: Boolean = false,
+    val goals: Long = 0,
+    val leftover: Long = 0,
+    val leftoverThisMonth: Long = 0,
+    val unallocated: Long = 0,
+) {
+    /** 모은 돈 모두 = 저축 + 목표 + 아직 안 넣은 아낀 돈 */
+    val total: Long get() = savings + goals + unallocated
+}
+
+/** 모으는 목표 하나의 진행. [linked]면 이은 통장 잔액이 곧 [filled] */
+data class GoalProgress(val goal: SavingsGoalEntity, val filled: Long, val linked: Boolean = false) {
     val done: Boolean get() = filled >= goal.target
     val ratio: Float get() = if (goal.target <= 0) 1f else (filled.toFloat() / goal.target).coerceIn(0f, 1f)
 }
@@ -62,17 +82,37 @@ object Summaries {
                 saved = (c.savings + leftover).coerceAtLeast(0),
                 isCurrent = i == 0,
                 expense = Stats.total(inCycle),
+                leftover = leftover,
             )
         }
 
-    /** 모은 돈을 목표에 순서대로 채운다. 쓴 목표(used)는 그만큼 먼저 빠진다. */
-    fun goals(total: Long, goals: List<SavingsGoalEntity>): List<GoalProgress> {
-        var pool = (total - goals.filter { it.used }.sumOf { it.target }).coerceAtLeast(0)
+    /**
+     * 진행 중인 목표: 목표마다 넣고 뺀 돈의 합. 통장을 이었으면 그 통장 잔액 ([balances]: 통장 id → 잔액).
+     * 예금·적금 같은 저축은 목표에 저절로 들어가지 않는다.
+     */
+    fun goals(goals: List<SavingsGoalEntity>, moves: List<GoalMoveEntity>, balances: Map<Long, Long> = emptyMap()): List<GoalProgress> {
+        val byGoal = moves.groupBy { it.goalId }
         return goals.filter { !it.used }.sortedWith(compareBy({ it.sortOrder }, { it.id })).map { g ->
-            val filled = minOf(pool, g.target)
-            pool -= filled
-            GoalProgress(g, filled)
+            val linked = g.accountId?.let { balances[it] }
+            GoalProgress(g, (linked ?: byGoal[g.id].orEmpty().sumOf { it.amount }).coerceAtLeast(0), linked != null)
         }
+    }
+
+    /**
+     * 모은 돈 나눠 보기. [cycles]는 달마다 요약(최신 먼저), [pots]는 저축 통장 합(목표에 이은 통장 뺌, 없으면 null).
+     * 아낀 돈은 달마다 0 아래로는 안 센다 (한 달 넘게 써도 지난달 아낀 돈을 깎지는 않는다).
+     */
+    fun split(cycles: List<CycleSummary>, pots: Long?, goals: List<GoalProgress>, moves: List<GoalMoveEntity>): SavingsSplit {
+        val leftover = cycles.sumOf { it.leftover.coerceAtLeast(0) }
+        val allocated = moves.filter { it.source == GoalSource.SAVED.name }.sumOf { it.amount }
+        return SavingsSplit(
+            savings = pots ?: cycles.sumOf { it.savings },
+            savingsFromAccounts = pots != null,
+            goals = goals.sumOf { it.filled },
+            leftover = leftover,
+            leftoverThisMonth = cycles.firstOrNull()?.leftover?.coerceAtLeast(0) ?: 0,
+            unallocated = (leftover - allocated).coerceAtLeast(0),
+        )
     }
 
     /** 최근부터 거꾸로 세어 예산을 지킨 결산이 몇 주 이어졌는지 */

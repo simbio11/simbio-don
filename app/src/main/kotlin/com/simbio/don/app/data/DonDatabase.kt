@@ -34,8 +34,9 @@ import com.simbio.don.budget.CategoryGuesser
         GamePlayEntity::class,
         AssetCheckEntity::class,
         PlanEntity::class,
+        GoalMoveEntity::class,
     ],
-    version = 11,
+    version = 12,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -53,7 +54,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                 }
                 ).build().also { instance = it }
         }
@@ -65,6 +66,18 @@ abstract class DonDatabase : RoomDatabase() {
         }
 
         /** v11: 돈 나갈 계획, 내 이름(내 계좌끼리 송금 알아보기), 송금으로 나간 기록 표시 */
+        /** v12: 목표는 따로 모은다 — 목표마다 넣고 뺀 돈, 목표에 이은 통장 */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS goal_move (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, goalId INTEGER NOT NULL, " +
+                        "epochDay INTEGER NOT NULL, amount INTEGER NOT NULL, source TEXT NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_goal_move_goalId ON goal_move (goalId)")
+                db.execSQL("ALTER TABLE savings_goal ADD COLUMN accountId INTEGER")
+            }
+        }
+
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(

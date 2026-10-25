@@ -720,11 +720,11 @@ class AppFlowTest {
         waitText("회식")
         rule.onNodeWithText("홈").performClick()
 
-        // 자산 탭: 모으는 돈 → 자산 점검
+        // 자산 탭: 저축·투자 → 자산 점검
         rule.onNodeWithText("자산").performClick()
-        waitText("모으는 돈")
-        // 순자산 칸에도 "모으는 돈"이 있어 아래 카드 제목으로
-        rule.onAllNodesWithText("모으는 돈").onLast().performScrollTo()
+        waitText("저축·투자")
+        // 순자산 칸에도 "저축·투자"가 있어 아래 카드 제목으로
+        rule.onAllNodesWithText("저축·투자").onLast().performScrollTo()
         shot("73_assets_wealth")
         rule.onNodeWithText("자산 점검").performScrollTo().performClick()
         waitText("어디서 옮겼어요?")

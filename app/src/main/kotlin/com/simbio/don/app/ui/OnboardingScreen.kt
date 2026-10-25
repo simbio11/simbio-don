@@ -351,9 +351,9 @@ fun OnboardingScreen(
                             }
                             if (useCard) MoneyField("다음 결제일에 낼 카드값 (모르면 비움)", cardDebt, { cardDebt = it })
                         }
-                        FormCard("모으는 돈 (선택)") {
+                        FormCard("저축·투자 (선택)") {
                             Text(
-                                "적금·예금이나 주식처럼 따로 모으는 돈이 있으면 지금 금액을 적어요. 홈의 \"모은 돈\"에 들어가고, " +
+                                "적금·예금이나 주식처럼 오래 모으는 돈이 있으면 지금 금액을 적어요. 홈 \"모은 돈\"의 저축에 들어가고, " +
                                     "월급날마다 넣은 돈과 지금 금액을 적으면 얼마나 불었는지 보여요.",
                                 fontSize = 12.sp,
                                 color = DonColors.InkMuted,

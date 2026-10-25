@@ -95,7 +95,7 @@ fun HomeScreen(
         if (home.assetCheckDue && home.salaryNotice == null) {
             Banner(
                 "월급날 자산 점검",
-                "모으는 통장에 넣은 돈과 지금 금액을 적고 얼마나 불었는지 봐요.",
+                "저축 통장에 넣은 돈과 지금 금액을 적고 얼마나 불었는지 봐요.",
                 "점검하기",
                 onAssetCheck,
                 UiIcon.SAVINGS,

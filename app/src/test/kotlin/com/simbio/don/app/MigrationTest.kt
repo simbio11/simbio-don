@@ -23,9 +23,10 @@ class MigrationTest {
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
         val db = helper.runMigrationsAndValidate(
-            "m.db", 11, true,
+            "m.db", 12, true,
             DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3, DonDatabase.MIGRATION_3_4, DonDatabase.MIGRATION_4_5,
             DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7, DonDatabase.MIGRATION_7_8, DonDatabase.MIGRATION_8_9, DonDatabase.MIGRATION_9_10, DonDatabase.MIGRATION_10_11,
+            DonDatabase.MIGRATION_11_12,
         )
         db.query("SELECT id, amount, category, memo, accountId, minuteOfDay FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
@@ -125,5 +126,15 @@ class MigrationTest {
         db.query("SELECT amount, sentOut FROM entry").use { c -> c.moveToNext(); assertEquals(4500, c.getInt(0)); assertEquals(0, c.getInt(1)) }
         db.query("SELECT ownerName FROM settings").use { c -> c.moveToNext(); assertTrue(c.isNull(0)) }
         db.query("SELECT COUNT(*) FROM plan").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
+    }
+
+    @Test
+    fun v11에서_v12로_목표는_그대로고_넣은_돈은_비어_있다() {
+        helper.createDatabase("m11.db", 11).use { db ->
+            db.execSQL("INSERT INTO savings_goal (id, name, target, icon, createdAtEpochDay, sortOrder, used) VALUES (1, '여행', 1000000, 'FLIGHT', 20000, 0, 0)")
+        }
+        val db = helper.runMigrationsAndValidate("m11.db", 12, true, DonDatabase.MIGRATION_11_12)
+        db.query("SELECT name, accountId FROM savings_goal").use { c -> c.moveToNext(); assertEquals("여행", c.getString(0)); assertTrue(c.isNull(1)) }
+        db.query("SELECT COUNT(*) FROM goal_move").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
     }
 }

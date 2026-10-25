@@ -237,14 +237,17 @@ class SavedWidget : DonWidget() {
     data class Summary(val headline: Long, val sub: String, val goalLabel: String, val pct: Int)
 
     companion object {
-        /** 목표가 있으면 그 목표, 없으면 다음 고개(100만·500만…)까지 */
+        /**
+         * 모은 돈 모두(저축 + 목표 + 안 넣은 아낀 돈), 아래 줄에 저축·목표를 나눠서.
+         * 막대는 목표가 있으면 그 목표, 없으면 다음 고개(100만·500만…)까지.
+         */
         fun summary(home: HomeState): Summary {
-            val w = home.wealth
-            val headline = if (w.pots.isNotEmpty()) w.total else home.savedTotal
+            val sp = home.split
+            val headline = home.savedTotal
             val sub = buildList {
-                add("이번 달 +${compactWon(home.savedThisMonth)}원")
-                if (w.pots.isNotEmpty() && w.gain != 0L) add("불어난 돈 ${if (w.gain > 0) "+" else "−"}${compactWon(kotlin.math.abs(w.gain))}원")
-                if (home.streak >= 2) add("${home.streak}주 연속")
+                add("저축 ${compactWon(sp.savings)}")
+                add("목표 ${compactWon(sp.goals)}")
+                if (sp.unallocated > 0) add("아낀 돈 ${compactWon(sp.unallocated)}")
             }.joinToString(" · ")
             val goal = home.goals.firstOrNull { !it.done } ?: home.goals.firstOrNull()
             if (goal != null) {
