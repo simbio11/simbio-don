@@ -17,7 +17,7 @@ data class WidgetStyle(val dark: Boolean, val opacity: Int = 100) {
     val bgAlpha: Int get() = opacity.coerceIn(0, 100) * 255 / 100
 
     /** 바탕이 반 넘게 비치면 배경화면 위에서도 읽히게 흐린 글자를 한 단계씩 진하게 */
-    private val clear: Boolean get() = opacity < 50
+    val clear: Boolean get() = opacity < 50
 
     val ink: Int get() = if (dark) 0xFFECEEF1.toInt() else 0xFF191F28.toInt()
     val inkSoft: Int get() = if (clear) ink else if (dark) 0xFFB9C0C9.toInt() else 0xFF4E5968.toInt()
