@@ -136,8 +136,9 @@ fun EntryEditScreen(
     var label by remember { mutableStateOf(existing?.label ?: initial?.label ?: "") }
     var type by remember { mutableStateOf(start) }
     // 계획에서 연 것이면 계획한 분류 그대로
-    var picked by remember { mutableStateOf(existing?.let { Category.of(it.category) } ?: initial?.takeIf { it.planId != null }?.category) }
-    var memo by remember { mutableStateOf(existing?.memo ?: "") }
+    // 계획에서 연 것이거나 내용까지 채워 온 것(AI 말로 적기)이면 그 분류 그대로
+    var picked by remember { mutableStateOf(existing?.let { Category.of(it.category) } ?: initial?.takeIf { it.planId != null || (it.label.isNotBlank() && it.type != EntryType.TRANSFER) }?.category) }
+    var memo by remember { mutableStateOf(existing?.memo ?: initial?.memo ?: "") }
     var date by remember { mutableStateOf(existing?.let { LocalDate.ofEpochDay(it.epochDay) } ?: initial?.date ?: today.coerceIn(minDate, maxDate)) }
     var minute by remember {
         mutableStateOf(existing?.minuteOfDay ?: if (existing == null) initial?.minuteOfDay ?: LocalTime.now().let { it.hour * 60 + it.minute } else null)
@@ -164,8 +165,8 @@ fun EntryEditScreen(
     }
     var people by remember { mutableStateOf(existing?.people ?: initial?.people ?: 2) }
     // 내 몫은 고치기 전까지 금액·인원으로 자동 계산
-    var shareText by remember { mutableStateOf(existing?.share?.toString() ?: "") }
-    var shareEdited by remember { mutableStateOf(existing?.share != null) }
+    var shareText by remember { mutableStateOf((existing?.share ?: initial?.share)?.toString() ?: "") }
+    var shareEdited by remember { mutableStateOf(existing?.share != null || (existing == null && initial?.share != null)) }
     val settled = existing?.settleFor != null
 
     val kind = kindOf(type)

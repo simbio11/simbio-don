@@ -37,6 +37,7 @@ enum class HomeCard(val label: String, val description: String) {
     CALENDAR("이번 달 달력", "날마다 쓴 돈·무지출 도장·계획"),
     UPCOMING("일주일 안에", "곧 나갈 고정비·계획"),
     SPLITS("정산", "더치페이 받을 돈·보낼 돈 (남았을 때만)"),
+    AI("AI 도우미", "말로 적기·이번 달 점검·물어보기 (켰을 때만)"),
     TILES("이번 달 요약", "지출·수입·아낀 돈 세 칸"),
     SAVED("모은 돈", "모은 돈·목표·자산"),
     ROOM("내 방", "캐릭터와 모의 지갑"),

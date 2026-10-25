@@ -137,6 +137,7 @@ private sealed interface Overlay {
     data object Budgets : Overlay
     data object Goals : Overlay
     data object Splits : Overlay
+    data class Ai(val mode: com.simbio.don.app.ui.AiMode) : Overlay
     data object Settings : Overlay
     data object Search : Overlay
     data class Account(val id: Long) : Overlay
@@ -449,6 +450,8 @@ class MainActivity : ComponentActivity() {
                         onCustomize = { screens.push(Overlay.HomeCards) },
                         splits = vm.splits.collectAsStateWithLifecycle().value,
                         onSplits = { screens.push(Overlay.Splits) },
+                        aiOn = remember(screens.entries.size) { com.simbio.don.app.ai.Ai.isOn(this@MainActivity) },
+                        onAi = { m -> screens.push(Overlay.Ai(m)) },
                         onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
                         onAddFixed = { s ->
                             vm.addFixedExpense(s.label, s.amount, s.day)
@@ -560,6 +563,8 @@ class MainActivity : ComponentActivity() {
         var widgetOpacity by remember { mutableStateOf(UiPrefs.widgetOpacity(this)) }
         var grassWeeks by remember { mutableStateOf(UiPrefs.grassWeeks(this)) }
         var grassCalendar by remember { mutableStateOf(UiPrefs.grassCalendar(this)) }
+        var aiKey by remember { mutableStateOf(com.simbio.don.app.ai.Ai.maskedKey(this)) }
+        var aiModel by remember { mutableStateOf(com.simbio.don.app.ai.Ai.model(this)) }
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
         var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
         // 앱 잠금은 위에 연 화면(암호 정하기)에서 바뀌므로 이 화면으로 돌아올 때 다시 읽는다
@@ -655,6 +660,20 @@ class MainActivity : ComponentActivity() {
                     UiPrefs.setGrassWeeks(this, w)
                     grassWeeks = w
                     Widgets.refresh(this)
+                },
+                aiKey = aiKey,
+                aiModel = aiModel,
+                onAiKey = { k ->
+                    com.simbio.don.app.ai.Ai.setKey(this, k)
+                    aiKey = com.simbio.don.app.ai.Ai.maskedKey(this)
+                },
+                onAiModel = { m ->
+                    com.simbio.don.app.ai.Ai.setModel(this, m)
+                    aiModel = m
+                },
+                onAiOff = {
+                    com.simbio.don.app.ai.Ai.clear(this)
+                    aiKey = null
                 },
                 grassCalendar = grassCalendar,
                 onGrassCalendar = { on ->
@@ -980,6 +999,17 @@ class MainActivity : ComponentActivity() {
                     onTake = { id, amount -> vm.takeFromGoal(id, amount) },
                     onLink = { id, account -> vm.linkGoal(id, account) },
                     onUse = { vm.useGoal(it) },
+                    onBack = close,
+                )
+            }
+            is Overlay.Ai -> {
+                val book by vm.splits.collectAsStateWithLifecycle()
+                com.simbio.don.app.ui.AiScreen(
+                    home = home,
+                    splits = book,
+                    start = o.mode,
+                    onWrite = { d -> open(Overlay.Edit(null, d)) },
+                    onSettings = { open(Overlay.Settings) },
                     onBack = close,
                 )
             }

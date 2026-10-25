@@ -92,6 +92,12 @@ fun SettingsScreen(
     onGrassWeeks: (Int) -> Unit = {},
     grassCalendar: Boolean = true,
     onGrassCalendar: (Boolean) -> Unit = {},
+    /** AI 도우미: 켰으면 가린 키 (끝 네 글자) */
+    aiKey: String? = null,
+    aiModel: com.simbio.don.app.ai.AiModel = com.simbio.don.app.ai.AiModel.OPUS,
+    onAiKey: (String) -> Unit = {},
+    onAiModel: (com.simbio.don.app.ai.AiModel) -> Unit = {},
+    onAiOff: () -> Unit = {},
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -204,6 +210,42 @@ fun SettingsScreen(
                     Switch(checked = effectsAlways, onCheckedChange = onEffectsAlways)
                 }
                 TextButton(onClick = onOpenAnimationSettings) { Text("폰 접근성 설정 열기") }
+            }
+        }
+
+        RealCard("AI 도우미 (선택)") {
+            Text(
+                "말로 적기 · 이번 달 점검 · 물어보기를 Claude가 도와요. 내 Anthropic API 키로 쓰고, 요금은 키 주인에게 나와요.",
+                fontSize = 12.sp,
+                color = DonColors.InkMuted,
+            )
+            Text(
+                "누를 때만, 보여 드린 내용만 보내요. 이번 달 점검·물어보기는 합계 숫자만, 말로 적기는 직접 친 문장만 — 알림 글·가게 이름·메모·계좌 이름은 보내지 않아요. 키는 이 폰에만 암호화해 두고 백업에 넣지 않아요.",
+                fontSize = 12.sp,
+                color = DonColors.InkSoft,
+            )
+            if (aiKey == null) {
+                var key by remember { mutableStateOf("") }
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it.trim().take(200) },
+                    label = { Text("API 키 (sk-ant-…)") },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("키는 console.anthropic.com › API Keys에서 만들어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                com.simbio.don.app.ui.kit.Button(onClick = { onAiKey(key) }, enabled = key.length >= 20, modifier = Modifier.fillMaxWidth()) { Text("AI 도우미 켜기") }
+            } else {
+                Text("켜짐 · 키 $aiKey", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Good)
+                Text("모델", fontSize = 14.sp, color = DonColors.Ink)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    com.simbio.don.app.ai.AiModel.entries.forEach { m ->
+                        FilterChip(selected = aiModel == m, onClick = { onAiModel(m) }, label = { Text(m.label) })
+                    }
+                }
+                Text(aiModel.note + if (aiModel.fallback) " · 거절되면 서버가 다른 모델로 다시 해 봐요" else "", fontSize = 12.sp, color = DonColors.InkMuted)
+                TextButton(onClick = onAiOff, color = DonColors.Warn) { Text("키 지우고 끄기") }
             }
         }
 

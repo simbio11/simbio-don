@@ -41,6 +41,22 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+    // AI SDK가 데려오는 라이브러리들의 겹치는 설명 파일
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.md",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.md",
+                "META-INF/NOTICE.txt",
+                "META-INF/INDEX.LIST",
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+            )
+        }
+    }
     sourceSets {
         // Room 마이그레이션 테스트(Robolectric)가 내보낸 스키마를 읽는다. Robolectric은 변형(debug)의 assets만 본다
         getByName("debug").assets.srcDir("$projectDir/schemas")
@@ -66,6 +82,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
+
+    // AI 도우미 (켤 때만, 사용자 키로): Anthropic 공식 SDK
+    implementation("com.anthropic:anthropic-java:2.34.0")
+    // SDK의 JSON 처리(jackson-module-kotlin)가 쓰는 reflect를 우리 Kotlin과 같은 판으로
+    implementation(kotlin("reflect"))
 
     val room = "2.6.1"
     implementation("androidx.room:room-runtime:$room")

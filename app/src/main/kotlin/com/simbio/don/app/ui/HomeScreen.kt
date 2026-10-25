@@ -70,6 +70,8 @@ fun HomeScreen(
     onCustomize: () -> Unit = {},
     splits: com.simbio.don.app.data.SplitBook = com.simbio.don.app.data.SplitBook.Empty,
     onSplits: () -> Unit = {},
+    aiOn: Boolean = false,
+    onAi: (AiMode) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
@@ -170,6 +172,7 @@ fun HomeScreen(
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay)
                 HomeCard.UPCOMING -> UpcomingCard(home.insights.upcoming, home.today, onPlans)
                 HomeCard.SPLITS -> SplitHomeCard(splits, onSplits)
+                HomeCard.AI -> if (aiOn) AiHomeCard(onAi)
                 HomeCard.TILES -> {
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))
