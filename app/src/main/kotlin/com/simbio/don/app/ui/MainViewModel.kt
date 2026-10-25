@@ -157,6 +157,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val id = repo.addManual(
                 draft.date, draft.amount, draft.label, draft.type, draft.category, draft.memo,
                 draft.accountId, draft.toAccountId, draft.minuteOfDay, LocalDateTime.now(), draft.sub,
+                share = draft.share, people = draft.people, owe = draft.owe,
             )
             // 계획에서 "썼어요"로 적었으면 계획과 잇는다 (계획과 실제를 견줌)
             draft.planId?.let { repo.completePlan(it, id, draft.amount, draft.date) }
@@ -169,16 +170,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     type = draft.type.name,
                     category = draft.category.name,
                     memo = draft.memo,
-                    accountId = draft.accountId,
+                    accountId = if (draft.owe || existing.settleFor != null) null else draft.accountId,
                     toAccountId = if (draft.type == com.simbio.don.budget.EntryType.TRANSFER) draft.toAccountId else null,
                     minuteOfDay = draft.minuteOfDay,
                     sub = draft.sub,
+                    share = draft.share?.takeIf { it in 0 until draft.amount },
+                    people = draft.people,
+                    owe = draft.owe,
                 ),
                 existing,
                 draft.applyToSameLabel,
             )
         }
     }
+
+    // ── 더치페이 정산 ──
+    private val splitPrefs = app.getSharedPreferences("splits", android.content.Context.MODE_PRIVATE)
+    private val dismissedHints = MutableStateFlow(
+        splitPrefs.getStringSet("dismissed", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet(),
+    )
+    val splits = repo.splitBook(dismissedHints).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.simbio.don.app.data.SplitBook.Empty)
+
+    /** "아니에요": 이 입금·송금은 다시 안 묻는다 (최근 300개만 기억) */
+    fun dismissSplitHint(key: Long) {
+        val next = (dismissedHints.value + key).sortedDescending().take(300).toSet()
+        dismissedHints.value = next
+        splitPrefs.edit().putStringSet("dismissed", next.map { it.toString() }.toSet()).apply()
+    }
+
+    fun settleWith(target: EntryEntity, income: EntryEntity) = viewModelScope.launch { repo.settleWith(target, income) }
+    fun settleDirect(target: EntryEntity, amount: Long, accountId: Long?) = viewModelScope.launch { repo.settleDirect(target, amount, accountId, LocalDate.now()) }
+    fun forgiveSplit(target: EntryEntity) = viewModelScope.launch { repo.forgiveSplit(target) }
+    fun unsettle(receipt: EntryEntity) = viewModelScope.launch { repo.unsettle(receipt) }
+    fun markPaid(owe: EntryEntity, accountId: Long?) = viewModelScope.launch { repo.markPaid(owe, accountId) }
+    fun payWith(owe: EntryEntity, out: EntryEntity) = viewModelScope.launch { repo.payWith(owe, out) }
 
     // ── 자산 ──
     val accountBalances = repo.accountBalances.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

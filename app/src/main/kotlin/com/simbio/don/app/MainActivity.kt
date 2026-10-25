@@ -83,6 +83,7 @@ import com.simbio.don.app.ui.EntryDraft
 import com.simbio.don.app.ui.EntryEditScreen
 import com.simbio.don.app.ui.FurnitureScreen
 import com.simbio.don.app.ui.GoalsScreen
+import com.simbio.don.app.ui.SplitScreen
 import com.simbio.don.app.ui.HomeScreen
 import com.simbio.don.app.ui.HouseScreen
 import com.simbio.don.app.ui.LedgerMode
@@ -135,6 +136,7 @@ private sealed interface Overlay {
     data class Shop(val prefill: SharedProduct?) : Overlay
     data object Budgets : Overlay
     data object Goals : Overlay
+    data object Splits : Overlay
     data object Settings : Overlay
     data object Search : Overlay
     data class Account(val id: Long) : Overlay
@@ -445,6 +447,8 @@ class MainActivity : ComponentActivity() {
                         onAssetCheck = { screens.push(Overlay.AssetCheck) },
                         onPlans = { screens.push(Overlay.Plans) },
                         onCustomize = { screens.push(Overlay.HomeCards) },
+                        splits = vm.splits.collectAsStateWithLifecycle().value,
+                        onSplits = { screens.push(Overlay.Splits) },
                         onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
                         onAddFixed = { s ->
                             vm.addFixedExpense(s.label, s.amount, s.day)
@@ -730,6 +734,7 @@ class MainActivity : ComponentActivity() {
                         onDeleteInstallment = o.existing?.installmentId?.let { id -> { vm.deleteInstallment(id) } },
                         onSave = { d -> vm.save(d, o.existing) },
                         onDelete = o.existing?.let { e -> { vm.deleteEntry(e) } },
+                        onUnsettle = o.existing?.takeIf { it.settleFor != null }?.let { e -> { vm.unsettle(e) } },
                         onBack = close,
                     )
                 }
@@ -968,6 +973,23 @@ class MainActivity : ComponentActivity() {
                     onTake = { id, amount -> vm.takeFromGoal(id, amount) },
                     onLink = { id, account -> vm.linkGoal(id, account) },
                     onUse = { vm.useGoal(it) },
+                    onBack = close,
+                )
+            }
+            Overlay.Splits -> {
+                val book by vm.splits.collectAsStateWithLifecycle()
+                SplitScreen(
+                    book = book,
+                    accounts = home.accounts.map { it.account },
+                    onSettleWith = { t, i -> vm.settleWith(t, i) },
+                    onSettleDirect = { t, amount, acc -> vm.settleDirect(t, amount, acc) },
+                    onForgive = { vm.forgiveSplit(it) },
+                    onUnsettle = { vm.unsettle(it) },
+                    onPaid = { p, acc -> vm.markPaid(p, acc) },
+                    onPayWith = { p, out -> vm.payWith(p, out) },
+                    onDismiss = { vm.dismissSplitHint(it) },
+                    onAdd = { open(Overlay.Edit(null, EntryDraft(home.today, 0, "", EntryType.SPEND, Category.FOOD, "", false, people = 2))) },
+                    onOpen = { open(Overlay.Edit(it)) },
                     onBack = close,
                 )
             }

@@ -38,6 +38,8 @@ data class Wealth(val pots: List<AccountBalance>, val history: List<WealthPoint>
 object AccountBalances {
     /** 기록 하나가 [accountId] 자산의 잔액을 얼마나 바꾸는지 */
     fun change(e: EntryEntity, accountId: Long): Long {
+        // 아직 안 보낸 돈은 잔액을 바꾸지 않는다
+        if (e.owe) return 0
         var d = 0L
         when (enumOr(e.type, EntryType.SPEND)) {
             EntryType.INCOME, EntryType.REFUND -> if (e.accountId == accountId) d += e.amount
@@ -109,7 +111,7 @@ object AccountBalances {
         fun add(id: Long?, v: Long) {
             if (id != null) delta[id] = (delta[id] ?: 0) + v
         }
-        entries.forEach { e ->
+        entries.filter { !it.owe }.forEach { e ->
             when (enumOr(e.type, EntryType.SPEND)) {
                 EntryType.INCOME, EntryType.REFUND -> add(e.accountId, e.amount)
                 EntryType.SPEND, EntryType.EXCEPTION, EntryType.FIXED -> add(e.accountId, -e.amount)

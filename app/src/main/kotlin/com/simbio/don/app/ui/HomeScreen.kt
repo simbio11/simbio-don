@@ -68,6 +68,8 @@ fun HomeScreen(
     onAddFixed: (com.simbio.don.budget.Subscription) -> Unit = {},
     onPlans: () -> Unit = {},
     onCustomize: () -> Unit = {},
+    splits: com.simbio.don.app.data.SplitBook = com.simbio.don.app.data.SplitBook.Empty,
+    onSplits: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
@@ -167,6 +169,7 @@ fun HomeScreen(
                 HomeCard.FORECAST -> home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay)
                 HomeCard.UPCOMING -> UpcomingCard(home.insights.upcoming, home.today, onPlans)
+                HomeCard.SPLITS -> SplitHomeCard(splits, onSplits)
                 HomeCard.TILES -> {
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))

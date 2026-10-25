@@ -94,6 +94,9 @@ interface DonDao {
     @Update
     suspend fun updateEntries(e: List<EntryEntity>)
 
+    @Query("SELECT * FROM entry WHERE id = :id")
+    suspend fun entryNow(id: Long): EntryEntity?
+
     @Query("SELECT * FROM entry ORDER BY epochDay, id")
     suspend fun allEntriesNow(): List<EntryEntity>
 

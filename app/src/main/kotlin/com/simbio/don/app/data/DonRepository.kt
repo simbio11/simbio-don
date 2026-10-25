@@ -1540,6 +1540,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         minuteOfDay: Int? = null,
         now: LocalDateTime? = null,
         sub: String? = null,
+        /** 더치페이: 내가 다 냈으면 내 몫과 몇 명이서, 남이 냈으면 [owe] (보낼 돈) */
+        share: Long? = null,
+        people: Int? = null,
+        owe: Boolean = false,
     ) = writeLock.withLock {
         val name = label.ifBlank {
             when (type) {
@@ -1567,10 +1571,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 source = EntrySource.MANUAL.name,
                 category = cat.name,
                 memo = memo,
-                accountId = accountId,
+                accountId = if (owe && type.spendLike) null else accountId,
                 toAccountId = if (type == EntryType.TRANSFER) toAccountId else null,
                 minuteOfDay = minuteOfDay,
                 sub = sub?.takeIf { type != EntryType.TRANSFER && it.isNotBlank() },
+                share = share?.takeIf { type.spendLike && !owe && it in 0 until amount },
+                people = people?.takeIf { type.spendLike && it > 1 },
+                owe = owe && type.spendLike,
             ),
         )
         if (type == EntryType.INCOME && cat == Category.SALARY) {
@@ -1635,6 +1642,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun updateEntry(updated: EntryEntity, previous: EntryEntity, applyToSameLabel: Boolean) {
         dao.updateEntry(updated)
+        // 나눠 내기를 끄면 받은 정산은 다시 수입으로
+        if (updated.share == null && previous.share != null) releaseReceipts(updated.id)
         if (updated.category != previous.category && !Category.of(updated.category).income) {
             learn(updated.label, Category.of(updated.category))
             if (applyToSameLabel) {
@@ -1655,7 +1664,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     val learnedCount: Flow<Int> = dao.categoryRules().map { it.size }
 
-    suspend fun deleteEntry(e: EntryEntity) = dao.deleteEntry(e)
+    suspend fun deleteEntry(e: EntryEntity) {
+        dao.deleteEntry(e)
+        releaseReceipts(e.id)
+    }
 
     /** 지운 기록 되살리기 (같은 id로) */
     suspend fun restoreEntry(e: EntryEntity) {
@@ -1996,6 +2008,88 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     val goalMoves: Flow<List<GoalMoveEntity>> = dao.goalMoves()
+
+    // ── 더치페이 정산 ──────────────────────────────────────────
+
+    /** 최근 넉 달 기록으로 만든 정산 장부. [dismissed]: "아니에요"로 다시 안 물을 기록 */
+    fun splitBook(dismissed: Flow<Set<Long>>, today: LocalDate = LocalDate.now()): Flow<SplitBook> =
+        combine(dao.entriesBetween(today.minusDays(120).toEpochDay(), today.plusDays(400).toEpochDay()), dismissed) { list, d ->
+            Splits.book(list, d)
+        }
+
+    suspend fun splitBookNow(dismissed: Set<Long> = emptySet(), today: LocalDate = LocalDate.now()): SplitBook =
+        Splits.book(dao.entriesBetweenNow(today.minusDays(120).toEpochDay(), today.plusDays(400).toEpochDay()), dismissed)
+
+    /** 들어온 돈 [income]은 [target]의 정산 — 수입에서 빼고 그 통장 잔액에만 */
+    suspend fun settleWith(target: EntryEntity, income: EntryEntity) = writeLock.withLock {
+        val now = dao.entryNow(income.id) ?: return@withLock
+        dao.updateEntry(
+            now.copy(type = EntryType.TRANSFER.name, toAccountId = now.accountId, accountId = null, settleFor = target.id, sentOut = false),
+        )
+    }
+
+    /** 현금 등으로 받음 (기록된 입금이 없을 때): 받은 통장을 고르면 그 잔액에 더한다 */
+    suspend fun settleDirect(target: EntryEntity, amount: Long, accountId: Long?, date: LocalDate): Long = writeLock.withLock {
+        if (amount <= 0) return@withLock 0L
+        dao.insertEntry(
+            EntryEntity(
+                epochDay = date.toEpochDay(),
+                amount = amount,
+                label = "정산 받음",
+                type = EntryType.TRANSFER.name,
+                source = EntrySource.MANUAL.name,
+                memo = target.label,
+                toAccountId = accountId,
+                settleFor = target.id,
+            ),
+        )
+    }
+
+    /** 남은 받을 돈은 안 받기로 — 그만큼 내 몫(내 지출)이 된다 */
+    suspend fun forgiveSplit(target: EntryEntity) = writeLock.withLock {
+        val e = dao.entryNow(target.id) ?: return@withLock
+        val received = dao.allEntriesNow().filter { it.settleFor == e.id }.sumOf { it.amount }
+        dao.updateEntry(e.copy(share = (e.amount - received).coerceIn(0, e.amount)))
+    }
+
+    /** 정산으로 묶은 것을 되돌린다: 입금이면 다시 수입으로, 직접 적은 것이면 지운다 */
+    suspend fun unsettle(receipt: EntryEntity) = writeLock.withLock {
+        val e = dao.entryNow(receipt.id) ?: return@withLock
+        if (e.source == EntrySource.MANUAL.name && e.label == "정산 받음") dao.deleteEntry(e) else dao.updateEntry(asIncome(e))
+    }
+
+    /** 보낼 돈을 보냄 — 고른 통장에서 나간다 */
+    suspend fun markPaid(owe: EntryEntity, accountId: Long?) = writeLock.withLock {
+        val e = dao.entryNow(owe.id) ?: return@withLock
+        dao.updateEntry(e.copy(owe = false, accountId = accountId))
+    }
+
+    /** 보낼 돈 [owe]를 송금 [out]으로 보냈다: 송금 기록이 그 지출(내 몫)이 된다 — 날짜·내용·분류는 보낼 돈 것으로 */
+    suspend fun payWith(owe: EntryEntity, out: EntryEntity) = writeLock.withLock {
+        val o = dao.entryNow(owe.id) ?: return@withLock
+        val t = dao.entryNow(out.id) ?: return@withLock
+        transaction {
+            dao.updateEntry(
+                t.copy(
+                    epochDay = o.epochDay, label = o.label, type = o.type, category = o.category, sub = o.sub,
+                    memo = listOf(o.memo, "${t.label}에게 보냄").filter { it.isNotBlank() }.joinToString(" · "),
+                    sentOut = false, people = o.people,
+                ),
+            )
+            dao.deleteEntry(o)
+        }
+    }
+
+    private fun asIncome(e: EntryEntity) =
+        e.copy(type = EntryType.INCOME.name, accountId = e.toAccountId, toAccountId = null, settleFor = null)
+
+    /** [entryId]에 묶인 정산을 푼다 (나눠 낸 기록을 지우거나 나눠 내기를 껐을 때) */
+    private suspend fun releaseReceipts(entryId: Long) {
+        val receipts = dao.allEntriesNow().filter { it.settleFor == entryId }
+        receipts.forEach { r ->
+            if (r.source == EntrySource.MANUAL.name && r.label == "정산 받음") dao.deleteEntry(r) else dao.updateEntry(asIncome(r))
+        }
+    }
 
     /** 목표에 넣기. [source]: 아낀 돈에서 / 따로 생긴 돈 */
     suspend fun putIntoGoal(goalId: Long, amount: Long, source: GoalSource, today: LocalDate) = writeLock.withLock {

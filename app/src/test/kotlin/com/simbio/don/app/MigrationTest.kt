@@ -23,10 +23,10 @@ class MigrationTest {
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
         val db = helper.runMigrationsAndValidate(
-            "m.db", 12, true,
+            "m.db", 13, true,
             DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3, DonDatabase.MIGRATION_3_4, DonDatabase.MIGRATION_4_5,
             DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7, DonDatabase.MIGRATION_7_8, DonDatabase.MIGRATION_8_9, DonDatabase.MIGRATION_9_10, DonDatabase.MIGRATION_10_11,
-            DonDatabase.MIGRATION_11_12,
+            DonDatabase.MIGRATION_11_12, DonDatabase.MIGRATION_12_13,
         )
         db.query("SELECT id, amount, category, memo, accountId, minuteOfDay FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
@@ -136,5 +136,19 @@ class MigrationTest {
         val db = helper.runMigrationsAndValidate("m11.db", 12, true, DonDatabase.MIGRATION_11_12)
         db.query("SELECT name, accountId FROM savings_goal").use { c -> c.moveToNext(); assertEquals("여행", c.getString(0)); assertTrue(c.isNull(1)) }
         db.query("SELECT COUNT(*) FROM goal_move").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
+    }
+
+    @Test
+    fun v12에서_v13으로_기록은_그대로고_나눠_내기는_비어_있다() {
+        helper.createDatabase("m12.db", 12).use { db ->
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, category, memo, sentOut) VALUES (1, 20000, 80000, '고깃집', 'SPEND', 'MANUAL', 'FOOD', '', 0)")
+        }
+        val db = helper.runMigrationsAndValidate("m12.db", 13, true, DonDatabase.MIGRATION_12_13)
+        db.query("SELECT amount, share, people, settleFor, owe FROM entry").use { c ->
+            c.moveToNext()
+            assertEquals(80000, c.getLong(0))
+            assertTrue(c.isNull(1)); assertTrue(c.isNull(2)); assertTrue(c.isNull(3))
+            assertEquals(0, c.getInt(4))
+        }
     }
 }

@@ -11,7 +11,7 @@ import java.time.LocalDateTime
 object Backup {
     const val FORMAT = "dont-backup"
     /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12), 5: 자산 점검 (0.13), 6: 돈 나갈 계획·내 이름 (0.14) */
-    const val VERSION = 7
+    const val VERSION = 8
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -65,6 +65,7 @@ object Backup {
             o.putOpt("accountId", x.accountId); o.putOpt("toAccountId", x.toAccountId); o.putOpt("minuteOfDay", x.minuteOfDay)
             o.putOpt("fixedId", x.fixedId); o.putOpt("sub", x.sub); o.putOpt("installmentId", x.installmentId)
             o.putOpt("installmentNo", x.installmentNo); o.putOpt("incomeId", x.incomeId)
+            o.putOpt("share", x.share); o.putOpt("people", x.people); o.putOpt("settleFor", x.settleFor); o.put("owe", x.owe)
         })
         put("reviews", arr(d.reviews) { o, x ->
             o.put("id", x.id); o.put("packageName", x.packageName); o.put("action", x.action); o.put("amount", x.amount)
@@ -166,7 +167,8 @@ object Backup {
                         o.getString("source"), o.strOrNull("packageName"), o.longOrNull("postedAtEpochSecond"),
                         o.optString("category", "ETC"), o.optString("memo", ""), o.longOrNull("accountId"), o.longOrNull("toAccountId"),
                         o.intOrNull("minuteOfDay"), o.longOrNull("fixedId"), o.strOrNull("sub"), o.longOrNull("installmentId"),
-                        o.strOrNull("installmentNo"), o.longOrNull("incomeId"))
+                        o.strOrNull("installmentNo"), o.longOrNull("incomeId"), share = o.longOrNull("share"),
+                        people = o.intOrNull("people"), settleFor = o.longOrNull("settleFor"), owe = o.optBoolean("owe", false))
                 },
                 reviews = list(root, "reviews") { o ->
                     ReviewItemEntity(o.getLong("id"), o.getString("packageName"), o.getString("action"), o.getLong("amount"),

@@ -25,15 +25,26 @@ internal fun Long.toLocalDateTime(): LocalDateTime = LocalDateTime.ofInstant(Ins
 inline fun <reified T : Enum<T>> enumOr(name: String?, default: T): T =
     enumValues<T>().firstOrNull { it.name == name } ?: default
 
-fun EntryEntity.toEntry() = Entry(
-    date = LocalDate.ofEpochDay(epochDay),
-    amount = amount,
-    label = label,
-    type = enumOr(type, EntryType.SPEND),
-    source = enumOr(source, EntrySource.MANUAL),
-    category = Category.of(category),
-    sub = sub,
-)
+/**
+ * 예산·통계용 기록. 나눠 낸 지출은 내 몫만 — 내 몫이 0이면(남 것을 대신 내 줌) 지출이 아니라 이체처럼 센다.
+ * 잔액은 [AccountBalances]가 낸 돈 전부로 따로 센다.
+ */
+fun EntryEntity.toEntry(): Entry {
+    val t = enumOr(type, EntryType.SPEND)
+    val mine = share?.takeIf { t.spendLike }
+    return Entry(
+        date = LocalDate.ofEpochDay(epochDay),
+        amount = if (mine != null && mine > 0) mine else amount,
+        label = label,
+        type = if (mine == 0L) EntryType.TRANSFER else t,
+        source = enumOr(source, EntrySource.MANUAL),
+        category = Category.of(category),
+        sub = sub,
+    )
+}
+
+/** 내 몫을 나눌 수 있는 지출 (생활비·예외·고정) */
+val EntryType.spendLike: Boolean get() = this == EntryType.SPEND || this == EntryType.EXCEPTION || this == EntryType.FIXED
 
 fun CategoryDefEntity.toCategory() = Category.custom(name, label, income, icon, color)
 
@@ -59,9 +70,10 @@ fun CycleEntity.toPayCycle(payDay: Int): PayCycle {
 fun EntryEntity.toParsedOrNull(): ParsedPayment? {
     val pkg = packageName ?: return null
     val posted = postedAtEpochSecond ?: return null
-    val action = when (type) {
-        EntryType.REFUND.name -> RuleAction.REFUND
-        EntryType.INCOME.name -> RuleAction.INCOME
+    val action = when {
+        type == EntryType.REFUND.name -> RuleAction.REFUND
+        // 정산으로 바꾼 입금도 알림으로는 입금 (다른 앱에 온 같은 입금 알림과 짝)
+        type == EntryType.INCOME.name || settleFor != null -> RuleAction.INCOME
         else -> RuleAction.SPEND
     }
     return ParsedPayment(pkg, action, amount, label, posted.toLocalDateTime(), "")

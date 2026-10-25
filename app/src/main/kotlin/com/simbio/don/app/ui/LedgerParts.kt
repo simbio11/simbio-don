@@ -109,7 +109,8 @@ fun RoundIconButton(icon: UiIcon, description: String, enabled: Boolean, onClick
 fun spendSigned(e: EntryEntity): Long = when (e.type) {
     EntryType.REFUND.name -> -e.amount
     EntryType.INCOME.name, EntryType.TRANSFER.name -> 0
-    else -> e.amount
+    // 나눠 낸 지출은 내 몫만
+    else -> e.share ?: e.amount
 }
 
 /** 수입 · 지출 · 남은 돈 세 칸 */

@@ -80,7 +80,15 @@ data class EntryDraft(
     val months: Int = 1,
     /** 돈 나갈 계획에서 "썼어요"로 연 것이면 그 계획 (저장하면 계획과 이어진다) */
     val planId: Long? = null,
+    /** 더치페이 — 내가 다 냈으면 내 몫과 몇 명이서 */
+    val share: Long? = null,
+    val people: Int? = null,
+    /** 남이 내서 내가 보낼 돈 (금액 = 내 몫) */
+    val owe: Boolean = false,
 )
+
+/** 나눠 내기: 혼자 냄 · 내가 다 냄 · 남이 냄 */
+private enum class SplitMode(val label: String) { NONE("혼자 냄"), I_PAID("내가 다 냄"), THEY_PAID("남이 냄") }
 
 /** 할부 고르기 칩 */
 private val INSTALLMENT_CHOICES = listOf(1, 2, 3, 6, 10, 12, 24)
@@ -117,6 +125,8 @@ fun EntryEditScreen(
     onAddSub: (Category, String) -> Unit = { _, _ -> },
     /** 이 기록이 할부면: "n/N" 표시와 할부 전체 지우기 */
     onDeleteInstallment: (() -> Unit)? = null,
+    /** 정산으로 받은 돈이면: 정산 풀기 (다시 수입으로) */
+    onUnsettle: (() -> Unit)? = null,
     onSave: (EntryDraft) -> Unit,
     onDelete: (() -> Unit)?,
     onBack: () -> Unit,
@@ -143,6 +153,20 @@ fun EntryEditScreen(
     var months by remember { mutableStateOf(1) }
     var addingSub by remember { mutableStateOf(false) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
+    var splitMode by remember {
+        mutableStateOf(
+            when {
+                existing?.owe == true || (existing == null && initial?.owe == true) -> SplitMode.THEY_PAID
+                existing?.share != null || (existing == null && initial?.people != null) -> SplitMode.I_PAID
+                else -> SplitMode.NONE
+            },
+        )
+    }
+    var people by remember { mutableStateOf(existing?.people ?: initial?.people ?: 2) }
+    // 내 몫은 고치기 전까지 금액·인원으로 자동 계산
+    var shareText by remember { mutableStateOf(existing?.share?.toString() ?: "") }
+    var shareEdited by remember { mutableStateOf(existing?.share != null) }
+    val settled = existing?.settleFor != null
 
     val kind = kindOf(type)
     val isIncome = kind == Kind.INCOME
@@ -153,19 +177,27 @@ fun EntryEditScreen(
     val exceptionAllowed = canAddException || wasException
     val recent = (0L..6L).map { today.minusDays(it) }.filter { it in minDate..maxDate }
     val shownAccounts = accounts.filter { !it.hidden || it.id == accountId || it.id == toAccountId }
-    val transferOk = kind != Kind.TRANSFER || (accountId != null && toAccountId != null && accountId != toAccountId)
+    val transferOk = kind != Kind.TRANSFER || settled || (accountId != null && toAccountId != null && accountId != toAccountId)
     val subs = subcategories[category.name].orEmpty()
     // 카테고리를 바꾸면 그 카테고리에 없는 소분류는 비운다
     val subNow = sub?.takeIf { it in subs || (existing?.sub == it && existing.category == category.name) }
     // 할부는 새 생활비 지출만 (고정·예외·환불은 일시불)
-    val installmentOk = existing == null && type == EntryType.SPEND
+    val splitOk = kind == Kind.SPEND && (type == EntryType.SPEND || type == EntryType.EXCEPTION)
+    val split = if (splitOk) splitMode else SplitMode.NONE
+    val total = amount.toLongOrNull() ?: 0
+    val share = if (shareEdited) shareText.toLongOrNull() ?: 0 else com.simbio.don.app.data.Splits.myShare(total, people)
+    val shareOk = split != SplitMode.I_PAID || share in 0 until total
+    val installmentOk = existing == null && type == EntryType.SPEND && split == SplitMode.NONE
     val monthsNow = if (installmentOk) months else 1
-    val canSave = (amount.toLongOrNull() ?: 0) > 0 && transferOk && (amount.toLongOrNull() ?: 0) >= monthsNow
+    val canSave = total > 0 && transferOk && total >= monthsNow && shareOk
 
     fun draft() = EntryDraft(
         date, amount.toLong(), label.trim(), type, category, memo.trim(), applySame, accountId, toAccountId, minute,
         subNow.takeIf { kind != Kind.TRANSFER }, monthsNow,
         planId = initial?.planId?.takeIf { savedCount == 0 },
+        share = share.takeIf { split == SplitMode.I_PAID },
+        people = people.takeIf { split == SplitMode.I_PAID },
+        owe = split == SplitMode.THEY_PAID,
     )
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
@@ -174,7 +206,7 @@ fun EntryEditScreen(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            KindTabs(kind) { k ->
+            if (!settled) KindTabs(kind) { k ->
                 type = when (k) {
                     Kind.INCOME -> EntryType.INCOME
                     Kind.TRANSFER -> EntryType.TRANSFER
@@ -215,7 +247,15 @@ fun EntryEditScreen(
                 AmountQuickAdd(amount) { amount = it }
             }
 
-            if (kind == Kind.TRANSFER) {
+            if (settled) {
+                FormCard("정산으로 받은 돈") {
+                    Text("나눠 낸 돈을 돌려받은 정산이에요. 수입에 넣지 않고 받은 통장 잔액에만 더해요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    FormRow("받은 곳") { AccountChips(shownAccounts, toAccountId, allowNone = true) { toAccountId = it } }
+                    if (onUnsettle != null) {
+                        TextButton(onClick = { onUnsettle(); onBack() }, color = DonColors.Warn) { Text("정산 아니에요 (다시 수입으로)") }
+                    }
+                }
+            } else if (kind == Kind.TRANSFER) {
                 FormCard("어디서 어디로") {
                     if (shownAccounts.size < 2) {
                         Text("이체는 자산이 두 개 이상 있어야 해요. 자산 탭에서 통장·현금·카드를 추가하세요.", fontSize = 13.sp, color = DonColors.Warn)
@@ -239,7 +279,34 @@ fun EntryEditScreen(
                         }
                     }
                 }
-                if (shownAccounts.isNotEmpty()) {
+                if (splitOk) {
+                    FormCard("나눠 냈나요") {
+                        SegmentedToggle(SplitMode.entries.map { it.label }, splitMode.ordinal) { splitMode = SplitMode.entries[it] }
+                        when (splitMode) {
+                            SplitMode.I_PAID -> {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                    (2..8).forEach { n -> FilterChip(selected = people == n, onClick = { people = n; shareEdited = false }, label = { Text("${n}명") }) }
+                                }
+                                MoneyField("내 몫", if (shareEdited) shareText else share.takeIf { total > 0 }?.toString() ?: "", { shareText = it; shareEdited = true })
+                                Text(
+                                    if (!shareOk) "내 몫은 낸 돈보다 작아야 해요"
+                                    else "받을 돈 ${won((total - share).coerceAtLeast(0))}" +
+                                        (if (!shareEdited && people > 1 && total > 0) " (한 사람 ${won(com.simbio.don.app.data.Splits.perPerson(total, people))})" else "") +
+                                        ". 생활비에는 내 몫만 들어가고, 친구가 보낸 돈은 수입이 아니라 정산으로 묶어요.",
+                                    fontSize = 12.sp,
+                                    color = if (shareOk) DonColors.InkMuted else DonColors.Warn,
+                                )
+                            }
+                            SplitMode.THEY_PAID -> Text(
+                                "금액에 내 몫만 적으세요. '보낼 돈'으로 적어 두고, 보내면 그 송금과 묶어요 (통장 잔액은 보낼 때 빠져요).",
+                                fontSize = 12.sp,
+                                color = DonColors.InkMuted,
+                            )
+                            SplitMode.NONE -> Unit
+                        }
+                    }
+                }
+                if (shownAccounts.isNotEmpty() && split != SplitMode.THEY_PAID) {
                     FormCard(if (isIncome) "들어온 곳" else "결제 수단") { AccountChips(shownAccounts, accountId, allowNone = true) { accountId = it } }
                 }
             }

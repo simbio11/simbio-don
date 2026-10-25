@@ -142,6 +142,14 @@ data class EntryEntity(
     val incomeId: Long? = null,
     /** 알림 글이 송금·이체로 나간 것이었음 (곧 같은 금액이 들어오면 내 계좌끼리 이체로 합친다) */
     @ColumnInfo(defaultValue = "0") val sentOut: Boolean = false,
+    /** 나눠 낼 돈을 내가 다 냈을 때 내 몫 (생활비·통계에는 이만큼만, 잔액에는 낸 돈 전부). null이면 전부 내 몫 */
+    val share: Long? = null,
+    /** 몇 명이서 나눴는지 (보이기용) */
+    val people: Int? = null,
+    /** 정산으로 받은 돈이면 어느 나눠 낸 기록의 것인지 (수입이 아니라 이체처럼 잔액에만) */
+    val settleFor: Long? = null,
+    /** 남이 내서 내가 보낼 돈 — 아직 안 보냄 (생활비에는 들어가고 잔액은 보낼 때) */
+    @ColumnInfo(defaultValue = "0") val owe: Boolean = false,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */

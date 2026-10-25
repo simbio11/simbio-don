@@ -62,10 +62,13 @@ enum class LedgerMode(val label: String) { DAILY("일일"), CALENDAR("달력"), 
 // ── 금액 표시 ──────────────────────────────────────────────
 
 /** 기록 금액: 수입·환불 +파랑, 지출 −빨강, 이체 회색 */
-fun entryAmountText(e: EntryEntity): String = when (e.type) {
-    EntryType.INCOME.name, EntryType.REFUND.name -> "+${won(e.amount)}"
-    EntryType.TRANSFER.name -> won(e.amount)
-    else -> "−${won(e.amount)}"
+fun entryAmountText(e: EntryEntity): String = when {
+    e.settleFor != null -> "+${won(e.amount)}"
+    else -> when (e.type) {
+        EntryType.INCOME.name, EntryType.REFUND.name -> "+${won(e.amount)}"
+        EntryType.TRANSFER.name -> won(e.amount)
+        else -> "−${won(e.amount)}"
+    }
 }
 
 fun entryAmountColor(e: EntryEntity): Color = when (e.type) {
@@ -93,15 +96,20 @@ fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEnt
             Text(
                 buildList {
                     add(
-                        when (type) {
+                        when {
+                            e.settleFor != null -> "정산 받음" + (e.toAccountId?.let(accountNames::get)?.let { " → $it" } ?: "")
+                            else -> when (type) {
                             EntryType.TRANSFER -> listOfNotNull(e.accountId?.let(accountNames::get), e.toAccountId?.let(accountNames::get))
                                 .joinToString(" → ").ifEmpty { "이체" }
                             EntryType.FIXED -> "고정 · ${c.label}"
                             EntryType.EXCEPTION -> "예외 · ${c.label}"
                             EntryType.REFUND -> "환불 · ${c.label}"
                             else -> c.label
+                        }
                         } + (e.sub?.let { " > $it" } ?: ""),
                     )
+                    e.share?.let { add("나눠 냄 · 내 몫 ${won(it)}") }
+                    if (e.owe) add("보낼 돈")
                     e.installmentNo?.let { add("할부 $it") }
                     if (type != EntryType.TRANSFER) e.accountId?.let(accountNames::get)?.let(::add)
                     e.minuteOfDay?.let { add(timeText(it)) }
