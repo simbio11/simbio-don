@@ -345,8 +345,9 @@ class BuddyWidget : DonWidget() {
             val week = home.currentWeek ?: return home.mood.label to "월급을 확인해 주세요"
             return when {
                 week.available <= 0 -> home.mood.label to "이번 주 예산을 다 썼어요"
-                home.insights.noSpend?.streak?.let { it >= 2 } == true -> "무지출 ${home.insights.noSpend!!.streak}일째!" to "오늘은 ${compactWon(home.todayAllowance)}원까지"
-                else -> home.mood.label to "오늘은 ${compactWon(home.todayAllowance)}원까지"
+                home.day.over -> home.mood.label to "오늘 몫 ${compactWon(-home.day.left)}원 넘음"
+                home.insights.noSpend?.streak?.let { it >= 2 } == true -> "무지출 ${home.insights.noSpend!!.streak}일째!" to "오늘 ${compactWon(home.day.left)}원 남음"
+                else -> home.mood.label to "오늘 ${compactWon(home.day.left)}원 남음"
             }
         }
     }

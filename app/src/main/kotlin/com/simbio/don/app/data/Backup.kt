@@ -11,7 +11,7 @@ import java.time.LocalDateTime
 object Backup {
     const val FORMAT = "dont-backup"
     /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12), 5: 자산 점검 (0.13), 6: 돈 나갈 계획·내 이름 (0.14) */
-    const val VERSION = 8
+    const val VERSION = 9
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -48,6 +48,7 @@ object Backup {
             o.put("payDay", x.payDay); o.put("settlementDay", x.settlementDay); o.put("savings", x.savings)
             o.putOpt("pendingSettlementDay", x.pendingSettlementDay); o.put("subSeeded", x.subSeeded)
             o.put("milesSeeded", x.milesSeeded); o.putOpt("growEpochDay", x.growEpochDay); o.putOpt("ownerName", x.ownerName)
+            o.put("dailyCategories", x.dailyCategories)
         })
         put("fixed", arr(d.fixed) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("amount", x.amount); o.putOpt("day", x.day)
@@ -131,6 +132,8 @@ object Backup {
             o.put("id", x.id); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("label", x.label); o.put("category", x.category)
             o.put("memo", x.memo); o.putOpt("doneEntryId", x.doneEntryId); o.putOpt("doneAmount", x.doneAmount)
             o.putOpt("doneEpochDay", x.doneEpochDay); o.put("canceled", x.canceled)
+            // 캘린더 일정 id는 이 폰에서만 뜻이 있어 다른 폰에 되살리면 이어짐이 풀린다 (계획은 그대로)
+            o.putOpt("eventId", x.eventId); o.put("calendarOwned", x.calendarOwned)
         })
         put("goalMoves", arr(d.goalMoves) { o, x ->
             o.put("id", x.id); o.put("goalId", x.goalId); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("source", x.source)
@@ -151,7 +154,8 @@ object Backup {
                     SettingsEntity(payDay = o.getInt("payDay"), settlementDay = o.getInt("settlementDay"), savings = o.getLong("savings"),
                         pendingSettlementDay = o.intOrNull("pendingSettlementDay"), subSeeded = o.optBoolean("subSeeded", false),
                         milesSeeded = o.optBoolean("milesSeeded", false), growEpochDay = o.longOrNull("growEpochDay"),
-                        ownerName = o.strOrNull("ownerName"))
+                        ownerName = o.strOrNull("ownerName"),
+                        dailyCategories = o.optString("dailyCategories", "FOOD,CAFE,DELIVERY,TRANSPORT"))
                 },
                 fixed = list(root, "fixed") { o ->
                     FixedExpenseEntity(o.getLong("id"), o.getString("name"), o.getLong("amount"), o.intOrNull("day"),
@@ -230,7 +234,7 @@ object Backup {
                 plans = list(root, "plans") { o ->
                     PlanEntity(o.getLong("id"), o.getLong("epochDay"), o.getLong("amount"), o.getString("label"), o.optString("category", "ETC"),
                         o.optString("memo", ""), o.longOrNull("doneEntryId"), o.longOrNull("doneAmount"), o.longOrNull("doneEpochDay"),
-                        o.optBoolean("canceled", false))
+                        o.optBoolean("canceled", false), o.longOrNull("eventId"), o.optBoolean("calendarOwned", false))
                 },
                 goalMoves = list(root, "goalMoves") { o ->
                     GoalMoveEntity(o.getLong("id"), o.getLong("goalId"), o.getLong("epochDay"), o.getLong("amount"), o.optString("source", GoalSource.EXTRA.name))

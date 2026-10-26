@@ -80,8 +80,15 @@ object DailyReminder {
         }
         val todaySpent = Stats.livingTotal(home.entries.filter { it.epochDay == home.today.toEpochDay() }.map { it.toEntry() })
         val week = home.currentWeek
-        val title = if (todaySpent > 0) "오늘 ${Won.format(todaySpent)} 썼어요" else "오늘은 아직 기록된 지출이 없어요"
+        val day = home.day
+        val title = when {
+            day.over -> "오늘 몫을 ${Won.format(-day.left)} 넘었어요"
+            day.spentDaily > 0 -> "오늘 몫 ${Won.format(day.allowance)} 중 ${Won.format(day.spentDaily)} 썼어요"
+            todaySpent > 0 -> "오늘 ${Won.format(todaySpent)} 썼어요"
+            else -> "오늘은 아직 기록된 지출이 없어요"
+        }
         val body = buildString {
+            if (day.spentBig > 0) append("큰 지출 ${Won.format(day.spentBig)}은 이번 주에서 나눴어요 · ")
             if (week != null) append("이번 주 남은 돈 ${Won.format(week.available)}")
             if (home.reviewCount > 0) append(if (isEmpty()) "" else " · ").append("확인할 결제 알림 ${home.reviewCount}건")
             // 정산 같은 입금·송금이 있으면 묶으라고

@@ -67,11 +67,17 @@ class WeekWidget : AppWidgetProvider() {
             } else {
                 v.setTextViewText(R.id.widget_amount, Won.format(week.available))
                 v.setTextColor(R.id.widget_amount, if (week.available >= 0) st.ink else st.expense)
+                // 오늘: 오늘 몫 − 그날 쓴 돈 (식비·카페 같은 분류). 큰 지출은 이번 주에서 나뉜다
+                val day = home.day
                 v.setTextViewText(
                     R.id.widget_today,
-                    if (week.available > 0) "오늘은 ${Won.format(home.todayAllowance)}까지" else "이번 주 예산을 다 썼어요",
+                    when {
+                        week.available <= 0 -> "이번 주 예산을 다 썼어요"
+                        day.over -> "오늘 몫을 ${Won.format(-day.left)} 넘었어요"
+                        else -> "오늘 남은 돈 ${Won.format(day.left)}"
+                    },
                 )
-                v.setTextColor(R.id.widget_today, if (week.available > 0) st.real else st.expense)
+                v.setTextColor(R.id.widget_today, if (week.available > 0 && !day.over) st.real else st.expense)
                 val pct = if (week.budget <= 0) 0 else ((week.spent * 100) / week.budget).toInt().coerceIn(0, 100)
                 Widgets.progress(v, st, pct)
                 v.setTextViewText(R.id.widget_sub, "쓴 돈 ${Won.format(week.spent)} / 예산 ${Won.format(week.budget)}")

@@ -23,6 +23,8 @@ data class SettingsEntity(
     val growEpochDay: Long? = null,
     /** 내 이름 (예금주) — 송금·입금 알림에 이 이름이 보이면 내 계좌끼리 옮긴 돈으로 본다 */
     val ownerName: String? = null,
+    /** "그날 쓰는 돈"으로 볼 분류 (쉼표로) — 오늘 몫에서 뺀다. 나머지는 이번 주에서 나눈다 */
+    @ColumnInfo(defaultValue = "FOOD,CAFE,DELIVERY,TRANSPORT") val dailyCategories: String = "FOOD,CAFE,DELIVERY,TRANSPORT",
 )
 
 /** 고정 지출. [day]를 정하면 그날 가계부에 자동으로 적는다 (그 전에 결제 알림이 오면 알림으로). */
@@ -410,6 +412,10 @@ data class PlanEntity(
     val doneAmount: Long? = null,
     val doneEpochDay: Long? = null,
     val canceled: Boolean = false,
+    /** 폰 캘린더 일정과 이어졌으면 그 일정 id (CalendarContract.Events._ID) */
+    val eventId: Long? = null,
+    /** 이 앱이 캘린더에 만든 일정이면 계획을 지울 때 일정도 지운다 */
+    @ColumnInfo(defaultValue = "0") val calendarOwned: Boolean = false,
 ) {
     val done: Boolean get() = doneAmount != null
     val open: Boolean get() = !done && !canceled

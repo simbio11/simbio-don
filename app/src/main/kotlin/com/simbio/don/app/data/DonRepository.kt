@@ -158,6 +158,11 @@ data class HomeState(
     // ── 0.16 ──
     /** 모은 돈 나눠 보기 (저축 · 목표 · 아낀 돈) */
     val split: SavingsSplit = SavingsSplit(),
+    // ── 0.19 ──
+    /** "그날 쓰는 돈"으로 볼 분류 이름 */
+    val dailyCategories: Set<String> = com.simbio.don.budget.DayBudgets.DEFAULT_DAILY,
+    /** 오늘 몫: 그날 지출은 오늘 몫에서, 큰 지출·이번 주 계획은 이번 주에서 */
+    val day: com.simbio.don.budget.DayBudget = com.simbio.don.budget.DayBudget.Empty,
 ) {
     val shipping: List<MockItem> get() = mockItems.filter { it.status == PurchaseStatus.SHIPPING }
 
@@ -353,6 +358,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                     assetCheckDue = mo.wealth.pots.isNotEmpty() && (mo.wealth.lastCheck?.isBefore(it.cycle.start) ?: true),
                     insights = insightsOf(it, mo.fixed, mo.recent, mo.plans),
                     plans = mo.plans,
+                    day = dayOf(it, mo.plans),
+                    todayAllowance = dayOf(it, mo.plans).allowance,
                     categoryBudgets = x.budgets,
                     // 목표는 넣은 돈(또는 이은 통장)으로만 찬다 — 예금·적금(저축)은 목표에 저절로 안 들어간다
                     goals = goals,
@@ -364,6 +371,19 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 )
             }
         }
+    }
+
+    /** 오늘 몫 (이번 주 기록과 아직 안 쓴 계획으로) */
+    private fun dayOf(h: HomeState, plans: List<PlanEntity>): com.simbio.don.budget.DayBudget {
+        val w = h.currentWeek ?: return com.simbio.don.budget.DayBudget.Empty
+        val inWeek = h.entries.filter { LocalDate.ofEpochDay(it.epochDay) in w.week }.mapNotNull { runCatching { it.toEntry() }.getOrNull() }
+        return com.simbio.don.budget.DayBudgets.of(w, inWeek, h.today, h.dailyCategories, plans.filter { it.open }.map { LocalDate.ofEpochDay(it.epochDay) to it.amount })
+    }
+
+    /** "그날 쓰는 돈"으로 볼 분류 바꾸기 */
+    suspend fun setDailyCategories(names: Set<String>) {
+        val s = dao.settingsNow() ?: return
+        dao.saveSettings(s.copy(dailyCategories = names.sorted().joinToString(",")))
     }
 
     private fun insightsOf(h: HomeState, fixed: List<FixedExpenseEntity>, recent: List<EntryEntity>, plans: List<PlanEntity> = emptyList()): HomeInsights {
@@ -493,6 +513,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             freeMakeover = house?.freeMakeover ?: true,
             title = house?.title.orEmpty(),
             mood = Moods.of(current, today, wallet, plan.disposable, cycle),
+            dailyCategories = s.dailyCategories.split(',').filter { it.isNotBlank() }.toSet(),
         )
     }
 

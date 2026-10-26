@@ -674,6 +674,7 @@ class MainActivity : ComponentActivity() {
                     com.simbio.don.app.ai.Ai.setModel(this, m)
                     aiModel = m
                 },
+                onDailyCategories = { vm.setDailyCategories(it) },
                 onAiOff = {
                     com.simbio.don.app.ai.Ai.clear(this)
                     aiKey = null
@@ -764,6 +765,7 @@ class MainActivity : ComponentActivity() {
                         onSave = { d -> vm.save(d, o.existing) },
                         onDelete = o.existing?.let { e -> { vm.deleteEntry(e) } },
                         onUnsettle = o.existing?.takeIf { it.settleFor != null }?.let { e -> { vm.unsettle(e) } },
+                        dailyCategories = home.dailyCategories,
                         onBack = close,
                     )
                 }

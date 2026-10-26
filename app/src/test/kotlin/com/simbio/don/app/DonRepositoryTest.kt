@@ -203,11 +203,41 @@ class DonRepositoryTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val view = WeekWidget.render(context, h).apply(context, android.widget.FrameLayout(context))
         assertEquals("588,000원", view.findViewById<android.widget.TextView>(R.id.widget_amount).text.toString())
-        assertTrue(view.findViewById<android.widget.TextView>(R.id.widget_today).text.startsWith("오늘은"))
+        assertTrue(view.findViewById<android.widget.TextView>(R.id.widget_today).text.startsWith("오늘 남은 돈"))
 
         val (title, body) = DailyReminder.message(h)
-        assertEquals("오늘 12,000원 썼어요", title)
+        assertTrue(title, title.startsWith("오늘 몫 ") && title.endsWith("중 12,000원 썼어요"))
         assertTrue(body, body.startsWith("이번 주 남은 돈 588,000원"))
+    }
+
+    @Test
+    fun `그날 쓴 식비는 오늘 몫에서, 경조사·계획은 이번 주에서 나눈다`() = runTest {
+        // 첫 주 10/23(금) ~ 11/1(일), 주 예산 600,000. 10/24(토) 아침: 남은 날 9일
+        val sat = LocalDate.of(2026, 10, 24)
+        val before = home(at(10, 24, 8)).day
+        assertEquals(9, before.daysLeft)
+        assertEquals(600_000L / 9, before.allowance)
+        repo.addManual(sat, 200_000, "축의금", EntryType.SPEND, com.simbio.don.budget.Category.EVENT)
+        repo.addManual(sat, 25_000, "술", EntryType.SPEND, com.simbio.don.budget.Category.FOOD)
+        repo.savePlan(com.simbio.don.app.data.PlanEntity(epochDay = sat.plusDays(1).toEpochDay(), amount = 100_000, label = "엄마 생신", category = "EVENT"))
+        val d = home(at(10, 24, 21)).day
+        // (600,000 − 축의금 200,000 − 내일 계획 100,000) ÷ 9일 — 술은 오늘 몫에서
+        assertEquals(300_000L / 9, d.allowance)
+        assertEquals(25_000L, d.spentDaily)
+        assertEquals(200_000L, d.spentBig)
+        assertEquals(100_000L, d.reserved)
+        assertEquals(300_000L / 9 - 25_000, d.left)
+        // 2차까지 가서 오늘 몫을 넘음 — 오늘 몫은 그대로, 넘은 만큼 표시
+        repo.addManual(sat, 20_000, "2차", EntryType.SPEND, com.simbio.don.budget.Category.FOOD)
+        val over = home(at(10, 24, 23)).day
+        assertTrue(over.over)
+        assertEquals(300_000L / 9, over.allowance)
+        assertEquals(300_000L / 9 - 45_000, over.left)
+        // 분류를 바꾸면 (경조사도 그날 쓰는 돈으로) 다시 센다
+        repo.setDailyCategories(com.simbio.don.budget.DayBudgets.DEFAULT_DAILY + "EVENT")
+        val all = home(at(10, 24, 23)).day
+        assertEquals(245_000L, all.spentDaily)
+        assertEquals(0L, all.spentBig)
     }
 
     @Test

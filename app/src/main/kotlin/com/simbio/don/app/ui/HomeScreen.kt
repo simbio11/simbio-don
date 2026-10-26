@@ -139,42 +139,7 @@ fun HomeScreen(
 
         HomeCards.layout.shown.forEach { card ->
             when (card) {
-                HomeCard.WEEK -> {
-                val week = home.currentWeek
-                RealCard("실제 내 돈 · 이번 주") {
-                    if (week != null) {
-                        Text("이번 주 남은 돈", fontSize = 13.sp, color = DonColors.InkMuted)
-                        Text(
-                            won(week.available),
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (week.available >= 0) DonColors.Ink else DonColors.Warn,
-                        )
-                        Text(
-                            when {
-                                week.available <= 0 -> "이번 주 예산을 다 썼어요"
-                                // 주 마지막 날: 남은 돈 전부가 "오늘 쓸 수 있는 돈"처럼 보이지 않게
-                                home.today == week.week.end -> "오늘이 이번 주 마지막 날 · 남기면 아낀 돈이 돼요"
-                                else -> "오늘은 ${won(home.todayAllowance)}까지 쓰면 딱 맞아요"
-                            },
-                            fontSize = 14.sp,
-                            color = if (week.available > 0) DonColors.Real else DonColors.Warn,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Meter(week.spent, week.budget)
-                        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-                            Text("쓴 돈 ${won(week.spent)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
-                            Text("기본 예산 ${won(week.budget)}", fontSize = 12.sp, color = DonColors.InkMuted)
-                        }
-                        if (week.overspent > 0) WarnLine("기본 예산보다 ${won(week.overspent)} 더 썼어요", fontSize = 12)
-                        if (week.carryIn != 0L) Text("지난주에서 넘어온 돈 ${won(week.carryIn)} 포함", fontSize = 12.sp, color = DonColors.InkMuted)
-                        Text("${shortDate(week.week.start)} ~ ${shortDate(week.week.end)} · ${week.week.days}일", fontSize = 12.sp, color = DonColors.InkMuted)
-                    } else {
-                        Text("이번 주기 밖의 날짜예요. 월급을 확인해 주세요.")
-                    }
-                }
-                }
+                HomeCard.WEEK -> TodayWeekCard(home)
                 HomeCard.FORECAST -> home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay)
                 HomeCard.UPCOMING -> UpcomingCard(home.insights.upcoming, home.today, onPlans)
@@ -315,3 +280,63 @@ fun SalaryNoticeCard(n: com.simbio.don.app.data.SalaryNotice, disposable: Long, 
 /** 카드 안 구분선 (목록 사이) */
 @Composable
 fun ListDivider() = Divider(Modifier.padding(vertical = 2.dp))
+
+/**
+ * 오늘과 이번 주를 나눠 본다.
+ * 오늘: 오늘 몫(아침 기준) − 그날 쓴 돈(식비·카페 같은 분류) = 오늘 남은 돈, 넘으면 빨강.
+ * 이번 주: 큰 지출(경조사·쇼핑 같은 분류)과 이번 주 계획은 여기서 빠지고 남은 날의 오늘 몫으로 나뉜다.
+ */
+@Composable
+fun TodayWeekCard(home: HomeState) {
+    val week = home.currentWeek
+    val day = home.day
+    RealCard("실제 내 돈 · 오늘과 이번 주") {
+        if (week == null) {
+            Text("이번 주기 밖의 날짜예요. 월급을 확인해 주세요.")
+            return@RealCard
+        }
+        // 오늘
+        Text(if (day.over) "오늘 몫을 넘었어요" else "오늘 남은 돈", fontSize = 13.sp, color = if (day.over) DonColors.Warn else DonColors.InkMuted)
+        Text(
+            if (day.over) "+" + won(-day.left) else won(day.left),
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (day.over) DonColors.Warn else DonColors.Ink,
+        )
+        Spacer(Modifier.height(6.dp))
+        Meter(day.spentDaily, day.allowance)
+        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+            Text("오늘 쓴 돈 ${won(day.spentDaily)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
+            Text("오늘 몫 ${won(day.allowance)}", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
+        if (day.spentBig > 0) {
+            Text("오늘 큰 지출 ${won(day.spentBig)}은 이번 주 남은 ${day.daysLeft}일에 나눴어요", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
+        if (day.reserved > 0) {
+            Text("이번 주 계획 ${won(day.reserved)}은 미리 빼 뒀어요", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
+        if (home.today == week.week.end && week.available > 0) {
+            Text("오늘이 이번 주 마지막 날 · 남기면 아낀 돈이 돼요", fontSize = 12.sp, color = DonColors.Real, fontWeight = FontWeight.SemiBold)
+        }
+        Divider(Modifier.padding(vertical = 10.dp))
+        // 이번 주
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("이번 주 남은 돈", fontSize = 13.sp, color = DonColors.InkMuted, modifier = Modifier.weight(1f))
+            Text(
+                won(week.available),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (week.available >= 0) DonColors.Ink else DonColors.Warn,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Meter(week.spent, week.budget)
+        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+            Text("쓴 돈 ${won(week.spent)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
+            Text("기본 예산 ${won(week.budget)}", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
+        if (week.overspent > 0) WarnLine("기본 예산보다 ${won(week.overspent)} 더 썼어요", fontSize = 12)
+        if (week.carryIn != 0L) Text("지난주에서 넘어온 돈 ${won(week.carryIn)} 포함", fontSize = 12.sp, color = DonColors.InkMuted)
+        Text("${shortDate(week.week.start)} ~ ${shortDate(week.week.end)} · ${week.week.days}일", fontSize = 12.sp, color = DonColors.InkMuted)
+    }
+}

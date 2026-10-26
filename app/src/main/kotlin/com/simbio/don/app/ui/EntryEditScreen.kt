@@ -127,6 +127,8 @@ fun EntryEditScreen(
     onDeleteInstallment: (() -> Unit)? = null,
     /** 정산으로 받은 돈이면: 정산 풀기 (다시 수입으로) */
     onUnsettle: (() -> Unit)? = null,
+    /** "그날 쓰는 돈"으로 볼 분류 (오늘 몫에서 빠지는지 알려 준다) */
+    dailyCategories: Set<String> = com.simbio.don.budget.DayBudgets.DEFAULT_DAILY,
     onSave: (EntryDraft) -> Unit,
     onDelete: (() -> Unit)?,
     onBack: () -> Unit,
@@ -397,7 +399,11 @@ fun EntryEditScreen(
                             EntryType.FIXED -> "월세·통신비처럼 월급에서 미리 뺀 돈이에요. 가계부 지출에는 들어가고 주 예산은 깎지 않아요."
                             EntryType.EXCEPTION -> "병원비·경조사비처럼 피할 수 없는 큰 지출이에요. 이번 주 결산에는 영향이 없고, 남은 주 예산을 줄여서 다시 나눠요."
                             EntryType.REFUND -> "취소·환불로 돌려받은 돈이에요. 그날 지출에서 빠져요."
-                            else -> "이번 주 예산에서 빠지는 보통 지출이에요."
+                            else -> if (category.name in dailyCategories) {
+                                "'${category.label}'은 그날 쓰는 돈이라 오늘 몫에서 빠져요."
+                            } else {
+                                "'${category.label}'은 큰 지출이라 이번 주 남은 날에 나눠서 빠져요."
+                            }
                         },
                         fontSize = 12.sp,
                         color = if (type == EntryType.EXCEPTION) DonColors.Warn else DonColors.InkMuted,

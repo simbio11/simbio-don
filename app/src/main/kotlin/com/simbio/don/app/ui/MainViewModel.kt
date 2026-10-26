@@ -186,6 +186,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun lastMonthReport() = repo.lastMonthReport()
 
+    fun setDailyCategories(names: Set<String>) = viewModelScope.launch { repo.setDailyCategories(names) }
+
     // ── 더치페이 정산 ──
     private val splitPrefs = app.getSharedPreferences("splits", android.content.Context.MODE_PRIVATE)
     private val dismissedHints = MutableStateFlow(

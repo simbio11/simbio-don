@@ -98,6 +98,8 @@ fun SettingsScreen(
     onAiKey: (String) -> Unit = {},
     onAiModel: (com.simbio.don.app.ai.AiModel) -> Unit = {},
     onAiOff: () -> Unit = {},
+    /** "그날 쓰는 돈"으로 볼 분류 바꾸기 */
+    onDailyCategories: (Set<String>) -> Unit = {},
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -158,6 +160,21 @@ fun SettingsScreen(
             SubButton(onClick = onOpenListenerSettings, modifier = Modifier.fillMaxWidth()) { Text("알림 접근 설정 열기") }
             Text("갤럭시는 배터리 최적화 때문에 알림 수신이 끊길 수 있어요. '제한 없음'으로 바꿔 주세요.", fontSize = 13.sp, color = DonColors.InkSoft)
             SubButton(onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth()) { Text("배터리 설정 열기") }
+        }
+
+        RealCard("오늘 몫") {
+            val daily = settings.dailyCategories.split(',').filter { it.isNotBlank() }.toSet()
+            Text(
+                "고른 분류는 '그날 쓰는 돈'이라 오늘 몫에서 빠지고, 넘으면 빨갛게 알려 줘요. 나머지(경조사·쇼핑처럼 가끔 크게 쓰는 돈)와 이번 주 계획은 이번 주 남은 날에 나눠요.",
+                fontSize = 12.sp,
+                color = DonColors.InkMuted,
+            )
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.simbio.don.budget.Category.spending.forEach { c ->
+                    val on = c.name in daily
+                    FilterChip(selected = on, onClick = { onDailyCategories(if (on) daily - c.name else daily + c.name) }, label = { Text(c.label) })
+                }
+            }
         }
 
         RealCard("내 계좌끼리 옮긴 돈") {

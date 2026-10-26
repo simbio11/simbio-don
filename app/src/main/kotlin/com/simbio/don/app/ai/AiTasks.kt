@@ -128,7 +128,14 @@ object AiTasks {
             appendLine()
         }
         home.currentWeek?.let { w ->
-            appendLine("[이번 주] ${w.week.start}~${w.week.end}, 주 예산 ${won(w.budget)}, 지난주에서 넘어온 돈 ${won(w.carryIn)}, 쓴 돈 ${won(w.spent)}, 남은 돈 ${won(w.available)}, 오늘 쓸 수 있는 돈 ${won(home.todayAllowance)}")
+            appendLine("[이번 주] ${w.week.start}~${w.week.end}, 주 예산 ${won(w.budget)}, 지난주에서 넘어온 돈 ${won(w.carryIn)}, 쓴 돈 ${won(w.spent)}, 남은 돈 ${won(w.available)}")
+            val d = home.day
+            val dailyNames = home.dailyCategories.map { Category.of(it).label }.joinToString("·")
+            appendLine(
+                "[오늘] 오늘 몫 ${won(d.allowance)} (그날 쓰는 돈: $dailyNames — 나머지 분류와 이번 주 계획은 이번 주에서 나눔), 그날 쓴 돈 ${won(d.spentDaily)}, " +
+                    (if (d.over) "${won(-d.left)} 넘음" else "${won(d.left)} 남음") +
+                    (if (d.spentBig > 0) ", 오늘 큰 지출 ${won(d.spentBig)}" else "") + (if (d.reserved > 0) ", 이번 주 계획 ${won(d.reserved)} 미리 뺌" else ""),
+            )
         }
         home.results.filter { it.week.end.isBefore(home.today) }.takeIf { it.isNotEmpty() }?.let { done ->
             appendLine("[끝난 주] " + done.joinToString(", ") { "${it.week.index + 1}주차 예산 ${won(it.budget)} 중 ${won(it.spent)} 씀" })

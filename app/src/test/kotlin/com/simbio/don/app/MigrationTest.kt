@@ -23,10 +23,10 @@ class MigrationTest {
             db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (2, 20001, 9000, '모르는 가게', 'SPEND', 'MANUAL')")
         }
         val db = helper.runMigrationsAndValidate(
-            "m.db", 13, true,
+            "m.db", 14, true,
             DonDatabase.MIGRATION_1_2, DonDatabase.MIGRATION_2_3, DonDatabase.MIGRATION_3_4, DonDatabase.MIGRATION_4_5,
             DonDatabase.MIGRATION_5_6, DonDatabase.MIGRATION_6_7, DonDatabase.MIGRATION_7_8, DonDatabase.MIGRATION_8_9, DonDatabase.MIGRATION_9_10, DonDatabase.MIGRATION_10_11,
-            DonDatabase.MIGRATION_11_12, DonDatabase.MIGRATION_12_13,
+            DonDatabase.MIGRATION_11_12, DonDatabase.MIGRATION_12_13, DonDatabase.MIGRATION_13_14,
         )
         db.query("SELECT id, amount, category, memo, accountId, minuteOfDay FROM entry ORDER BY id").use { c ->
             c.moveToNext(); assertEquals(4500, c.getLong(1)); assertEquals("CAFE", c.getString(2)); assertEquals("", c.getString(3))
@@ -150,5 +150,16 @@ class MigrationTest {
             assertTrue(c.isNull(1)); assertTrue(c.isNull(2)); assertTrue(c.isNull(3))
             assertEquals(0, c.getInt(4))
         }
+    }
+
+    @Test
+    fun v13에서_v14로_그날_쓰는_돈_기본값과_계획_일정_칸() {
+        helper.createDatabase("m13.db", 13).use { db ->
+            db.execSQL("INSERT INTO settings (id, payDay, settlementDay, savings, subSeeded, milesSeeded) VALUES (0, 25, 1, 500000, 1, 1)")
+            db.execSQL("INSERT INTO `plan` (id, epochDay, amount, label, category, memo, canceled) VALUES (1, 20000, 50000, '생일', 'EVENT', '', 0)")
+        }
+        val db = helper.runMigrationsAndValidate("m13.db", 14, true, DonDatabase.MIGRATION_13_14)
+        db.query("SELECT dailyCategories FROM settings").use { c -> c.moveToNext(); assertEquals("FOOD,CAFE,DELIVERY,TRANSPORT", c.getString(0)) }
+        db.query("SELECT eventId, calendarOwned FROM `plan`").use { c -> c.moveToNext(); assertTrue(c.isNull(0)); assertEquals(0, c.getInt(1)) }
     }
 }
