@@ -83,6 +83,23 @@ object Widgets {
         v.setInt(R.id.widget_bg, "setImageAlpha", st.bgAlpha)
     }
 
+    /**
+     * 바탕을 비치게 했으면 글자 뒤에 반투명 알약을 깔아 배경화면 위에서도 읽히게 한다.
+     * (꽉 찬 바탕이면 알약 없이)
+     */
+    fun pills(context: Context, v: RemoteViews, st: WidgetStyle, vararg ids: Int) {
+        val d = context.resources.displayMetrics.density
+        ids.forEach { id ->
+            if (st.clear) {
+                v.setInt(id, "setBackgroundResource", if (st.dark) R.drawable.widget_scrim_dark else R.drawable.widget_scrim_light)
+                v.setViewPadding(id, (8 * d).toInt(), (2 * d).toInt(), (8 * d).toInt(), (2 * d).toInt())
+            } else {
+                v.setInt(id, "setBackgroundResource", 0)
+                v.setViewPadding(id, 0, 0, 0, 0)
+            }
+        }
+    }
+
     /** 글자색 여럿 (view id to 색) */
     fun colors(v: RemoteViews, vararg pairs: Pair<Int, Int>) = pairs.forEach { (id, c) -> v.setTextColor(id, c) }
 
@@ -152,10 +169,11 @@ class GrassWidget : DonWidget() {
             // 큰 달력 + (넓으면) 오른쪽 위 이번 달 합계, 오른쪽 아래 작은 잔디
             val cal = CalendarWidget.cells(home)
             v.setTextViewText(R.id.widget_title, CalendarWidget.range(home))
+            Widgets.pills(context, v, st, R.id.widget_title)
             if (gw >= WidgetArt.CALENDAR_MIN_WIDTH) {
                 val g = repo.grass(home.today, WidgetArt.miniWeeks(gw, gh, chosen), plan)
                 v.setTextViewText(R.id.widget_sub, subtitle(g))
-                v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendarWithGrass(cal, g, home.monthIncome, home.monthSpent, gw, gh, density, st))
+                v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendarWithGrass(cal, g, gw, gh, density, st))
             } else {
                 v.setTextViewText(R.id.widget_sub, subtitle(repo.grass(home.today, 4, plan)))
                 v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendar(cal, gw, gh, density, st))
@@ -164,6 +182,7 @@ class GrassWidget : DonWidget() {
         }
         val g = repo.grass(home.today, weeks(WidgetArt.grassWeeks(gw, gh), chosen), plan)
         v.setTextViewText(R.id.widget_title, context.getString(R.string.widget_grass_title))
+        Widgets.pills(context, v, st, R.id.widget_title)
         v.setTextViewText(R.id.widget_sub, subtitle(g))
         v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, density, st))
         return v
@@ -203,6 +222,7 @@ class CalendarWidget : DonWidget() {
         }
         val cal = cells(home)
         v.setTextViewText(R.id.widget_title, range(home))
+        Widgets.pills(context, v, st, R.id.widget_title, R.id.widget_sub)
         v.setTextViewText(R.id.widget_sub, "생활비 ${compactWon(home.monthLiving)}원 · 무지출 ${cal.noSpend.size}일")
         val w = (widthDp - 24f).coerceAtLeast(150f)
         val h = (heightDp - 24f - 40f).coerceAtLeast(110f)
@@ -248,6 +268,7 @@ class SavedWidget : DonWidget() {
             R.id.widget_goal to st.inkSoft,
             R.id.widget_goal_pct to st.good,
         )
+        Widgets.pills(context, v, st, R.id.widget_label, R.id.widget_amount, R.id.widget_sub, R.id.widget_goal_row)
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, MainActivity.ACTION_ASSETS, 13))
         if (home == null) {
             v.setTextViewText(R.id.widget_amount, "—")
@@ -303,6 +324,7 @@ class BuddyWidget : DonWidget() {
         val st = WidgetStyle.of(context)
         Widgets.background(v, st, st.buddyBg)
         Widgets.colors(v, R.id.widget_title to st.ink, R.id.widget_sub to st.game)
+        Widgets.pills(context, v, st, R.id.widget_title, R.id.widget_sub)
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, null, 14))
         v.setOnClickPendingIntent(R.id.widget_add, Widgets.open(context, MainActivity.ACTION_ADD, 15))
         if (home == null) {

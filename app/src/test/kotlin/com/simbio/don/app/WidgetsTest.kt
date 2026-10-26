@@ -72,7 +72,23 @@ class WidgetsTest {
         repo
     }
 
-    private fun render(rv: RemoteViews, wDp: Int, hDp: Int, name: String): View {
+    /** 복잡한 배경화면 흉내: 하늘 그라데이션 + 어두운 전선·건물 + 흰 구름 (투명 바탕 위젯이 읽히는지 보려고) */
+    private fun busyWallpaper(c: Canvas, w: Int, h: Int) {
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        p.shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF2E5E86.toInt(), 0xFF46A3B0.toInt(), android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+        p.shader = null
+        p.color = 0xFFE9F2F5.toInt()
+        listOf(0.2f to 0.35f, 0.55f to 0.6f, 0.8f to 0.25f, 0.4f to 0.85f).forEach { (x, y) ->
+            c.drawOval(w * x - 60f, h * y - 22f, w * x + 70f, h * y + 26f, p)
+        }
+        p.color = 0xFF2A1E1A.toInt()
+        c.drawRect(0f, h * 0.55f, w * 0.38f, h.toFloat(), p)
+        p.strokeWidth = 3f
+        repeat(4) { i -> c.drawLine(w * (0.25f + i * 0.08f), 0f, w * (0.5f + i * 0.1f), h.toFloat(), p) }
+    }
+
+    private fun render(rv: RemoteViews, wDp: Int, hDp: Int, name: String, busy: Boolean = false): View {
         val d = context.resources.displayMetrics.density
         val parent = FrameLayout(context)
         val view = rv.apply(context, parent)
@@ -83,7 +99,7 @@ class WidgetsTest {
         System.getProperty("screenshotDir")?.let { dir ->
             val bmp = Bitmap.createBitmap(w + 32, h + 32, Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp)
-            c.drawColor(0xFF8FA3B8.toInt()) // 홈 화면 배경처럼
+            if (busy) busyWallpaper(c, w + 32, h + 32) else c.drawColor(0xFF8FA3B8.toInt()) // 홈 화면 배경처럼
             c.translate(16f, 16f)
             view.draw(c)
             File(dir).apply { mkdirs() }.resolve("$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -117,7 +133,7 @@ class WidgetsTest {
         )
         val (gw, gh) = GrassWidget.imageSize(330f, 250f)
         val grass = com.simbio.don.budget.Grasses.of(entries, day, WidgetArt.miniWeeks(gw, gh, 0), 30_000, since = day.minusDays(400))
-        save("grass", WidgetArt.calendarWithGrass(cal, grass, 3_300_000, com.simbio.don.budget.Stats.total(inMonth), gw, gh, 2f))
+        save("grass", WidgetArt.calendarWithGrass(cal, grass, gw, gh, 2f))
         save("calendar", WidgetArt.calendar(cal, 306f, 256f, 2f))
         val px = com.simbio.don.app.ui.kit.CharacterRenderer.pixels(context, com.simbio.don.game.CharacterLook.MALE, com.simbio.don.game.Mood.HAPPY)
         save("buddy", WidgetArt.pixels(px, com.simbio.don.app.ui.kit.CharacterRenderer.W, com.simbio.don.app.ui.kit.CharacterRenderer.H, 6))
@@ -205,9 +221,16 @@ class WidgetsTest {
         val st = com.simbio.don.app.widget.WidgetStyle.of(context)
         assertTrue(st.dark)
         assertEquals(0, st.bgAlpha)
-        val grass = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w5_grass_dark_clear")
+        val grass = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w5_grass_dark_clear", busy = true)
         assertEquals(st.ink, grass.findViewById<TextView>(R.id.widget_title).currentTextColor)
-        render(runBlocking { CalendarWidget().views(context, 2, 330f, 320f) }, 330, 320, "w6_calendar_dark_clear")
+        render(runBlocking { CalendarWidget().views(context, 2, 330f, 320f) }, 330, 320, "w6_calendar_dark_clear", busy = true)
+        // 밝게 + 투명 (글자가 어두워 배경화면에 묻히기 쉬운 경우)
+        UiPrefs.setWidgetTheme(context, com.simbio.don.app.ui.ThemeMode.LIGHT)
+        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w5b_grass_light_clear", busy = true)
+        render(runBlocking { GrassWidget().views(context, 1, 330f, 250f) }, 330, 250, "w5c_grass_light_clear_4x3", busy = true)
+        render(runBlocking { com.simbio.don.app.widget.WeekWidget.render(context, runBlocking { Widgets.home(context) }) }, 250, 130, "w5d_week_light_clear", busy = true)
+        render(runBlocking { SavedWidget().views(context, 3, 250f, 160f) }, 250, 160, "w5e_saved_light_clear", busy = true)
+        UiPrefs.setWidgetTheme(context, com.simbio.don.app.ui.ThemeMode.DARK)
         UiPrefs.setWidgetOpacity(context, 50)
         val saved = render(runBlocking { SavedWidget().views(context, 3, 250f, 160f) }, 250, 160, "w7_saved_dark_half")
         // 어둡게는 어두운 막대만 보인다

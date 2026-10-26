@@ -99,7 +99,7 @@ object WidgetArt {
                 val x = x0 + i * pitch
                 val name = "${first.monthValue}월"
                 if (x > labelEnd) {
-                    c.drawText(name, x, y0 - 4f * d, label)
+                    drawLabel(c, name, x, y0 - 4f * d, label, st, d)
                     labelEnd = x + label.measureText(name) + 4 * d
                 }
             }
@@ -120,7 +120,7 @@ object WidgetArt {
         val ls = 9f * d
         label.textAlign = Paint.Align.RIGHT
         var x = w.toFloat()
-        c.drawText("무지출", x, ly, label)
+        drawLabel(c, "무지출", x, ly, label, st, d)
         x -= label.measureText("무지출") + 4 * d
         listOf(GrassLevel.OVER, GrassLevel.OK, GrassLevel.LOW, GrassLevel.NO_SPEND).asReversed().forEach { lv ->
             rect.set(x - ls, ly - ls + 1 * d, x, ly + 1 * d)
@@ -128,7 +128,7 @@ object WidgetArt {
             c.drawRoundRect(rect, 2 * d, 2 * d, fill)
             x -= ls + 2.5f * d
         }
-        c.drawText("많이 씀", x - 1.5f * d, ly, label)
+        drawLabel(c, "많이 씀", x - 1.5f * d, ly, label, st, d)
         return bmp
     }
 
@@ -158,8 +158,8 @@ object WidgetArt {
         val ch = (area.height() - headH) / rows
         val head = text((if (compact) 8.5f else 10f) * d, st.inkMuted).apply { textAlign = Paint.Align.CENTER }
         listOf("일", "월", "화", "수", "목", "금", "토").forEachIndexed { i, n ->
-            head.color = if (st.clear) st.inkMuted else when (i) { 0 -> st.expense; 6 -> st.real; else -> st.inkMuted }
-            c.drawText(n, area.left + cw * i + cw / 2, area.top + headH - 3f * d, head)
+            head.color = when (i) { 0 -> st.expense; 6 -> st.real; else -> st.inkMuted }
+            drawLabel(c, n, area.left + cw * i + cw / 2, area.top + headH - 3f * d, head, st, d)
         }
         val big = ch >= 34 * d
         val num = text((if (big) 11f else if (ch >= 24 * d) 10f else 9f) * d, st.ink).apply { textAlign = Paint.Align.CENTER }
@@ -179,10 +179,14 @@ object WidgetArt {
             val inside = day in cal.start..cal.end
             val isToday = day == cal.today
             val plan = cal.planned[day]?.takeIf { inside && day.isAfter(cal.today) }
-            cal.level(day)?.let { lv ->
-                fill.color = st.grassFaint(lv)
-                c.drawRoundRect(rect, r, r, fill)
+            val lv = cal.level(day)
+            when {
+                lv != null -> fill.color = st.grassFaint(lv)
+                // 바탕이 비치면 칸마다 반투명 바탕을 깔아 날짜가 배경화면에 묻히지 않게
+                st.clear -> fill.color = if (inside) st.scrim else st.scrimFaint
+                else -> fill.color = 0
             }
+            if (fill.color != 0) c.drawRoundRect(rect, r, r, fill)
             if (isToday) {
                 stroke.color = st.real
                 stroke.strokeWidth = 1.5f * d
@@ -197,8 +201,6 @@ object WidgetArt {
             num.color = when {
                 !inside -> st.inkFaint
                 isToday -> st.real
-                // 바탕이 비치면(배경화면 위) 주말 색 대신 기본 글자색으로 — 읽히게
-                st.clear -> st.ink
                 day.dayOfWeek == java.time.DayOfWeek.SUNDAY -> st.expense
                 day.dayOfWeek == java.time.DayOfWeek.SATURDAY -> st.real
                 else -> st.ink
@@ -243,23 +245,16 @@ object WidgetArt {
     /** 오른쪽 아래 작은 잔디 칸 간격 (예전 잔디의 70%) */
     private fun miniPitch(heightDp: Float) = ((heightDp - TOP - LEGEND) / 7f * 0.7f).coerceIn(6.5f, 11f)
 
-    /** 오른쪽 칸 너비 (이번 달 합계 글자가 들어갈 만큼은) */
-    private const val SIDE_MIN = 74f
-
     /** 달력 옆 작은 잔디에 넣을 주 수: 고른 기간(0이면 10주), 오른쪽이 너비의 38%를 넘지 않게 */
     fun miniWeeks(widthDp: Float, heightDp: Float, chosen: Int): Int {
         val fit = floor(widthDp * 0.38f / miniPitch(heightDp)).toInt()
         return (if (chosen > 0) chosen else 10).coerceAtMost(fit).coerceAtLeast(4)
     }
 
-    /**
-     * 큰 달력(왼쪽) + 오른쪽 위에 이번 달 수입·지출 합계, 오른쪽 아래에 최근 몇 주 잔디를 작게.
-     */
+    /** 큰 달력(왼쪽) + 오른쪽 아래에 최근 몇 주 잔디를 작게 */
     fun calendarWithGrass(
         cal: CalendarCells,
         g: Grass,
-        totalIncome: Long,
-        totalExpense: Long,
         widthDp: Float,
         heightDp: Float,
         density: Float,
@@ -272,30 +267,15 @@ object WidgetArt {
         val c = Canvas(bmp)
         val pitch = miniPitch(heightDp) * d
         val weeks = g.weeks.size
-        val side = maxOf(weeks * pitch, SIDE_MIN * d)
+        val side = weeks * pitch
         drawCalendar(c, cal, RectF(0f, 0f, w - side - 10 * d, h.toFloat()), d, st)
-
-        // 오른쪽 위: 이번 달 합계
-        val x = w - side
-        val label = text(9f * d, st.inkMuted)
-        val value = text(11.5f * d, st.ink).apply { isFakeBoldText = true }
-        var y = 11f * d
-        c.drawText("이번 달 수입", x, y, label)
-        y += 14f * d
-        c.drawText(if (totalIncome > 0) "+" + compactWon(totalIncome) else "0", x, y, value.apply { color = st.real })
-        y += 15f * d
-        c.drawText("이번 달 지출", x, y, label)
-        y += 14f * d
-        c.drawText(if (totalExpense > 0) "−" + compactWon(totalExpense) else "0", x, y, value.apply { color = st.expense })
 
         // 오른쪽 아래: 작은 잔디 (요일·달 글자 없이)
         val gap = (pitch * 0.18f).coerceAtLeast(1f * d)
         val size = pitch - gap
         val gx = w - weeks * pitch + gap / 2
         val gy = h - 7 * pitch + gap / 2
-        if (gy - 4 * d > y + 4 * d) {
-            c.drawText("최근 ${weeks}주", w - weeks * pitch, gy - 4f * d, text(8.5f * d, st.inkFaint))
-        }
+        drawLabel(c, "최근 ${weeks}주", w - weeks * pitch, gy - 4f * d, text(8.5f * d, st.inkMuted), st, d)
         val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.1f * d; color = st.ink }
         val rr = (size * 0.22f).coerceAtMost(2f * d)
@@ -336,6 +316,23 @@ object WidgetArt {
         val g = (c shr 8 and 0xFF) / 255f
         val b = (c and 0xFF) / 255f
         return 0.2126f * r + 0.7152f * g + 0.0722f * b
+    }
+
+    /**
+     * 글자 쓰기. 바탕이 비치면(배경화면 위) 글자 둘레에 반대 밝기 테두리를 둘러 어떤 그림 위에서도 읽히게 한다.
+     */
+    private fun drawLabel(c: Canvas, t: String, x: Float, y: Float, p: Paint, st: WidgetStyle, d: Float) {
+        if (st.clear) {
+            val stroke = Paint(p).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 3f * d
+                strokeJoin = Paint.Join.ROUND
+                color = st.halo
+                isFakeBoldText = p.isFakeBoldText
+            }
+            c.drawText(t, x, y, stroke)
+        }
+        c.drawText(t, x, y, p)
     }
 
     private fun text(size: Float, color: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply {

@@ -19,6 +19,13 @@ data class WidgetStyle(val dark: Boolean, val opacity: Int = 100) {
     /** 바탕이 반 넘게 비치면 배경화면 위에서도 읽히게 흐린 글자를 한 단계씩 진하게 */
     val clear: Boolean get() = opacity < 50
 
+    /** 비치는 바탕에서 글자 둘레에 두르는 테두리 색 (글자와 반대 밝기) */
+    val halo: Int get() = if (dark) 0xE60E1116.toInt() else 0xEBFFFFFF.toInt()
+
+    /** 비치는 바탕에서 달력 칸 뒤에 까는 반투명 바탕 (밖의 날은 더 옅게) */
+    val scrim: Int get() = if (dark) 0xD9181B21.toInt() else 0xD9FFFFFF.toInt()
+    val scrimFaint: Int get() = if (dark) 0x8C181B21.toInt() else 0x8CFFFFFF.toInt()
+
     val ink: Int get() = if (dark) 0xFFECEEF1.toInt() else 0xFF191F28.toInt()
     val inkSoft: Int get() = if (clear) ink else if (dark) 0xFFB9C0C9.toInt() else 0xFF4E5968.toInt()
     val inkMuted: Int get() = if (clear) (if (dark) 0xFFD5DAE0.toInt() else 0xFF333B46.toInt()) else if (dark) 0xFF9AA3AD.toInt() else 0xFF8B95A1.toInt()

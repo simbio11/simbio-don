@@ -28,14 +28,19 @@
 
             <TextView
                 android:id="@+id/widget_title"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:maxLines="1"
                 android:text="@string/widget_grass_title"
                 android:textColor="#FF191F28"
                 android:textSize="14sp"
                 android:textStyle="bold" />
+
+            <!-- 제목과 칩 사이 빈 자리 (위젯 레이아웃에는 View를 못 쓴다) -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
             <TextView
                 android:id="@+id/widget_sub"

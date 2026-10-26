@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 바탕을 비치게 했을 때 글자 뒤에 까는 반투명 알약 (어둡게) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#D9181B21" />
+    <corners android:radius="10dp" />
+</shape>

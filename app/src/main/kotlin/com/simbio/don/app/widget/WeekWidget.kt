@@ -57,6 +57,7 @@ class WeekWidget : AppWidgetProvider() {
             val st = WidgetStyle.of(context)
             Widgets.background(v, st)
             Widgets.colors(v, R.id.widget_title to st.inkMuted, R.id.widget_amount to st.ink, R.id.widget_today to st.real, R.id.widget_sub to st.inkMuted)
+            Widgets.pills(context, v, st, R.id.widget_title, R.id.widget_amount, R.id.widget_today, R.id.widget_sub)
             val week = home?.currentWeek
             if (home == null || week == null) {
                 v.setTextViewText(R.id.widget_amount, "—")
