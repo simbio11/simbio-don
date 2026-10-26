@@ -108,14 +108,18 @@ fun PlanScreen(
     matches: Map<Long, EntryEntity>,
     summary: PlanSummary?,
     today: LocalDate,
-    onAdd: (PlanEntity) -> Unit,
+    /** 계획 추가 (두 번째 값: 폰 캘린더에도 넣기) */
+    onAdd: (PlanEntity, Boolean) -> Unit,
     onSpent: (PlanEntity) -> Unit,
     onLink: (PlanEntity, EntryEntity) -> Unit,
     onCancel: (PlanEntity, Boolean) -> Unit,
     onDelete: (PlanEntity) -> Unit,
     onBack: () -> Unit,
+    /** 폰 캘린더를 이었고 넣을 곳이 있으면 "캘린더에도 넣기"를 보인다 */
+    calendarOn: Boolean = false,
 ) {
     var date by remember { mutableStateOf(today.plusDays(1)) }
+    var toCalendar by remember { mutableStateOf(true) }
     var amount by remember { mutableStateOf("") }
     var label by remember { mutableStateOf("") }
     var category by remember { mutableStateOf(Category.EVENT) }
@@ -189,9 +193,18 @@ fun PlanScreen(
                         FilterChip(selected = c == category, onClick = { category = c }, label = { Text(c.label) })
                     }
                 }
+                if (calendarOn) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("폰 캘린더에도 넣기", fontSize = 14.sp, color = DonColors.Ink)
+                            Text("하루 종일 일정으로 들어가요. 계획을 지우면 그 일정도 지워요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                        }
+                        androidx.compose.material3.Switch(checked = toCalendar, onCheckedChange = { toCalendar = it })
+                    }
+                }
                 Button(
                     onClick = {
-                        onAdd(PlanEntity(epochDay = date.toEpochDay(), amount = amount.toLong(), label = label, category = category.name))
+                        onAdd(PlanEntity(epochDay = date.toEpochDay(), amount = amount.toLong(), label = label, category = category.name), calendarOn && toCalendar)
                         amount = ""
                         label = ""
                     },

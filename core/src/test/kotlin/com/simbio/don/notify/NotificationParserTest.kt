@@ -32,6 +32,21 @@ class NotificationParserTest {
     }
 
     @Test
+    fun `가게 이름을 못 찾으면 결제 대신 앱 이름으로`() {
+        val unknown = assertIs<ParseResult.Payment>(NotificationParser.parse(n("card.app", "23,000원 결제되었습니다", title = "결제"), rules)).payment
+        assertEquals("OO카드 결제", unknown.label)
+        assertEquals(true, unknown.nameUnknown)
+        assertEquals("결제\n23,000원 결제되었습니다", unknown.rawText)
+        val known = assertIs<ParseResult.Payment>(parse("card.app", "승인 23,000원 일시불 OO치킨")).payment
+        assertEquals("OO치킨", known.label)
+        assertEquals(false, known.nameUnknown)
+        // 배운 자리가 있으면 거기서 (제목 다음 둘째 줄)
+        val learned = AppRule("card.app", "OO카드", merchantSpot = MerchantSpot(2, null))
+        val p = assertIs<ParseResult.Payment>(NotificationParser.parse(n("card.app", "23,000원 결제되었습니다\n동네 빵집", title = "결제"), listOf(learned))).payment
+        assertEquals("동네 빵집", p.label)
+    }
+
+    @Test
     fun `잔액·누적 금액은 결제 금액이 아니다`() {
         assertEquals(4_500, NotificationParser.extractAmount("누적 1,234,000원 결제 4,500원"))
         assertEquals(4_500, NotificationParser.extractAmount("잔액 500,000원 / 출금 4,500원"))

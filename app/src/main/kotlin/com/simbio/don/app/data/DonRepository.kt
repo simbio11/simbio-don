@@ -376,8 +376,16 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 오늘 몫 (이번 주 기록과 아직 안 쓴 계획으로) */
     private fun dayOf(h: HomeState, plans: List<PlanEntity>): com.simbio.don.budget.DayBudget {
         val w = h.currentWeek ?: return com.simbio.don.budget.DayBudget.Empty
-        val inWeek = h.entries.filter { LocalDate.ofEpochDay(it.epochDay) in w.week }.mapNotNull { runCatching { it.toEntry() }.getOrNull() }
-        return com.simbio.don.budget.DayBudgets.of(w, inWeek, h.today, h.dailyCategories, plans.filter { it.open }.map { LocalDate.ofEpochDay(it.epochDay) to it.amount })
+        val pairs = h.entries.filter { LocalDate.ofEpochDay(it.epochDay) in w.week }.mapNotNull { e -> runCatching { e to e.toEntry() }.getOrNull() }
+        // 계획에서 "썼어요"로 이은 기록 (미리 떼어 둔 돈이라 큰 지출로)
+        val linkedIds = plans.mapNotNull { it.doneEntryId }.toSet()
+        val linked = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<com.simbio.don.budget.Entry, Boolean>())
+        pairs.filter { it.first.id in linkedIds }.forEach { linked += it.second }
+        return com.simbio.don.budget.DayBudgets.of(
+            w, pairs.map { it.second }, h.today, h.dailyCategories,
+            plans.filter { it.open }.map { LocalDate.ofEpochDay(it.epochDay) to it.amount },
+            planned = { it in linked },
+        )
     }
 
     /** "그날 쓰는 돈"으로 볼 분류 바꾸기 */
@@ -1622,10 +1630,40 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         dao.savePlan(p.copy(canceled = canceled))
     }
 
-    /** 계획을 실제 기록과 잇는다 (썼어요) */
+    /**
+     * 계획을 실제 기록과 잇는다 (썼어요). 이미 쓴 계획에 다른 기록을 또 이으면 더한다 (더 썼어요 — 2차 같은).
+     */
     suspend fun completePlan(id: Long, entryId: Long?, amount: Long, date: LocalDate) {
-        val p = dao.plansNow().firstOrNull { it.id == id } ?: return
-        dao.savePlan(p.copy(doneEntryId = entryId, doneAmount = amount, doneEpochDay = date.toEpochDay(), canceled = false))
+        val p = planNow(id) ?: return
+        val more = p.done && (entryId == null || entryId != p.doneEntryId)
+        dao.savePlan(
+            if (more) p.copy(doneAmount = (p.doneAmount ?: 0) + amount, doneEpochDay = maxOf(p.doneEpochDay ?: date.toEpochDay(), date.toEpochDay()))
+            else p.copy(doneEntryId = entryId, doneAmount = amount, doneEpochDay = date.toEpochDay(), canceled = false),
+        )
+    }
+
+    suspend fun planNow(id: Long): PlanEntity? = dao.plansNow().firstOrNull { it.id == id }
+
+    /**
+     * 캘린더 일정에 예산을 정한다 (이미 있으면 금액만 바꿈). 분류는 일정 이름으로 짐작.
+     * 반복 일정은 날마다 따로라서 일정 id와 날짜로 찾는다.
+     */
+    suspend fun budgetForEvent(eventId: Long, title: String, date: LocalDate, amount: Long, owned: Boolean = false): Long {
+        val old = dao.plansNow().firstOrNull { it.eventId == eventId && it.epochDay == date.toEpochDay() }
+        if (old != null) {
+            dao.savePlan(old.copy(amount = amount))
+            return old.id
+        }
+        return savePlan(
+            PlanEntity(
+                epochDay = date.toEpochDay(),
+                amount = amount,
+                label = title,
+                category = com.simbio.don.budget.Plans.categoryFor(title).name,
+                eventId = eventId,
+                calendarOwned = owned,
+            ),
+        )
     }
 
     /** 이미 적힌 지출을 이 계획을 쓴 것으로 */
@@ -1661,11 +1699,14 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 기록 고치기. 카테고리를 바꾸면 그 가게를 기억하고,
      * [applyToSameLabel]이면 같은 가게의 다른 기록도 같이 바꾼다.
      */
-    suspend fun updateEntry(updated: EntryEntity, previous: EntryEntity, applyToSameLabel: Boolean) {
-        dao.updateEntry(updated)
+    /** 기록 고치기. 알림 기록의 이름을 고쳤으면 그 앱의 가게 이름 자리를 배워 같은 앱 기록도 고친 수를 돌려준다 */
+    suspend fun updateEntry(updated: EntryEntity, previous: EntryEntity, applyToSameLabel: Boolean): Int {
+        val renamed = updated.label.isNotBlank() && updated.label != previous.label
+        dao.updateEntry(if (renamed) updated.copy(nameUnknown = false) else updated)
         // 나눠 내기를 끄면 받은 정산은 다시 수입으로
         if (updated.share == null && previous.share != null) releaseReceipts(updated.id)
-        if (updated.category != previous.category && !Category.of(updated.category).income) {
+        // "○○카드 결제"처럼 가게를 모르는 이름은 분류를 배우지 않는다 (그 앱 결제가 다 같은 분류가 되지 않게)
+        if (updated.category != previous.category && !Category.of(updated.category).income && !(previous.nameUnknown && !renamed)) {
             learn(updated.label, Category.of(updated.category))
             if (applyToSameLabel) {
                 val key = CategoryGuesser.key(updated.label)
@@ -1673,7 +1714,38 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.updateEntries(same.map { it.copy(category = updated.category) })
             }
         }
+        return if (renamed) learnMerchantSpot(updated) else 0
     }
+
+    /**
+     * 알림 기록의 이름을 사용자가 고치면, 그 이름이 알림 글 어디에 있었는지 배워 그 앱의 다음 알림부터 같은 자리에서 찾는다.
+     * 같은 앱에서 가게 이름을 몰랐거나 예전 규칙이 잘못 뽑은 기록도 그 자리로 다시 찾아 고친다 (고친 수).
+     * 알림 글에 없는 이름이면 배우지 않는다.
+     */
+    private suspend fun learnMerchantSpot(e: EntryEntity): Int {
+        val pkg = e.packageName ?: return 0
+        val (title, text) = splitRaw(e.rawText ?: return 0)
+        val spot = com.simbio.don.notify.MerchantExtractor.learn(title, text, e.label) ?: return 0
+        val rule = dao.appRulesNow().firstOrNull { it.packageName == pkg } ?: return 0
+        dao.saveAppRule(rule.copy(merchantSpot = spot.encode()))
+        val learned = learned()
+        val fixed = dao.allEntriesNow()
+            .filter { it.id != e.id && it.packageName == pkg && it.rawText != null }
+            .mapNotNull { o ->
+                val (t, x) = splitRaw(o.rawText!!)
+                // 사용자가 이름을 손대지 않은 기록만 (이름 모름이거나 예전 규칙이 뽑은 그대로)
+                if (!o.nameUnknown && o.label != com.simbio.don.notify.MerchantExtractor.extract(t, x, rule.displayName)) return@mapNotNull null
+                val name = com.simbio.don.notify.MerchantExtractor.extract(t, x, rule.displayName, spot).takeIf { it.isNotBlank() && it != o.label } ?: return@mapNotNull null
+                val guess = CategoryGuesser.guess(name, learned)
+                o.copy(label = name, nameUnknown = false, category = if (o.category == Category.ETC.name && guess != Category.ETC) guess.name else o.category)
+            }
+        dao.updateEntries(fixed)
+        return fixed.size
+    }
+
+    /** 저장한 알림 글 → 제목(첫 줄)과 본문 */
+    private fun splitRaw(raw: String): Pair<String, String> =
+        raw.split('\n', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
 
     suspend fun learned(): Map<String, Category> =
         dao.categoryRulesNow().associate { it.labelKey to Category.of(it.category) }
@@ -1888,6 +1960,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 accountId = accountFor(p.packageName),
                 minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
                 sentOut = type == EntryType.SPEND && SelfTransfer.isSendOut(p),
+                rawText = p.rawText.take(300).ifBlank { null },
+                nameUnknown = p.nameUnknown,
             ),
         )
         return category

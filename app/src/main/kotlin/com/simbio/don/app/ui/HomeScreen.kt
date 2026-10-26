@@ -74,6 +74,7 @@ fun HomeScreen(
     onAi: (AiMode) -> Unit = {},
     report: com.simbio.don.budget.MonthReport? = null,
     onCanBuy: () -> Unit = {},
+    calendar: CalendarHooks = CalendarHooks.Off,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
@@ -141,8 +142,14 @@ fun HomeScreen(
             when (card) {
                 HomeCard.WEEK -> TodayWeekCard(home)
                 HomeCard.FORECAST -> home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
-                HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay)
-                HomeCard.UPCOMING -> UpcomingCard(home.insights.upcoming, home.today, onPlans)
+                HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay, calendar.events)
+                HomeCard.UPCOMING -> UpcomingCard(
+                    home.insights.upcoming, home.today, onPlans,
+                    events = remember(calendar.events, home.plans, home.today) {
+                        (0L..7L).flatMap { calendar.events[home.today.plusDays(it)].orEmpty() }.filter { planOf(it, home.plans) == null }
+                    },
+                    onEvent = onCalendarDay,
+                )
                 HomeCard.SPLITS -> SplitHomeCard(splits, onSplits)
                 // 새 달 첫 두 주만
                 HomeCard.REPORT -> if (report != null && home.today.toEpochDay() - home.cycle.start.toEpochDay() < 14) ReportCard(report)
@@ -310,10 +317,10 @@ fun TodayWeekCard(home: HomeState) {
             Text("오늘 몫 ${won(day.allowance)}", fontSize = 12.sp, color = DonColors.InkMuted)
         }
         if (day.spentBig > 0) {
-            Text("오늘 큰 지출 ${won(day.spentBig)}은 이번 주 남은 ${day.daysLeft}일에 나눴어요", fontSize = 12.sp, color = DonColors.InkMuted)
+            Text("오늘 큰 지출·계획한 지출 ${won(day.spentBig)}은 이번 주 남은 ${day.daysLeft}일에 나눴어요", fontSize = 12.sp, color = DonColors.InkMuted)
         }
         if (day.reserved > 0) {
-            Text("이번 주 계획 ${won(day.reserved)}은 미리 빼 뒀어요", fontSize = 12.sp, color = DonColors.InkMuted)
+            Text("이번 주 계획·일정 예산 ${won(day.reserved)}은 미리 빼 뒀어요", fontSize = 12.sp, color = DonColors.InkMuted)
         }
         if (home.today == week.week.end && week.available > 0) {
             Text("오늘이 이번 주 마지막 날 · 남기면 아낀 돈이 돼요", fontSize = 12.sp, color = DonColors.Real, fontWeight = FontWeight.SemiBold)

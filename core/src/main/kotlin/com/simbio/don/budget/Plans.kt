@@ -77,6 +77,21 @@ object Plans {
                 (e.category == plan.category || nameOverlaps(plan.label, e.label))
         }.minByOrNull { (_, e) -> kotlin.math.abs(e.amount - plan.amount) * 1000 + kotlin.math.abs(ChronoUnit.DAYS.between(plan.date, e.date)) }?.first
 
+    /** 캘린더 일정 이름으로 계획 카테고리 짐작 (결혼식·생일 → 경조사, 회식·약속 → 식비…). 모르면 가게 이름처럼 */
+    fun categoryFor(title: String): Category {
+        val t = CategoryGuesser.key(title)
+        EVENT_WORDS.firstOrNull { (_, words) -> words.any { it in t } }?.let { return it.first }
+        return CategoryGuesser.guess(title)
+    }
+
+    private val EVENT_WORDS: List<Pair<Category, List<String>>> = listOf(
+        Category.EVENT to listOf("결혼", "웨딩", "생일", "돌잔치", "장례", "조문", "집들이", "선물", "기념일", "환갑", "칠순"),
+        Category.CULTURE to listOf("미술", "영화", "공연", "콘서트", "전시", "뮤지컬", "여행", "캠핑", "야구", "축구"),
+        Category.HEALTH to listOf("병원", "치과", "검진", "진료"),
+        Category.EDUCATION to listOf("수업", "학원", "강의", "시험"),
+        Category.FOOD to listOf("회식", "술", "모임", "약속", "저녁", "점심", "밥", "식사", "브런치", "동창"),
+    )
+
     private fun nameOverlaps(a: String, b: String): Boolean {
         val x = CategoryGuesser.key(a)
         val y = CategoryGuesser.key(b)

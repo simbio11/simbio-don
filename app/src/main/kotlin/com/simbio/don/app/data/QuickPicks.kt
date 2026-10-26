@@ -14,7 +14,7 @@ object QuickPicks {
      */
     fun from(entries: List<EntryEntity>, limit: Int = 8): List<QuickPick> =
         entries.asSequence()
-            .filter { it.type == EntryType.SPEND.name && it.label.isNotBlank() }
+            .filter { it.type == EntryType.SPEND.name && it.label.isNotBlank() && !it.nameUnknown }
             .groupBy { CategoryGuesser.key(it.label) }
             .values
             .map { list -> list.maxWith(compareBy<EntryEntity> { it.epochDay }.thenBy { it.id }) to list.size }

@@ -166,6 +166,26 @@ class WidgetsTest {
     }
 
     @Test
+    fun 캘린더를_이으면_위젯_달력에_일정_점() {
+        seed()
+        val home = runBlocking { Widgets.home(context) }!!
+        assertTrue(CalendarWidget.cells(home, context).events.isEmpty())
+        val fake = com.simbio.don.app.calendar.FakeCalendarSource()
+        fake.list += com.simbio.don.app.calendar.CalEvent(1, 1, "민지 결혼식", today.plusDays(2), null, 0xFFE67C73.toInt())
+        fake.list += com.simbio.don.app.calendar.CalEvent(2, 1, "팀 회식", today, 19 * 60, 0xFF4285F4.toInt())
+        com.simbio.don.app.calendar.PhoneCalendar.sourceForTests = fake
+        try {
+            com.simbio.don.app.calendar.PhoneCalendar.setOn(context, true)
+            val cells = CalendarWidget.cells(home, context)
+            assertEquals(listOf(0xFFE67C73.toInt()), cells.events[today.plusDays(2)])
+            assertEquals(listOf(0xFF4285F4.toInt()), cells.events[today])
+            render(runBlocking { CalendarWidget().views(context, 2, 330f, 320f) }, 330, 320, "w2_calendar_events")
+        } finally {
+            com.simbio.don.app.calendar.PhoneCalendar.sourceForTests = null
+        }
+    }
+
+    @Test
     fun 처음_설정_전이면_안내만() {
         val v = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w0_grass_empty")
         assertEquals("앱을 열어 처음 설정을 해 주세요", v.text(R.id.widget_sub))

@@ -33,6 +33,8 @@ data class AppRule(
     val displayName: String,
     val enabled: Boolean = true,
     val keywordRules: List<KeywordRule> = DEFAULT_KEYWORD_RULES,
+    /** 사용자가 기록 이름을 고쳐 배운 가게 이름 자리 (없으면 흔한 형식으로 추측) */
+    val merchantSpot: MerchantSpot? = null,
 ) {
     companion object {
         val DEFAULT_KEYWORD_RULES = listOf(

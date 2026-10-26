@@ -69,6 +69,8 @@ import com.simbio.don.app.ui.BudgetsScreen
 import com.simbio.don.app.ui.CardsScreen
 import com.simbio.don.app.ui.AssetCheckScreen
 import com.simbio.don.app.ui.PlanScreen
+import com.simbio.don.app.ui.CalendarHooks
+import com.simbio.don.app.calendar.PhoneCalendar
 import com.simbio.don.app.ui.CollectionScreen
 import com.simbio.don.app.ui.TabSwitch
 import com.simbio.don.app.ui.ScreenHost
@@ -284,6 +286,54 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
         vm.refreshClock()
+        // 폰 캘린더에서 일정을 고치고 돌아왔을 수 있다
+        vm.refreshCalendar()
+    }
+
+    /** 폰 캘린더 잇기: 권한이 없으면 먼저 묻는다 */
+    @Composable
+    private fun calendarConnect(): () -> Unit {
+        val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
+            if (r.isNotEmpty() && r.values.all { it }) {
+                vm.connectCalendar()
+                Toast.makeText(this, "폰 캘린더를 이었어요", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "캘린더 권한을 허용해야 이을 수 있어요", Toast.LENGTH_SHORT).show()
+            }
+        }
+        return {
+            if (PhoneCalendar.canRead(this)) vm.connectCalendar() else ask.launch(PhoneCalendar.PERMISSIONS)
+        }
+    }
+
+    /** 가계부·홈 달력에 넘길 캘린더 상태와 동작 */
+    @Composable
+    private fun calendarHooks(open: (Overlay) -> Unit): CalendarHooks {
+        val on by vm.calendarOn.collectAsStateWithLifecycle()
+        val events by vm.calendarEvents.collectAsStateWithLifecycle()
+        val write by vm.writeCalendarId.collectAsStateWithLifecycle()
+        val connect = calendarConnect()
+        return remember(on, events, write) {
+            CalendarHooks(
+                on = on,
+                canWrite = write != null,
+                events = events,
+                onBudget = { e, amount -> vm.budgetEvent(e, amount) },
+                onAdd = { d, title, minute, budget ->
+                    vm.addCalendarEvent(d, title, minute, budget) { ok ->
+                        Toast.makeText(this, if (ok) "캘린더에 넣었어요" else "캘린더에 넣지 못했어요", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onSpent = { p -> open(Overlay.Edit(null, spentDraft(p))) },
+                onConnect = connect,
+            )
+        }
+    }
+
+    /** 계획에서 "썼어요"로 여는 입력 초안 (이미 쓴 계획이면 더 쓴 돈이라 금액은 비움) */
+    private fun spentDraft(p: com.simbio.don.app.data.PlanEntity): EntryDraft {
+        val d = minOf(LocalDate.ofEpochDay(p.epochDay), LocalDate.now())
+        return EntryDraft(d, if (p.done) 0 else p.amount, p.label, EntryType.SPEND, Category.of(p.category), "", false, planId = p.id)
     }
 
     private fun openListenerSettings() = startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -389,6 +439,7 @@ class MainActivity : ComponentActivity() {
         onLedgerMode: (LedgerMode) -> Unit,
         weather: com.simbio.don.app.weather.Weather?,
     ) {
+        val calendar = calendarHooks { screens.push(it) }
         Scaffold(
             containerColor = DonColors.Bg,
             snackbarHost = {
@@ -455,6 +506,7 @@ class MainActivity : ComponentActivity() {
                         onAi = { m -> screens.push(Overlay.Ai(m)) },
                         report = produceState<com.simbio.don.budget.MonthReport?>(null, home.cycle.start) { value = vm.lastMonthReport() }.value,
                         onCanBuy = { screens.push(Overlay.CanBuy) },
+                        calendar = calendar,
                         onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
                         onAddFixed = { s ->
                             vm.addFixedExpense(s.label, s.amount, s.day)
@@ -493,6 +545,8 @@ class MainActivity : ComponentActivity() {
                         val summaries by vm.summaries.collectAsStateWithLifecycle()
                         val yearView by vm.yearView.collectAsStateWithLifecycle()
                         val v = view ?: return@TabSwitch
+                        // 다른 달을 보면 그 달 일정도 읽는다
+                        LaunchedEffect(v.nominal) { vm.refreshCalendar() }
                         val i = cycles.indexOfFirst { it.nominal == v.nominal }
                         val hasPrev = i in 0 until cycles.lastIndex
                         val hasNext = i > 0
@@ -516,6 +570,7 @@ class MainActivity : ComponentActivity() {
                                 onMode = { onLedgerMode(it) },
                                 plans = home.plans,
                                 onPlans = { screens.push(Overlay.Plans) },
+                                calendar = calendar,
                             )
                         } else {
                             StatsScreen(
@@ -558,6 +613,11 @@ class MainActivity : ComponentActivity() {
         val seen by vm.seenApps.collectAsStateWithLifecycle()
         val learned by vm.learned.collectAsStateWithLifecycle()
         val incomes by vm.recurringIncomes.collectAsStateWithLifecycle()
+        val calendarOn by vm.calendarOn.collectAsStateWithLifecycle()
+        val calendars by vm.deviceCalendars.collectAsStateWithLifecycle()
+        val shownCalendars by vm.shownCalendarIds.collectAsStateWithLifecycle()
+        val writeCalendar by vm.writeCalendarId.collectAsStateWithLifecycle()
+        val connectCalendar = calendarConnect()
         var naverOn by remember { mutableStateOf(NaverShopping.isOn(this)) }
         var themeMode by remember { mutableStateOf(UiPrefs.themeMode(this)) }
         var effectsAlways by remember { mutableStateOf(UiPrefs.effectsAlways(this)) }
@@ -675,6 +735,14 @@ class MainActivity : ComponentActivity() {
                     aiModel = m
                 },
                 onDailyCategories = { vm.setDailyCategories(it) },
+                calendarOn = calendarOn,
+                calendars = calendars,
+                shownCalendars = shownCalendars,
+                writeCalendar = writeCalendar,
+                onCalendarConnect = connectCalendar,
+                onCalendarOff = { vm.disconnectCalendar() },
+                onCalendarShown = { id, on -> vm.setCalendarShown(id, on) },
+                onWriteCalendar = { vm.setWriteCalendar(it) },
                 onAiOff = {
                     com.simbio.don.app.ai.Ai.clear(this)
                     aiKey = null
@@ -762,7 +830,11 @@ class MainActivity : ComponentActivity() {
                         subcategories = subs.mapValues { (_, l) -> l.map { it.name } },
                         onAddSub = { c, n -> vm.addSubcategory(c, n) },
                         onDeleteInstallment = o.existing?.installmentId?.let { id -> { vm.deleteInstallment(id) } },
-                        onSave = { d -> vm.save(d, o.existing) },
+                        onSave = { d ->
+                            vm.save(d, o.existing) { n ->
+                                Toast.makeText(this, "같은 앱 기록 ${n}건도 가게 이름을 찾아 고쳤어요", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         onDelete = o.existing?.let { e -> { vm.deleteEntry(e) } },
                         onUnsettle = o.existing?.takeIf { it.settleFor != null }?.let { e -> { vm.unsettle(e) } },
                         dailyCategories = home.dailyCategories,
@@ -961,11 +1033,9 @@ class MainActivity : ComponentActivity() {
                     matches = remember(plans, home.entries) { vm.planMatches(plans, home.entries) },
                     summary = home.insights.plans,
                     today = home.today,
-                    onAdd = { vm.savePlan(it) },
-                    onSpent = { p ->
-                        val d = minOf(LocalDate.ofEpochDay(p.epochDay), home.today)
-                        open(Overlay.Edit(null, EntryDraft(d, p.amount, p.label, EntryType.SPEND, Category.of(p.category), "", false, planId = p.id)))
-                    },
+                    onAdd = { p, toCalendar -> vm.savePlan(p, toCalendar) },
+                    calendarOn = vm.calendarOn.collectAsStateWithLifecycle().value && vm.writeCalendarId.collectAsStateWithLifecycle().value != null,
+                    onSpent = { p -> open(Overlay.Edit(null, spentDraft(p))) },
                     onLink = { p, e -> vm.linkPlan(p.id, e) },
                     onCancel = { p, c -> vm.cancelPlan(p.id, c) },
                     onDelete = { vm.deletePlan(it.id) },

@@ -76,6 +76,7 @@ object Backup {
         put("rules", arr(d.rules) { o, x ->
             o.put("packageName", x.packageName); o.put("displayName", x.displayName); o.put("enabled", x.enabled)
             o.put("keywordRules", x.keywordRules)
+            x.merchantSpot?.let { o.put("merchantSpot", it) }
         })
         put("settled", arr(d.settled) { o, x ->
             o.put("nominal", x.nominal); o.put("weekIndex", x.weekIndex); o.put("settledAtEpochSecond", x.settledAtEpochSecond)
@@ -180,7 +181,7 @@ object Backup {
                         o.longOrNull("relatedEntryId"))
                 },
                 rules = list(root, "rules") { o ->
-                    AppRuleEntity(o.getString("packageName"), o.getString("displayName"), o.getBoolean("enabled"), o.getString("keywordRules"))
+                    AppRuleEntity(o.getString("packageName"), o.getString("displayName"), o.getBoolean("enabled"), o.getString("keywordRules"), o.optString("merchantSpot").ifBlank { null })
                 },
                 settled = list(root, "settled") { o ->
                     SettledWeekEntity(o.getString("nominal"), o.getInt("weekIndex"), o.getLong("settledAtEpochSecond"), o.getBoolean("auto"),

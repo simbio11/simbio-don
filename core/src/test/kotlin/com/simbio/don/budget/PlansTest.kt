@@ -52,4 +52,17 @@ class PlansTest {
         assertEquals(100_000L, planned.plannedAhead)
         assertEquals((900_000 - plain.spent - 100_000) / plain.daysLeft, planned.perDayToFit)
     }
+
+    @Test
+    fun `일정 이름으로 계획 분류를 짐작한다`() {
+        assertEquals(Category.EVENT, Plans.categoryFor("민지 결혼식"))
+        assertEquals(Category.EVENT, Plans.categoryFor("엄마 생일"))
+        assertEquals(Category.FOOD, Plans.categoryFor("팀 회식"))
+        assertEquals(Category.FOOD, Plans.categoryFor("대학 동기 술약속"))
+        assertEquals(Category.CULTURE, Plans.categoryFor("미술관 데이트"))
+        assertEquals(Category.CULTURE, Plans.categoryFor("콘서트"))
+        // 일정 낱말이 없으면 가게 이름처럼
+        assertEquals(Category.CAFE, Plans.categoryFor("스타벅스에서 스터디"))
+        assertEquals(Category.ETC, Plans.categoryFor("회의"))
+    }
 }

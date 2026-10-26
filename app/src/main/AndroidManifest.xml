@@ -7,6 +7,9 @@
     <!-- 매일 밤 지출 알림 (설정에서 켤 때만 묻는다) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 폰 캘린더 연동 (켤 때만 묻는다. 일정은 이 폰 안에서만 읽고 쓴다) -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
     <!-- 설치 여부를 확인할 기본 결제 앱 (Android 11+ 패키지 가시성). 목록은 core DefaultApps와 같게 유지 -->
     <queries>

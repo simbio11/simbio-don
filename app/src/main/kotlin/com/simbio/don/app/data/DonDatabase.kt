@@ -36,7 +36,7 @@ import com.simbio.don.budget.CategoryGuesser
         PlanEntity::class,
         GoalMoveEntity::class,
     ],
-    version = 14,
+    version = 15,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -54,7 +54,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 }
                 ).build().also { instance = it }
         }
@@ -63,6 +63,15 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v15: 알림 기록의 알림 글·가게 이름 모름, 앱마다 배운 가게 이름 자리 */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entry ADD COLUMN rawText TEXT")
+                db.execSQL("ALTER TABLE entry ADD COLUMN nameUnknown INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE app_rule ADD COLUMN merchantSpot TEXT")
+            }
         }
 
         /** v14: 그날 쓰는 돈으로 볼 분류, 계획 ↔ 폰 캘린더 일정 */

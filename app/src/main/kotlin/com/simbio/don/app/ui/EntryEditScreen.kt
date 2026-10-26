@@ -220,7 +220,32 @@ fun EntryEditScreen(
 
             FormCard {
                 when (existing?.source) {
-                    EntrySource.NOTIFICATION.name -> Text("결제 알림에서 자동으로 기록됐어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    EntrySource.NOTIFICATION.name -> {
+                        Text("결제 알림에서 자동으로 기록됐어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                        // 받은 알림 글: 가게 이름이 어디 있었는지 보고 고칠 수 있게 (이 폰에만 있는 글)
+                        existing.rawText?.let { raw ->
+                            var open by remember { mutableStateOf(existing.nameUnknown) }
+                            if (existing.nameUnknown) {
+                                Text(
+                                    "알림에서 가게 이름을 못 찾았어요. 아래 '내용'에 적어 주세요 — 알림 글 안에 있는 이름이면 다음부터 이 앱 알림은 그 자리에서 찾아요.",
+                                    fontSize = 12.sp,
+                                    color = DonColors.Real,
+                                )
+                            }
+                            TextButton(onClick = { open = !open }) { Text(if (open) "받은 알림 글 접기" else "받은 알림 글 보기", fontSize = 12.sp) }
+                            if (open) {
+                                Text(
+                                    raw,
+                                    fontSize = 12.sp,
+                                    color = DonColors.InkSoft,
+                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(DonColors.SurfaceAlt).padding(10.dp),
+                                )
+                                if (!existing.nameUnknown) {
+                                    Text("가게 이름이 틀렸으면 '내용'을 고쳐 주세요. 알림 글 안의 이름이면 다음부터 이 앱 알림은 그 자리에서 찾아요.", fontSize = 11.sp, color = DonColors.InkMuted)
+                                }
+                            }
+                        }
+                    }
                     EntrySource.RECURRING.name -> Text(
                         if (existing.incomeId != null) "반복 수입이라 정한 날에 자동으로 적었어요." else "고정 지출이라 정한 날에 자동으로 적었어요.",
                         fontSize = 12.sp,

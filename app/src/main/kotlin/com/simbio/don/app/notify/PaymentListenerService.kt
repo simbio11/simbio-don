@@ -60,10 +60,8 @@ class PaymentListenerService : NotificationListenerService() {
         watched?.let { if (pkg !in it) return }
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
-        val extras = n.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val text = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))
-            ?.toString().orEmpty()
+        val title = titleOf(n.extras)
+        val text = textOf(n.extras)
         if (title.isBlank() && text.isBlank()) return
 
         val key = "${sbn.key}|$time|${title.hashCode()}|${text.hashCode()}"
@@ -100,6 +98,25 @@ class PaymentListenerService : NotificationListenerService() {
     }
 
     companion object {
+        fun titleOf(extras: android.os.Bundle): String =
+            (extras.getCharSequence(Notification.EXTRA_TITLE) ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG))?.toString().orEmpty().trim()
+
+        /**
+         * 알림 본문: 펼친 글(없으면 한 줄 글) + 여러 줄 알림의 줄들 + 작은 글·요약. 가게 이름이 한 줄 글 말고
+         * 다른 칸에만 오는 앱이 있어서 다 모은다 (같은 글은 한 번만). 금액은 앞에서부터 찾으니 본문이 먼저.
+         */
+        fun textOf(extras: android.os.Bundle): String {
+            val main = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty()
+            val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.map { it.toString() }.orEmpty()
+            val extra = listOf(Notification.EXTRA_SUB_TEXT, Notification.EXTRA_SUMMARY_TEXT, Notification.EXTRA_INFO_TEXT)
+                .mapNotNull { extras.getCharSequence(it)?.toString() }
+            val parts = mutableListOf<String>()
+            (listOf(main) + lines + extra).map { it.trim() }.filter { it.isNotEmpty() }.forEach { p ->
+                if (parts.none { p in it }) parts += p
+            }
+            return parts.joinToString("\n")
+        }
+
         private const val SEEN_THROTTLE_MS = 60 * 60 * 1000L
         private const val DEDUP_MS = 10 * 60 * 1000L
         private const val WHEN_TOLERANCE_MS = 60 * 60 * 1000L

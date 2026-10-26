@@ -9,6 +9,9 @@ import java.time.temporal.ChronoUnit
  *
  * 오늘 몫 = (오늘 아침 이번 주 남은 돈 − 오늘 큰 지출 − 오늘부터 이번 주 끝까지 잡힌 계획) ÷ 오늘 포함 남은 날.
  * 오늘 남은 돈 = 오늘 몫 − 오늘 그날 지출 (음수면 넘음).
+ *
+ * 미리 계획한 돈(일정에 정한 예산·돈 나갈 계획)을 "썼어요"로 이은 기록은 식비라도 큰 지출로 본다 —
+ * 이미 이번 주에서 떼어 둔 돈이라서. 계획보다 더 쓴 건 그 일정에서 "넘음"으로 보인다.
  */
 data class DayBudget(
     val allowance: Long,
@@ -42,13 +45,20 @@ object DayBudgets {
 
     /**
      * [week]: 이번 주 결과, [entries]: 이번 주 기록, [daily]: 그날 쓰는 돈으로 볼 분류 이름,
-     * [plans]: 아직 안 쓴 계획 (날짜, 금액).
+     * [plans]: 아직 안 쓴 계획 (날짜, 금액), [planned]: 계획과 이은 기록인지.
      */
-    fun of(week: WeekResult, entries: List<Entry>, today: LocalDate, daily: Set<String>, plans: List<Pair<LocalDate, Long>> = emptyList()): DayBudget {
+    fun of(
+        week: WeekResult,
+        entries: List<Entry>,
+        today: LocalDate,
+        daily: Set<String>,
+        plans: List<Pair<LocalDate, Long>> = emptyList(),
+        planned: (Entry) -> Boolean = { false },
+    ): DayBudget {
         if (today !in week.week) return DayBudget.Empty
         val todays = entries.filter { it.date == today }
         val spentToday = todays.sumOf { counted(it) }
-        val spentDaily = todays.filter { it.category.name in daily }.sumOf { counted(it) }
+        val spentDaily = todays.filter { it.category.name in daily && !planned(it) }.sumOf { counted(it) }
         val spentBig = spentToday - spentDaily
         val reserved = plans.filter { (d, _) -> d in today..week.week.end }.sumOf { it.second }
         val daysLeft = (ChronoUnit.DAYS.between(today, week.week.end) + 1).toInt().coerceAtLeast(1)

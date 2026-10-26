@@ -8,7 +8,10 @@ data class ParsedPayment(
     val amount: Long,
     val label: String,
     val postedAt: LocalDateTime,
+    /** 알림 제목과 본문 (줄바꿈으로 이음) */
     val rawText: String,
+    /** 알림에서 가게(보낸 사람) 이름을 못 찾아 [label]이 "○○카드 결제"처럼 앱 이름인 것 */
+    val nameUnknown: Boolean = false,
 )
 
 sealed interface ParseResult {
@@ -40,7 +43,10 @@ object NotificationParser {
         if (action == RuleAction.IGNORE) return ParseResult.Ignored
 
         val amount = extractAmount(body) ?: return ParseResult.Ignored
-        val payment = ParsedPayment(n.packageName, action ?: RuleAction.SPEND, amount, label(n, rule), n.postedAt, body)
+        val act = action ?: RuleAction.SPEND
+        val merchant = MerchantExtractor.extract(n.title, n.text, rule.displayName, rule.merchantSpot)
+        val raw = listOf(n.title, n.text).filter { it.isNotBlank() }.joinToString("\n")
+        val payment = ParsedPayment(n.packageName, act, amount, merchant.ifBlank { fallbackLabel(rule.displayName, act) }.take(40), n.postedAt, raw, merchant.isBlank())
         return if (action == null) ParseResult.Unclassified(payment) else ParseResult.Payment(payment)
     }
 
@@ -52,6 +58,10 @@ object NotificationParser {
         ?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull()
         ?.takeIf { it > 0 }
 
-    private fun label(n: RawNotification, rule: AppRule): String =
-        MerchantExtractor.extract(n.title, n.text, rule.displayName).ifBlank { rule.displayName }.take(40)
+    /** 가게 이름을 못 찾았을 때: "결제" 한 마디 대신 어느 앱(카드)인지라도 */
+    fun fallbackLabel(appName: String, action: RuleAction): String = "${appName.ifBlank { "알림" }} " + when (action) {
+        RuleAction.INCOME -> "입금"
+        RuleAction.REFUND -> "취소"
+        else -> "결제"
+    }
 }

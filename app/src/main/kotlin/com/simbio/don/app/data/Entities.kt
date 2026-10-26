@@ -152,6 +152,10 @@ data class EntryEntity(
     val settleFor: Long? = null,
     /** 남이 내서 내가 보낼 돈 — 아직 안 보냄 (생활비에는 들어가고 잔액은 보낼 때) */
     @ColumnInfo(defaultValue = "0") val owe: Boolean = false,
+    /** 알림에서 온 기록의 알림 글 (300자, 이 폰에만 · 백업에 안 넣음). 이름을 고치면 그 앱의 가게 이름 자리를 배운다 */
+    val rawText: String? = null,
+    /** 알림에 가게 이름이 없어 "○○카드 결제"처럼 적은 것 — 이름을 적어 달라고 보인다 */
+    @ColumnInfo(defaultValue = "0") val nameUnknown: Boolean = false,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */
@@ -196,6 +200,8 @@ data class AppRuleEntity(
     val enabled: Boolean,
     /** "IGNORE=광고,혜택;REFUND=취소,환불;..." 형식 */
     val keywordRules: String,
+    /** 배운 가게 이름 자리 (MerchantSpot.encode, "2:" = 세 번째 줄 전체) */
+    val merchantSpot: String? = null,
 )
 
 /**

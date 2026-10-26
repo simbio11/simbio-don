@@ -123,7 +123,7 @@ private fun ForecastBar(f: MonthForecast) {
  * 하루 몫(생활비 ÷ 날 수)을 넘긴 날은 빨강. 누르면 가계부의 그날로.
  */
 @Composable
-fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
+fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit, events: Map<LocalDate, List<com.simbio.don.app.calendar.CalEvent>> = emptyMap()) {
     val start = home.cycle.start
     val end = home.cycle.end
     val perDay = Stats.daily(home.entries.map { it.toEntry() }, livingOnly = true)
@@ -187,6 +187,7 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
                                 else -> DonColors.Ink
                             },
                         )
+                        if (inside) EventDots(events[d], 3.dp)
                         when {
                             !inside -> Unit
                             !past && planned[d] != null && spent <= 0 -> Text(compactWon(planned.getValue(d)), fontSize = 9.sp, maxLines = 1, color = DonColors.InkFaint)
@@ -198,23 +199,34 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit) {
                                 color = if (spent > plan) DonColors.Expense else DonColors.InkSoft,
                                 fontWeight = if (spent > plan) FontWeight.SemiBold else FontWeight.Normal,
                             )
-                            past || isToday -> Unit
+                            past || isToday || !events[d].isNullOrEmpty() -> Unit
                             else -> Box(Modifier.size(4.dp).clip(CircleShape).background(DonColors.Line))
                         }
                     }
                 }
             }
         }
-        Text("하루 몫 ${won(plan)} · 덜 쓴 날일수록 진한 초록, 넘긴 날은 빨강, 점선은 계획", fontSize = 11.sp, color = DonColors.InkMuted)
+        Text(
+            "하루 몫 ${won(plan)} · 덜 쓴 날일수록 진한 초록, 넘긴 날은 빨강, 점선은 계획" + if (events.isNotEmpty()) ", 색 점은 일정" else "",
+            fontSize = 11.sp,
+            color = DonColors.InkMuted,
+        )
     }
 }
 
 // ── 다가오는 결제 ───────────────────────────────────────────
 
 @Composable
-fun UpcomingCard(list: List<Upcoming>, today: LocalDate, onPlans: () -> Unit = {}) {
+fun UpcomingCard(
+    list: List<Upcoming>,
+    today: LocalDate,
+    onPlans: () -> Unit = {},
+    /** 일주일 안 일정 중 아직 예산을 안 정한 것 → 누르면 그날 달력 */
+    events: List<com.simbio.don.app.calendar.CalEvent> = emptyList(),
+    onEvent: (LocalDate) -> Unit = {},
+) {
     SectionCard("일주일 안에", trailing = { com.simbio.don.app.ui.kit.MoreButton("계획 +", onPlans) }) {
-        if (list.isEmpty()) {
+        if (list.isEmpty() && events.isEmpty()) {
             Text("일주일 안에 나갈 돈이 없어요. 생일·병원처럼 쓸 일이 정해진 돈은 계획으로 적어 두면 여기와 예측에 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
         }
         list.take(5).forEach { u ->
@@ -255,6 +267,26 @@ fun UpcomingCard(list: List<Upcoming>, today: LocalDate, onPlans: () -> Unit = {
                         else -> DonColors.Ink
                     },
                 )
+            }
+        }
+        if (events.isNotEmpty()) {
+            Text("예산 안 정한 일정", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DonColors.InkMuted, modifier = Modifier.padding(top = 4.dp))
+            events.take(3).forEach { e ->
+                val d = ChronoUnit.DAYS.between(today, e.date)
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).pressable { onEvent(e.date) }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(e.color or 0xFF000000.toInt())))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(e.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, maxLines = 1)
+                        Text("${shortDate(e.date)} · ${if (d == 0L) "오늘" else "${d}일 뒤"} · ${eventTime(e)}", fontSize = 12.sp, color = DonColors.InkMuted)
+                    }
+                    Text("예산 정하기", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Real)
+                }
             }
         }
     }

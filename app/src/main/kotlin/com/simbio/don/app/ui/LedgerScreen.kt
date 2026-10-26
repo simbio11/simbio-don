@@ -94,7 +94,14 @@ fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEnt
         if (type == EntryType.TRANSFER) IconBubble(UiIcon.TRANSFER, DonColors.Transfer, 36.dp) else CategoryIcon(c, 36.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(e.label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = DonColors.Ink, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(e.label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = DonColors.Ink, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                // 알림에 가게 이름이 없었던 것 — 눌러서 적으면 그 앱 알림의 가게 이름 자리를 배운다
+                if (e.nameUnknown) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("가게 이름 적기", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Real, maxLines = 1)
+                }
+            }
             Text(
                 buildList {
                     add(
@@ -211,6 +218,8 @@ fun LedgerScreen(
     /** 돈 나갈 계획 (실제 기록과 따로, 점선으로) */
     plans: List<com.simbio.don.app.data.PlanEntity> = emptyList(),
     onPlans: () -> Unit = {},
+    /** 폰 캘린더 일정 (켰을 때만) */
+    calendar: CalendarHooks = CalendarHooks.Off,
 ) {
     val monthPlans = plans.filter { it.open && LocalDate.ofEpochDay(it.epochDay) in view.cycle }
     val income = Stats.income(view.entries)
@@ -234,7 +243,7 @@ fun LedgerScreen(
                 }
                 dailyItems(view, accountNames, selectedDate, onSelectDate, category, onCategory, onOpen)
             }
-            LedgerMode.CALENDAR -> calendarItems(view, accountNames, selectedDate ?: view.today.takeIf { it in view.cycle } ?: view.cycle.start, onSelectDate, onOpen, monthPlans, onPlans)
+            LedgerMode.CALENDAR -> calendarItems(view, accountNames, selectedDate ?: view.today.takeIf { it in view.cycle } ?: view.cycle.start, onSelectDate, onOpen, plans, onPlans, calendar)
             LedgerMode.WEEKLY -> weeklyItems(view)
             LedgerMode.MONTHLY -> monthlyItems(summaries, view.nominal) { n -> onPickMonth(n); onMode(LedgerMode.DAILY) }
         }
@@ -300,16 +309,25 @@ private fun androidx.compose.foundation.lazy.LazyListScope.calendarItems(
     onOpen: (EntryEntity) -> Unit,
     plans: List<com.simbio.don.app.data.PlanEntity> = emptyList(),
     onPlans: () -> Unit = {},
+    calendar: CalendarHooks = CalendarHooks.Off,
 ) {
+    val open = plans.filter { it.open && LocalDate.ofEpochDay(it.epochDay) in view.cycle }
     item {
         Column(Modifier.fillMaxWidth().card().padding(horizontal = 8.dp, vertical = 12.dp)) {
             LedgerCalendar(
                 view.cycle.start, view.cycle.end,
                 Stats.dailyIncome(view.entries), Stats.daily(view.entries),
                 view.today, selected,
-                planned = plans.groupBy { LocalDate.ofEpochDay(it.epochDay) }.mapValues { (_, l) -> l.sumOf { it.amount } },
+                planned = open.groupBy { LocalDate.ofEpochDay(it.epochDay) }.mapValues { (_, l) -> l.sumOf { it.amount } },
+                events = calendar.events,
             ) { onSelectDate(it) }
         }
+        Spacer(Modifier.height(10.dp))
+    }
+    val dayEvents = calendar.events[selected].orEmpty()
+    // 캘린더 연동을 켰으면 일정 카드가 먼저 (그날 할 일 → 쓸 돈)
+    if (calendar.on) item(key = "events$selected") {
+        DayEventsCard(selected, view.today, dayEvents, plans, true, calendar.canWrite, calendar.onBudget, { t, m, b -> calendar.onAdd(selected, t, m, b) }, calendar.onSpent, calendar.onConnect)
         Spacer(Modifier.height(10.dp))
     }
     item {
@@ -317,12 +335,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.calendarItems(
         val es = list.mapNotNull { it.toEntryOrNull() }
         Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 10.dp)) {
             DayHeader(selected, Stats.income(es), Stats.total(es))
-            val dayPlans = plans.filter { it.epochDay == selected.toEpochDay() }
+            // 일정에 이은 예산은 위 일정 카드에 (일정이 사라졌으면 여기 계획으로)
+            val linked = dayEvents.mapNotNull { planOf(it, plans)?.id }.toSet()
+            val dayPlans = open.filter { it.epochDay == selected.toEpochDay() && it.id !in linked }
             if (list.isEmpty() && dayPlans.isEmpty()) Text("이날은 기록이 없어요.", fontSize = 13.sp, color = DonColors.InkMuted, modifier = Modifier.padding(vertical = 8.dp))
             list.sortedWith(compareByDescending<EntryEntity> { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
                 .forEach { e -> LedgerRow(e, accountNames, onOpen) }
             dayPlans.forEach { PlanRow(it, view.today, onPlans) }
         }
+    }
+    // 꺼져 있으면 기록 아래에 작게 권함
+    if (!calendar.on && calendar !== CalendarHooks.Off) item(key = "connect") {
+        Spacer(Modifier.height(10.dp))
+        DayEventsCard(selected, view.today, emptyList(), plans, false, false, calendar.onBudget, { _, _, _ -> }, calendar.onSpent, calendar.onConnect)
     }
 }
 
@@ -339,11 +364,14 @@ fun LedgerCalendar(
     today: LocalDate,
     selected: LocalDate?,
     planned: Map<LocalDate, Long> = emptyMap(),
+    events: Map<LocalDate, List<com.simbio.don.app.calendar.CalEvent>> = emptyMap(),
     onSelect: (LocalDate) -> Unit,
 ) {
     val first = start.minusDays((start.dayOfWeek.value % 7).toLong())
     val last = end.plusDays((6 - end.dayOfWeek.value % 7).toLong())
     val days = generateSequence(first) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }.toList()
+    // 캘린더를 이었으면 칸을 키워 일정 이름도 (캘린더 앱처럼)
+    val titles = events.isNotEmpty()
     Column {
         Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
             listOf("일", "월", "화", "수", "목", "금", "토").forEachIndexed { i, n ->
@@ -360,7 +388,7 @@ fun LedgerCalendar(
                     val on = d == selected
                     val shape = RoundedCornerShape(8.dp)
                     Column(
-                        Modifier.weight(1f).aspectRatio(0.78f).padding(1.dp).clip(shape)
+                        Modifier.weight(1f).aspectRatio(if (titles) 0.58f else 0.78f).padding(1.dp).clip(shape)
                             .background(if (on) DonColors.RealSurface else Color.Transparent)
                             .let { if (on) it.border(1.5.dp, DonColors.Real, shape) else it }
                             .clickable(enabled = inside) { onSelect(d) }
@@ -386,6 +414,7 @@ fun LedgerCalendar(
                                 },
                             )
                         }
+                        if (titles) EventLabels(events[d], faded = !inside)
                         if (inside) {
                             income[d]?.takeIf { it > 0 }?.let { Text(compactWon(it), fontSize = 9.sp, color = DonColors.Income, maxLines = 1) }
                             expense[d]?.takeIf { it != 0L }?.let { Text(compactWon(it), fontSize = 9.sp, color = DonColors.Expense, maxLines = 1) }

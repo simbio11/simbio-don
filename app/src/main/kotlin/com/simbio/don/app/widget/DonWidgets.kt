@@ -167,7 +167,7 @@ class GrassWidget : DonWidget() {
         val chosen = com.simbio.don.app.UiPrefs.grassWeeks(context)
         if (com.simbio.don.app.UiPrefs.grassCalendar(context)) {
             // 큰 달력 + (넓으면) 오른쪽 위 이번 달 합계, 오른쪽 아래 작은 잔디
-            val cal = CalendarWidget.cells(home)
+            val cal = CalendarWidget.cells(home, context)
             v.setTextViewText(R.id.widget_title, CalendarWidget.range(home))
             Widgets.pills(context, v, st, R.id.widget_title)
             if (gw >= WidgetArt.CALENDAR_MIN_WIDTH) {
@@ -220,7 +220,7 @@ class CalendarWidget : DonWidget() {
             v.setTextViewText(R.id.widget_sub, "앱을 열어 처음 설정을 해 주세요")
             return v
         }
-        val cal = cells(home)
+        val cal = cells(home, context)
         v.setTextViewText(R.id.widget_title, range(home))
         Widgets.pills(context, v, st, R.id.widget_title, R.id.widget_sub)
         v.setTextViewText(R.id.widget_sub, "생활비 ${compactWon(home.monthLiving)}원 · 무지출 ${cal.noSpend.size}일")
@@ -234,8 +234,13 @@ class CalendarWidget : DonWidget() {
         /** "10/23 ~ 11/24" */
         fun range(home: HomeState) = "${home.cycle.start.monthValue}/${home.cycle.start.dayOfMonth} ~ ${home.cycle.end.monthValue}/${home.cycle.end.dayOfMonth}"
 
-        fun cells(home: HomeState): CalendarCells {
+        /** [context]를 주면 폰 캘린더 일정도 (연동을 켰을 때만, 이 폰 안에서 읽음) */
+        fun cells(home: HomeState, context: Context? = null): CalendarCells {
             val entries = home.entries.mapNotNull { runCatching { it.toEntry() }.getOrNull() }
+            val events = context?.let { c ->
+                com.simbio.don.app.calendar.PhoneCalendar.events(c, home.cycle.start.minusDays(7), home.cycle.end.plusDays(7))
+                    .mapValues { (_, l) -> l.map { it.color } }
+            }.orEmpty()
             return CalendarCells(
             start = home.cycle.start,
             end = home.cycle.end,
@@ -246,6 +251,7 @@ class CalendarWidget : DonWidget() {
             dailyPlan = Widgets.dailyPlan(home),
             income = Stats.dailyIncome(entries),
             expense = Stats.daily(entries),
+            events = events,
             )
         }
     }

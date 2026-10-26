@@ -52,9 +52,9 @@ fun RecurringIncomeEntity.toRecurring() = com.simbio.don.budget.RecurringIncome(
 
 fun FixedExpenseEntity.toFixed() = FixedExpense(name, amount, day)
 
-fun AppRuleEntity.toRule() = AppRule(packageName, displayName, enabled, KeywordRuleCodec.decode(keywordRules))
+fun AppRuleEntity.toRule() = AppRule(packageName, displayName, enabled, KeywordRuleCodec.decode(keywordRules), com.simbio.don.notify.MerchantSpot.decode(merchantSpot))
 
-fun AppRule.toEntity() = AppRuleEntity(packageName, displayName, enabled, KeywordRuleCodec.encode(keywordRules))
+fun AppRule.toEntity() = AppRuleEntity(packageName, displayName, enabled, KeywordRuleCodec.encode(keywordRules), merchantSpot?.encode())
 
 /**
  * 저장된 주기 → 기간. 끝은 다음 달 예상 월급날 전날 (다음 주기가 있으면 부르는 쪽이 그 시작 전날로 줄인다).

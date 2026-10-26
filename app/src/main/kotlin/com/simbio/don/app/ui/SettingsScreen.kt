@@ -12,6 +12,9 @@ import com.simbio.don.app.ui.kit.Divider
 import com.simbio.don.app.ui.kit.FilterChip
 import com.simbio.don.app.ui.kit.Icon
 import com.simbio.don.app.ui.kit.UiIcon
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -100,6 +103,15 @@ fun SettingsScreen(
     onAiOff: () -> Unit = {},
     /** "그날 쓰는 돈"으로 볼 분류 바꾸기 */
     onDailyCategories: (Set<String>) -> Unit = {},
+    /** 폰 캘린더 연동 (켰을 때만 읽고 씀) */
+    calendarOn: Boolean = false,
+    calendars: List<com.simbio.don.app.calendar.DeviceCalendar> = emptyList(),
+    shownCalendars: Set<Long>? = null,
+    writeCalendar: Long? = null,
+    onCalendarConnect: () -> Unit = {},
+    onCalendarOff: () -> Unit = {},
+    onCalendarShown: (Long, Boolean) -> Unit = { _, _ -> },
+    onWriteCalendar: (Long) -> Unit = {},
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -227,6 +239,47 @@ fun SettingsScreen(
                     Switch(checked = effectsAlways, onCheckedChange = onEffectsAlways)
                 }
                 TextButton(onClick = onOpenAnimationSettings) { Text("폰 접근성 설정 열기") }
+            }
+        }
+
+        RealCard("폰 캘린더 (선택)") {
+            Text(
+                "구글 캘린더·삼성 캘린더처럼 폰에 이어진 캘린더 일정을 가계부 달력에 보여 줘요. 일정마다 쓸 돈을 정해 두면 이번 주 오늘 몫에서 미리 빼 두고, 쓴 뒤 지켰는지 보여 줘요. 이 앱에서 넣은 일정은 폰 캘린더에 들어가요 (구글 캘린더면 다른 기기에도).",
+                fontSize = 12.sp,
+                color = DonColors.InkMuted,
+            )
+            Text(
+                "일정은 이 폰 안에서만 읽고 써요. 동기화는 폰의 계정이 하고, 이 앱은 일정을 밖으로 보내지 않아요 (AI 도우미에도 안 보내요).",
+                fontSize = 12.sp,
+                color = DonColors.InkSoft,
+            )
+            if (!calendarOn) {
+                com.simbio.don.app.ui.kit.Button(onClick = onCalendarConnect, modifier = Modifier.fillMaxWidth()) { Text("캘린더 연동하기") }
+            } else {
+                if (calendars.isEmpty()) {
+                    Text("폰에 캘린더가 없어요. 폰 설정 › 계정에서 구글 계정을 추가하면 보여요.", fontSize = 13.sp, color = DonColors.Warn)
+                } else {
+                    Text("보일 캘린더", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+                    calendars.forEach { c ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(10.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(c.color or 0xFF000000.toInt())))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(c.name.ifBlank { "캘린더" }, fontSize = 14.sp, color = DonColors.Ink, maxLines = 1)
+                                if (c.account.isNotBlank() && c.account != c.name) Text(c.account, fontSize = 11.sp, color = DonColors.InkMuted, maxLines = 1)
+                            }
+                            Switch(checked = shownCalendars?.contains(c.id) ?: true, onCheckedChange = { onCalendarShown(c.id, it) })
+                        }
+                    }
+                    val writable = calendars.filter { it.writable }
+                    if (writable.isNotEmpty()) {
+                        Text("새 일정 넣을 곳", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            writable.forEach { c -> FilterChip(selected = writeCalendar == c.id, onClick = { onWriteCalendar(c.id) }, label = { Text(c.name.ifBlank { c.account }) }) }
+                        }
+                    }
+                }
+                TextButton(onClick = onCalendarOff, color = DonColors.Warn) { Text("연동 끄기") }
             }
         }
 

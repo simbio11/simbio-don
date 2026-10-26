@@ -28,6 +28,8 @@ data class CalendarCells(
     /** 앱 달력처럼: 날짜별 수입(파랑)·지출(빨강, 고정 지출 포함) */
     val income: Map<LocalDate, Long> = emptyMap(),
     val expense: Map<LocalDate, Long> = spent,
+    /** 폰 캘린더 일정 색 (연동을 켰을 때만) — 칸 오른쪽 위에 점으로 */
+    val events: Map<LocalDate, List<Int>> = emptyMap(),
 ) {
     /** 지난 날·오늘(쓴 날)의 잔디 단계 — 칸 바탕을 흐리게 칠한다. 앞날·이번 달 밖은 null */
     fun level(day: LocalDate): GrassLevel? {
@@ -206,6 +208,11 @@ object WidgetArt {
                 else -> st.ink
             }
             num.isFakeBoldText = isToday
+            // 일정 점: 오른쪽 위에서 왼쪽으로 세 개까지
+            cal.events[day]?.take(3)?.forEachIndexed { i, color ->
+                fill.color = color or 0xFF000000.toInt()
+                c.drawCircle(rect.right - (3f + 4f * i) * d, rect.top + 3.5f * d, 1.6f * d, fill)
+            }
             if (compact) {
                 // 날짜는 왼쪽 위, 금액(지출, 없으면 수입)은 오른쪽 아래
                 num.textSize = 7.5f * d

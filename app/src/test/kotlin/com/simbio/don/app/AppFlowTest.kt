@@ -151,7 +151,7 @@ class AppFlowTest {
         shot("07_finish")
         rule.onNodeWithText("이대로 시작하기").performClick()
 
-        waitText("실제 내 돈 · 이번 주")
+        waitText("실제 내 돈 · 오늘과 이번 주")
         assertEquals(com.simbio.don.game.Gender.FEMALE, readDb { houseNow() }?.look?.let { com.simbio.don.game.CharacterLook.decode(it).gender })
         assertEquals(false, readDb { appRulesNow() }.single { it.packageName == "com.kakao.bank" }.enabled)
         assertEquals(2_000_000L, readDb { accountsNow() }.single { it.type == "INVEST" }.opening)
@@ -226,7 +226,7 @@ class AppFlowTest {
             // 나가는 날이 지난 고정 지출은 앱을 켤 때 적힌다
             repo.dailyUpkeep(java.time.LocalDateTime.now())
         }
-        waitText("실제 내 돈 · 이번 주")
+        waitText("실제 내 돈 · 오늘과 이번 주")
         shot("12_home")
         rule.onNodeWithText("최근 내역").performScrollTo()
         shot("13_home_bottom")
@@ -277,7 +277,7 @@ class AppFlowTest {
             dao.updateMocks(dao.mockPurchasesNow().map { it.copy(status = com.simbio.don.game.PurchaseStatus.DELIVERED.name) })
             repo.buyMock("스타벅스 텀블러", 35_000, com.simbio.don.game.ItemKind.LIVING, "스타벅스", today, java.time.LocalDateTime.now())
         }
-        waitText("실제 내 돈 · 이번 주")
+        waitText("실제 내 돈 · 오늘과 이번 주")
         rule.onNodeWithText("내 집").performClick()
         waitText("모의 지갑")
         shot("20_house")
@@ -335,7 +335,7 @@ class AppFlowTest {
             // 원피스·비니는 옷장에서 마일로 산다
             DonDatabase.get(appContext).dao().insertMileTx(com.simbio.don.app.data.MileTxEntity(epochDay = today.toEpochDay(), amount = 2_000, kind = "EARN"))
         }
-        waitText("실제 내 돈 · 이번 주")
+        waitText("실제 내 돈 · 오늘과 이번 주")
         rule.onNodeWithText("내 집").performClick()
         waitText("옷장·뷰티샵")
         rule.onNodeWithText("옷장·뷰티샵").performScrollTo().performClick()
@@ -430,7 +430,7 @@ class AppFlowTest {
         background {
             repo.completeOnboarding(3_300_000, today.minusDays(9).dayOfMonth, listOf(FixedExpense("월세", 700_000)), 400_000, DayOfWeek.MONDAY, today.minusDays(9), null)
         }
-        waitText("실제 내 돈 · 이번 주")
+        waitText("실제 내 돈 · 오늘과 이번 주")
 
         // 할부 + 소분류
         rule.onNodeWithContentDescription("가계부 쓰기").performClick()
@@ -501,7 +501,7 @@ class AppFlowTest {
         waitText("암호가 달라요 (4번 남음)")
         shot("40_lock")
         "1234".forEach { rule.onNodeWithText(it.toString()).performClick() }
-        waitText("실제 내 돈 · 이번 주")
+        waitText("실제 내 돈 · 오늘과 이번 주")
     }
 
     /** 0.11 M2: 마일 카드 · 마일 키우기 · 가구점(이사·수납) · 카드 · 옷장·뷰티샵 */
@@ -517,7 +517,7 @@ class AppFlowTest {
             repo.buyMock("아이스 아메리카노", 4_500, com.simbio.don.game.ItemKind.DRINK, null, today.minusDays(2), java.time.LocalDateTime.now())
             dao.updateMocks(dao.mockPurchasesNow().mapIndexed { i, m -> m.copy(status = com.simbio.don.game.PurchaseStatus.DELIVERED.name, grade = if (i == 0) "LEGEND" else "RARE") })
         }
-        waitText("실제 내 돈 · 이번 주")
+        waitText("실제 내 돈 · 오늘과 이번 주")
         rule.onNodeWithText("내 집").performClick()
         waitText("21,000마일")
         rule.onNodeWithText("21,000마일").performScrollTo()
@@ -601,7 +601,7 @@ class AppFlowTest {
             buy("d2", null, start)
             dao.insertMileTx(com.simbio.don.app.data.MileTxEntity(epochDay = today.toEpochDay(), amount = 2_500, kind = "EARN", memo = "지난 결산", refKey = "t#9:EARN"))
         }
-        waitText("실제 내 돈 · 이번 주")
+        waitText("실제 내 돈 · 오늘과 이번 주")
         rule.onNodeWithText("내 집").performClick()
         waitText("모으기 · 놀이")
         rule.onNodeWithText("모으기 · 놀이").performScrollTo()

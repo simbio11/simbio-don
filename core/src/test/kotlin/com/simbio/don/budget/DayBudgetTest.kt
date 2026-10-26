@@ -49,4 +49,19 @@ class DayBudgetTest {
         assertEquals(15_000, b.spentDaily)
         assertEquals(DayBudget.Empty, DayBudgets.of(WeekResult(week, 0, 0, 0), emptyList(), LocalDate.of(2026, 10, 27), DayBudgets.DEFAULT_DAILY))
     }
+
+    @Test
+    fun `미리 예산을 정한 회식은 식비여도 이번 주에서 빼 둔 돈이라 오늘 몫을 안 넘긴다`() {
+        val dinner = Entry(wed, 62_000, "팀 회식", category = Category.FOOD)
+        val lunch = Entry(wed, 9_000, "점심", category = Category.FOOD)
+        val today = listOf(dinner, lunch)
+        val plain = DayBudgets.of(result(today), today, wed, DayBudgets.DEFAULT_DAILY)
+        assertTrue(plain.over)
+        val b = DayBudgets.of(result(today), today, wed, DayBudgets.DEFAULT_DAILY, planned = { it === dinner })
+        // 아침 350,000 − 회식 62,000 = 288,000 ÷ 5일 → 57,600, 점심만 오늘 몫에서
+        assertEquals(57_600, b.allowance)
+        assertEquals(62_000, b.spentBig)
+        assertEquals(9_000, b.spentDaily)
+        assertEquals(48_600, b.left)
+    }
 }

@@ -26,6 +26,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
+import com.simbio.don.app.calendar.CalEvent
+import com.simbio.don.app.calendar.DeviceCalendar
+import com.simbio.don.app.calendar.PhoneCalendar
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -147,7 +152,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun learnedMap() = repo.learned()
     fun resetLearned() = viewModelScope.launch { repo.resetLearned() }
 
-    fun save(draft: EntryDraft, existing: EntryEntity?) = viewModelScope.launch {
+    /** [learned]: 알림 기록 이름을 고쳐 같은 앱 기록도 고친 수 (0이면 없음) */
+    fun save(draft: EntryDraft, existing: EntryEntity?, learned: (Int) -> Unit = {}) = viewModelScope.launch {
         if (existing == null && draft.months > 1) {
             repo.addInstallment(
                 draft.date, draft.amount, draft.months, draft.label, draft.category, draft.sub, draft.memo, draft.accountId, draft.minuteOfDay,
@@ -162,7 +168,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // 계획에서 "썼어요"로 적었으면 계획과 잇는다 (계획과 실제를 견줌)
             draft.planId?.let { repo.completePlan(it, id, draft.amount, draft.date) }
         } else {
-            repo.updateEntry(
+            val n = repo.updateEntry(
                 existing.copy(
                     epochDay = draft.date.toEpochDay(),
                     amount = draft.amount,
@@ -181,6 +187,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 existing,
                 draft.applyToSameLabel,
             )
+            if (n > 0) learned(n)
         }
     }
 
@@ -358,10 +365,105 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── 돈 나갈 계획 ──
     val plans = repo.plans.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun savePlan(p: com.simbio.don.app.data.PlanEntity) = viewModelScope.launch { repo.savePlan(p) }
-    fun deletePlan(id: Long) = viewModelScope.launch { repo.deletePlan(id) }
+    /** 계획 저장. [toCalendar]면 폰 캘린더에도 하루 종일 일정으로 넣는다 (계획을 지우면 그 일정도 지움) */
+    fun savePlan(p: com.simbio.don.app.data.PlanEntity, toCalendar: Boolean = false) = viewModelScope.launch {
+        val c = getApplication<Application>()
+        val eventId = if (toCalendar && p.eventId == null) {
+            withContext(Dispatchers.IO) { PhoneCalendar.insert(c, p.label, java.time.LocalDate.ofEpochDay(p.epochDay), null, p.amount) }
+        } else null
+        repo.savePlan(if (eventId != null) p.copy(eventId = eventId, calendarOwned = true) else p)
+        if (eventId != null) refreshCalendar()
+    }
+
+    fun deletePlan(id: Long) = viewModelScope.launch {
+        val p = repo.planNow(id)
+        repo.deletePlan(id)
+        if (p?.calendarOwned == true && p.eventId != null) {
+            withContext(Dispatchers.IO) { PhoneCalendar.delete(getApplication(), p.eventId) }
+            refreshCalendar()
+        }
+    }
     fun cancelPlan(id: Long, canceled: Boolean) = viewModelScope.launch { repo.cancelPlan(id, canceled) }
     fun linkPlan(id: Long, e: com.simbio.don.app.data.EntryEntity) = viewModelScope.launch { repo.linkPlan(id, e) }
+
+    // ── 폰 캘린더 (켰을 때만. 이 폰의 캘린더를 읽고 쓰고, 동기화는 폰 계정이 한다) ──
+    val calendarOn = MutableStateFlow(false)
+    val calendarEvents = MutableStateFlow<Map<LocalDate, List<CalEvent>>>(emptyMap())
+    val deviceCalendars = MutableStateFlow<List<DeviceCalendar>>(emptyList())
+    val writeCalendarId = MutableStateFlow<Long?>(null)
+    val shownCalendarIds = MutableStateFlow<Set<Long>?>(null)
+
+    /** 일정 다시 읽기: 보고 있는 달 앞뒤 + 앞으로 6주 */
+    fun refreshCalendar() = viewModelScope.launch(Dispatchers.IO) { loadCalendar() }
+
+    /** 한 번에 하나씩 (켜기와 다시 읽기가 겹쳐 옛 값을 쓰지 않게) */
+    private val calendarLock = kotlinx.coroutines.sync.Mutex()
+
+    private suspend fun loadCalendar() = calendarLock.withLock {
+        val c = getApplication<Application>()
+        val on = PhoneCalendar.isOn(c)
+        calendarOn.value = on
+        writeCalendarId.value = PhoneCalendar.writeCalendarId(c)
+        shownCalendarIds.value = PhoneCalendar.shownIds(c)
+        if (!on) {
+            if (calendarEvents.value.isNotEmpty()) com.simbio.don.app.widget.Widgets.refresh(c)
+            calendarEvents.value = emptyMap()
+            deviceCalendars.value = emptyList()
+            return@withLock
+        }
+        deviceCalendars.value = PhoneCalendar.calendars(c)
+        val today = LocalDate.now()
+        val viewed = month.value?.cycle
+        val from = minOf(viewed?.start ?: today, today).minusDays(7)
+        val to = maxOf(viewed?.end ?: today, today.plusDays(42)).plusDays(7)
+        val events = PhoneCalendar.events(c, from, to)
+        if (events != calendarEvents.value) {
+            calendarEvents.value = events
+            // 위젯 달력의 일정 점도
+            com.simbio.don.app.widget.Widgets.refresh(c)
+        }
+    }
+
+    /** 권한을 받은 뒤 켠다. 새 일정 넣을 곳을 안 골랐으면 구글 기본 캘린더(계정 이름과 같은 것) 먼저 */
+    fun connectCalendar() = viewModelScope.launch(Dispatchers.IO) {
+        val c = getApplication<Application>()
+        PhoneCalendar.setOn(c, true)
+        if (PhoneCalendar.writeCalendarId(c) == null) {
+            val cals = PhoneCalendar.calendars(c).filter { it.writable }
+            val pick = cals.firstOrNull { it.name == it.account && "@" in it.account } ?: cals.firstOrNull { "@" in it.account } ?: cals.firstOrNull()
+            pick?.let { PhoneCalendar.setWriteCalendarId(c, it.id) }
+        }
+        loadCalendar()
+    }
+
+    fun disconnectCalendar() {
+        PhoneCalendar.setOn(getApplication(), false)
+        refreshCalendar()
+    }
+
+    fun setCalendarShown(id: Long, shown: Boolean) {
+        val c = getApplication<Application>()
+        val all = deviceCalendars.value.map { it.id }.toSet()
+        val now = PhoneCalendar.shownIds(c) ?: all
+        PhoneCalendar.setShownIds(c, if (shown) now + id else now - id)
+        refreshCalendar()
+    }
+
+    fun setWriteCalendar(id: Long) {
+        PhoneCalendar.setWriteCalendarId(getApplication(), id)
+        writeCalendarId.value = id
+    }
+
+    /** 일정에 쓸 돈 정하기 → 돈 나갈 계획 (이번 주 오늘 몫에서 미리 빠짐) */
+    fun budgetEvent(e: CalEvent, amount: Long) = viewModelScope.launch { repo.budgetForEvent(e.eventId, e.title, e.date, amount) }
+
+    /** 폰 캘린더에 일정 넣기 (+ 쓸 돈을 적었으면 예산도). 못 넣으면 false */
+    fun addCalendarEvent(date: LocalDate, title: String, minuteOfDay: Int?, budget: Long?, done: (Boolean) -> Unit = {}) = viewModelScope.launch {
+        val id = withContext(Dispatchers.IO) { PhoneCalendar.insert(getApplication(), title, date, minuteOfDay, budget) }
+        if (id != null && budget != null) repo.budgetForEvent(id, title, date, budget)
+        refreshCalendar()
+        done(id != null)
+    }
 
     fun planMatches(plans: List<com.simbio.don.app.data.PlanEntity>, entries: List<com.simbio.don.app.data.EntryEntity>) = repo.planMatches(plans, entries)
 
