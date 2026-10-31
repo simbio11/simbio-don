@@ -2127,6 +2127,21 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     suspend fun dismissBalanceGap(accountId: Long) = dao.deleteBalanceGap(accountId)
 
+    /** 잔액 맞추기로 남긴 기록 (빠진 지출·입금·더 센 지출) */
+    val balanceFixEntries: Flow<List<EntryEntity>> = dao.allEntries().map { l -> l.filter { it.label in FIX_LABELS } }
+
+    /**
+     * 잔액 맞춤 기록을 생활비에서 뺀다 (잔액은 그대로): 이미 적힌 지출이 통장에 안 들어가 생긴 차이를
+     * "빠진 지출"로 넣어 지출이 두 번 세였을 때. 기록을 지우고 그 자산의 처음 잔액을 옮겨 잔액을 지킨다.
+     */
+    suspend fun keepBalanceDropFix(entryId: Long) {
+        val e = dao.entryNow(entryId) ?: return
+        val a = e.accountId?.let { id -> dao.accountsNow().firstOrNull { it.id == id } }
+        val before = a?.let { balanceOf(it) }
+        dao.deleteEntry(e)
+        if (a != null && before != null) saveAccount(a, before)
+    }
+
     /** 자산의 지금 앱 잔액 */
     suspend fun balanceNow(accountId: Long): Long? = dao.accountsNow().firstOrNull { it.id == accountId }?.let { balanceOf(it) }
 
@@ -2676,6 +2691,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         const val FX_EXCHANGE = "EXCHANGE"
         const val FX_PUBLIC = "PUBLIC"
         const val FX_MANUAL = "MANUAL"
+
+        /** 잔액 맞추기로 남기는 기록 이름 */
+        val FIX_LABELS = setOf("빠진 지출 (잔액 맞춤)", "빠진 입금 (잔액 맞춤)", "더 센 지출 (잔액 맞춤)")
 
         /** 한 줄 분석·정기 결제 찾기에 보는 날 수 */
         const val RECENT_DAYS = 100L

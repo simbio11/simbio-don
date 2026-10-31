@@ -385,6 +385,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         done(repo.assignUnassigned(id))
     }
 
+    val balanceFixEntries = repo.balanceFixEntries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun keepBalanceDropFix(entryId: Long) = viewModelScope.launch { repo.keepBalanceDropFix(entryId) }
+
     // ── 실제 잔액 맞추기 ──
     val balanceGaps = repo.balanceGaps.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

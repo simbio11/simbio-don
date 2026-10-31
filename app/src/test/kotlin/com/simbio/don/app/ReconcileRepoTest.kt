@@ -181,4 +181,19 @@ class ReconcileRepoTest {
         assertTrue(repo.unassignedEntries.first().isEmpty())
         assertEquals(1_000_000 - 14_000, balance(bank))
     }
+
+    @Test
+    fun `통장 없이 적힌 지출 때문에 잘못 넣은 빠진 지출은 잔액은 그대로 두고 생활비에서만 뺀다`() = runTest {
+        // 통장 없이 적힌 지출 20,000원 → 앱 잔액이 실제보다 많다
+        repo.addManual(LocalDate.of(2026, 10, 27), 20_000, "점심", EntryType.SPEND, Category.FOOD)
+        repo.fixBalance(bank, -20_000, BalanceFix.MISSING_SPEND, LocalDate.of(2026, 10, 27))
+        assertEquals(980_000, balance(bank))
+        assertEquals(40_000, repo.home(flowOf(at(27, 20))).first()!!.currentWeek!!.spent) // 두 번 셈
+        val fix = repo.balanceFixEntries.first().single()
+
+        repo.keepBalanceDropFix(fix.id)
+        assertTrue(repo.balanceFixEntries.first().isEmpty())
+        assertEquals(980_000, balance(bank))
+        assertEquals(20_000, repo.home(flowOf(at(27, 20))).first()!!.currentWeek!!.spent)
+    }
 }

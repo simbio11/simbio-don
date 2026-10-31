@@ -51,7 +51,15 @@ import java.time.LocalDate
 
 /** "생활비 통장 잔액이 알림보다 n원 많아요" — 빠진 지출로 넣거나 잔액만 맞춘다 */
 @Composable
-fun BalanceGapCard(gap: BalanceGapEntity, accountName: String, onFix: (BalanceFix) -> Unit, onDismiss: () -> Unit) {
+fun BalanceGapCard(
+    gap: BalanceGapEntity,
+    accountName: String,
+    onFix: (BalanceFix) -> Unit,
+    onDismiss: () -> Unit,
+    /** 자산 없이 적힌 지출 (이미 생활비엔 들어갔지만 잔액엔 빠진 것) */
+    unassignedSpend: Long = 0,
+    onAssign: () -> Unit = {},
+) {
     val diff = gap.real - gap.app
     RealCard("$accountName 잔액이 달라요", icon = { Icon(UiIcon.WARN, 18.dp, DonColors.Warn) }) {
         Text(
@@ -65,9 +73,19 @@ fun BalanceGapCard(gap: BalanceGapEntity, accountName: String, onFix: (BalanceFi
             fontWeight = FontWeight.SemiBold,
             color = DonColors.Ink,
         )
+        // 이미 적었는데 통장이 안 정해진 지출이 차이일 수 있다 → 빠진 지출로 넣으면 두 번 세진다
+        if (diff < 0 && unassignedSpend > 0) {
+            Text(
+                "통장 없이 적힌 지출 ${won(unassignedSpend)}이 잔액에서 빠져 있어요. 이미 생활비에 들어간 돈이라 '빠진 지출'로 넣으면 두 번 세져요. 먼저 그 기록을 통장에 넣어 보세요.",
+                fontSize = 12.sp,
+                color = DonColors.Warn,
+            )
+            SmallButton(onClick = onAssign, modifier = Modifier.fillMaxWidth()) { Text("적힌 지출을 $accountName 에 넣기") }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             if (diff < 0) {
-                SmallButton(onClick = { onFix(BalanceFix.MISSING_SPEND) }, modifier = Modifier.weight(1f)) { Text("빠진 지출로") }
+                if (unassignedSpend > 0) SubButton(onClick = { onFix(BalanceFix.MISSING_SPEND) }, modifier = Modifier.weight(1f), containerColor = DonColors.SurfaceAlt) { Text("빠진 지출로") }
+                else SmallButton(onClick = { onFix(BalanceFix.MISSING_SPEND) }, modifier = Modifier.weight(1f)) { Text("빠진 지출로") }
             } else {
                 SmallButton(onClick = { onFix(BalanceFix.OVERCOUNTED) }, modifier = Modifier.weight(1f)) { Text("더 센 지출") }
                 SmallButton(onClick = { onFix(BalanceFix.MISSING_INCOME) }, modifier = Modifier.weight(1f)) { Text("빠진 입금") }
@@ -129,6 +147,11 @@ fun BalanceFixScreen(
     gaps: List<BalanceGapEntity>,
     onFix: (accountId: Long, diff: Long, how: BalanceFix) -> Unit,
     onBack: () -> Unit,
+    unassignedSpend: Long = 0,
+    onAssign: () -> Unit = {},
+    /** 예전에 잔액 맞추기로 넣은 기록 (두 번 센 것이면 생활비에서 뺄 수 있게) */
+    fixes: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
+    onDropFix: (com.simbio.don.app.data.EntryEntity) -> Unit = {},
 ) {
     val list = balances.filter(::fixable)
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
@@ -145,14 +168,40 @@ fun BalanceFixScreen(
             if (list.isEmpty()) {
                 Text("맞출 통장이 없어요. 자산 탭에서 통장이나 현금을 넣어 주세요.", fontSize = 14.sp, color = DonColors.InkMuted)
             }
-            list.forEach { b -> BalanceFixRow(b, gaps.firstOrNull { it.accountId == b.account.id }, onFix) }
+            if (unassignedSpend > 0) {
+                Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("먼저: 통장 없이 적힌 지출 ${won(unassignedSpend)}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                    Text("생활비에는 이미 들어갔지만 통장 잔액에서는 빠져 있어요. 이걸 통장에 넣으면 차이가 줄어요 (생활비는 그대로).", fontSize = 12.sp, color = DonColors.InkMuted)
+                    Button(onClick = onAssign, modifier = Modifier.fillMaxWidth()) { Text("생활비 통장에 넣기") }
+                }
+            }
+            list.forEach { b -> BalanceFixRow(b, gaps.firstOrNull { it.accountId == b.account.id }, onFix, unassignedSpend > 0) }
+            if (fixes.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("잔액 맞추기로 넣은 기록", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                    Text(
+                        "이미 적힌 지출 때문에 생긴 차이였다면 생활비에 두 번 들어가 있어요. '생활비에서 빼기'를 누르면 기록은 지우고 통장 잔액은 그대로 둬요.",
+                        fontSize = 12.sp,
+                        color = DonColors.InkMuted,
+                    )
+                    fixes.sortedByDescending { it.epochDay }.forEach { e ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(e.label, fontSize = 14.sp, color = DonColors.Ink)
+                                Text("${shortDate(LocalDate.ofEpochDay(e.epochDay))} · ${won(e.amount)}", fontSize = 12.sp, color = DonColors.InkMuted)
+                            }
+                            SubButton(onClick = { onDropFix(e) }, containerColor = DonColors.SurfaceAlt) { Text("생활비에서 빼기") }
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Long, Long, BalanceFix) -> Unit) {
+private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Long, Long, BalanceFix) -> Unit, hasUnassigned: Boolean = false) {
     // 알림에서 본 잔액이 있으면 그 차이를 먼저 채워 둔다
     var real by remember(b.account.id, b.balance) { mutableStateOf(gap?.let { (b.balance + (it.real - it.app)).toString() } ?: "") }
     val value = real.toLongOrNull()
@@ -160,7 +209,8 @@ private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Lon
     var how by remember(b.account.id) { mutableStateOf<BalanceFix?>(null) }
     val choice = how ?: when {
         diff == null || diff == 0L -> null
-        diff < 0 -> BalanceFix.MISSING_SPEND
+        // 통장 없이 적힌 지출이 남아 있으면 차이가 그것일 수 있어 기본은 잔액만 (두 번 세지 않게)
+        diff < 0 -> if (hasUnassigned) BalanceFix.BALANCE_ONLY else BalanceFix.MISSING_SPEND
         else -> BalanceFix.MISSING_INCOME
     }
     Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -187,7 +237,7 @@ private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Lon
             }
             Text(
                 when (choice) {
-                    BalanceFix.MISSING_SPEND -> "오늘 날짜로 '빠진 지출' ${won(-diff)}을 적어요. 이번 주·이번 달 남은 생활비도 그만큼 줄어요."
+                    BalanceFix.MISSING_SPEND -> "오늘 날짜로 '빠진 지출' ${won(-diff)}을 적어요. 이번 주·이번 달 남은 생활비도 그만큼 줄어요. 가계부에 이미 적힌 지출이면 고르지 마세요 (두 번 세져요)."
                     BalanceFix.MISSING_INCOME -> "오늘 날짜로 '빠진 입금' ${won(diff)}을 수입으로 적어요."
                     BalanceFix.OVERCOUNTED -> "오늘 날짜로 ${won(diff)}을 돌려받은 것처럼 적어 생활비에서 빼요 (두 번 센 지출이 있을 때)."
                     BalanceFix.BALANCE_ONLY -> "기록은 그대로 두고 잔액만 맞춰요 (생활비는 안 바뀌어요)."

@@ -341,6 +341,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** 통장 없이 적힌 지출 합 (수입·환불 빼고) */
+    private fun unassignedSpend(list: List<com.simbio.don.app.data.EntryEntity>): Long =
+        list.filter { it.type != EntryType.INCOME.name && it.type != EntryType.REFUND.name }.sumOf { it.amount }
+
     /** 계획에서 "썼어요"로 여는 입력 초안 (이미 쓴 계획이면 더 쓴 돈이라 금액은 비움) */
     private fun spentDraft(p: com.simbio.don.app.data.PlanEntity): EntryDraft {
         val d = minOf(LocalDate.ofEpochDay(p.epochDay), LocalDate.now())
@@ -537,6 +541,8 @@ class MainActivity : ComponentActivity() {
                         onFixGap = { g, how -> vm.fixBalance(g.accountId, g.real - g.app, how) },
                         onDismissGap = { vm.dismissBalanceGap(it.accountId) },
                         onBalanceFix = { screens.push(Overlay.BalanceFix) },
+                        unassignedSpend = unassignedSpend(vm.unassigned.collectAsStateWithLifecycle().value),
+                        onAssign = { vm.assignUnassigned { n -> Toast.makeText(this@MainActivity, "${n}건을 생활비 통장 잔액에 넣었어요", Toast.LENGTH_SHORT).show() } },
                         hints = vm.planHints.collectAsStateWithLifecycle().value,
                         onConfirmHint = { h, people -> vm.confirmPlanHint(h.plan.id, h.entry.id, people) },
                         onRejectHint = { h -> vm.rejectPlanMatch(h.plan.id, h.entry.id) },
@@ -1186,6 +1192,13 @@ class MainActivity : ComponentActivity() {
                 )
             }
             Overlay.BalanceFix -> com.simbio.don.app.ui.BalanceFixScreen(
+                unassignedSpend = unassignedSpend(vm.unassigned.collectAsStateWithLifecycle().value),
+                onAssign = { vm.assignUnassigned { n -> Toast.makeText(this, "${n}건을 생활비 통장 잔액에 넣었어요", Toast.LENGTH_SHORT).show() } },
+                fixes = vm.balanceFixEntries.collectAsStateWithLifecycle().value,
+                onDropFix = { e ->
+                    vm.keepBalanceDropFix(e.id)
+                    Toast.makeText(this, "${com.simbio.don.app.ui.won(e.amount)}을 생활비에서 뺐어요 (잔액은 그대로)", Toast.LENGTH_SHORT).show()
+                },
                 balances = home.accounts,
                 gaps = vm.balanceGaps.collectAsStateWithLifecycle().value,
                 onFix = { id, diff, how ->

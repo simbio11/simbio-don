@@ -81,6 +81,9 @@ fun HomeScreen(
     onFixGap: (com.simbio.don.app.data.BalanceGapEntity, com.simbio.don.app.data.DonRepository.BalanceFix) -> Unit = { _, _ -> },
     onDismissGap: (com.simbio.don.app.data.BalanceGapEntity) -> Unit = {},
     onBalanceFix: () -> Unit = {},
+    /** 통장 없이 적힌 지출 합 · 통장에 넣기 */
+    unassignedSpend: Long = 0,
+    onAssign: () -> Unit = {},
     /** 계획과 맞을 것 같은 결제 */
     hints: List<com.simbio.don.app.data.PlanHint> = emptyList(),
     onConfirmHint: (com.simbio.don.app.data.PlanHint, Int?) -> Unit = { _, _ -> },
@@ -114,7 +117,7 @@ fun HomeScreen(
         // 알림 잔액이 앱과 다르면 (놓친 결제 알림 등) 바로 맞추기
         gaps.forEach { g ->
             val name = home.accounts.firstOrNull { it.account.id == g.accountId }?.account?.name ?: "통장"
-            BalanceGapCard(g, name, { how -> onFixGap(g, how) }, { onDismissGap(g) })
+            BalanceGapCard(g, name, { how -> onFixGap(g, how) }, { onDismissGap(g) }, unassignedSpend, onAssign)
         }
         // 계획과 맞을 것 같은 결제 (두 번 세지 않게)
         hints.take(2).forEach { h -> PlanHintCard(h, { people -> onConfirmHint(h, people) }, { onRejectHint(h) }) }
