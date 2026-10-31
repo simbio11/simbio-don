@@ -173,4 +173,13 @@ class MigrationTest {
         db.query("SELECT rawText, nameUnknown, label FROM entry").use { c -> c.moveToNext(); assertTrue(c.isNull(0)); assertEquals(0, c.getInt(1)); assertEquals("결제", c.getString(2)) }
         db.query("SELECT merchantSpot FROM app_rule").use { c -> c.moveToNext(); assertTrue(c.isNull(0)) }
     }
+
+    @Test
+    fun v16에서_v17로_정산_짝_칸() {
+        helper.createDatabase("m16.db", 16).use { db ->
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source) VALUES (1, 20000, 20000, '입금', 'INCOME', 'NOTIFICATION')")
+        }
+        val db = helper.runMigrationsAndValidate("m16.db", 17, true, DonDatabase.MIGRATION_16_17)
+        db.query("SELECT linkState, amount FROM entry").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)); assertEquals(20000, c.getInt(1)) }
+    }
 }

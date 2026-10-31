@@ -31,7 +31,8 @@ inline fun <reified T : Enum<T>> enumOr(name: String?, default: T): T =
  */
 fun EntryEntity.toEntry(): Entry {
     val t = enumOr(type, EntryType.SPEND)
-    val mine = share?.takeIf { t.spendLike }
+    // 나눠 낸 결제와 그 환불은 내 몫만
+    val mine = share?.takeIf { t.spendLike || t == EntryType.REFUND }
     return Entry(
         date = LocalDate.ofEpochDay(epochDay),
         amount = if (mine != null && mine > 0) mine else amount,

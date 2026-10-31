@@ -1275,6 +1275,7 @@ class MainActivity : ComponentActivity() {
                     onPayWith = { p, out -> vm.payWith(p, out) },
                     onDismiss = { vm.dismissSplitHint(it) },
                     onAdd = { open(Overlay.Edit(null, EntryDraft(home.today, 0, "", EntryType.SPEND, Category.FOOD, "", false, people = 2))) },
+                    onConfirmAuto = { vm.confirmAutoLink(it) },
                     onOpen = { open(Overlay.Edit(it)) },
                     onBack = close,
                 )

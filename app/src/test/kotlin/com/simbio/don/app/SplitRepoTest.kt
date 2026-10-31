@@ -182,8 +182,8 @@ class SplitRepoTest {
         val inc = repo.addManual(d(10, 26), 20_000, "용돈", EntryType.INCOME, Category.OTHER_INCOME, accountId = bank)
         assertEquals(1, repo.splitBookNow(today = d(10, 26)).hints.size)
         assertTrue(repo.splitBookNow(setOf(inc), today = d(10, 26)).hints.isEmpty())
-        // 2주가 지나 들어온 돈은 짝으로 보지 않는다
-        repo.addManual(d(11, 10), 20_000, "늦은 입금", EntryType.INCOME, Category.OTHER_INCOME, accountId = bank)
-        assertTrue(repo.splitBookNow(setOf(inc), today = d(11, 10)).hints.isEmpty())
+        // 한 달이 지나 들어온 돈은 짝으로 보지 않는다
+        repo.addManual(d(12, 1), 20_000, "늦은 입금", EntryType.INCOME, Category.OTHER_INCOME, accountId = bank)
+        assertTrue(repo.splitBookNow(setOf(inc), today = d(12, 1)).hints.isEmpty())
     }
 }

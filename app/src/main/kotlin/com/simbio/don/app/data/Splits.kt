@@ -33,16 +33,20 @@ sealed interface SplitHint {
     }
 }
 
+/** 앱이 저절로 이은 정산 짝 (확인 전): [link]는 들어온 입금·나간 송금, [target]은 나눠 낸 기록·보낼 돈 */
+data class AutoLink(val link: EntryEntity, val target: EntryEntity)
+
 /** 정산 장부: 받을 돈·보낼 돈·짝 제안, 끝난 것 */
 data class SplitBook(
     val receivables: List<Receivable>,
     val payables: List<EntryEntity>,
     val hints: List<SplitHint>,
     val done: List<Receivable>,
+    val autoLinks: List<AutoLink> = emptyList(),
 ) {
     val toReceive: Long get() = receivables.sumOf { it.left }
     val toSend: Long get() = payables.sumOf { it.amount }
-    val isEmpty: Boolean get() = receivables.isEmpty() && payables.isEmpty() && hints.isEmpty()
+    val isEmpty: Boolean get() = receivables.isEmpty() && payables.isEmpty() && hints.isEmpty() && autoLinks.isEmpty()
 
     companion object {
         val Empty = SplitBook(emptyList(), emptyList(), emptyList(), emptyList())
@@ -51,7 +55,7 @@ data class SplitBook(
 
 object Splits {
     /** 나눠 낸 날부터 이만큼 안에 들어오거나 나간 돈만 짝으로 본다 */
-    const val WINDOW_DAYS = 14L
+    const val WINDOW_DAYS = 30L
 
     /** 한 사람 몫: 똑같이 나누고 10원 단위로 올림 (남는 끝전은 낸 사람이 안는다) */
     fun perPerson(total: Long, people: Int): Long =
@@ -69,11 +73,12 @@ object Splits {
         }.map { Receivable(it, receiptsBy[it.id].orEmpty().sortedWith(compareBy({ r -> r.epochDay }, { r -> r.id }))) }
             .sortedWith(compareByDescending<Receivable> { it.entry.epochDay }.thenByDescending { it.entry.id })
         val open = all.filter { it.open }
-        val payables = entries.filter { it.owe }.sortedWith(compareByDescending<EntryEntity> { it.epochDay }.thenByDescending { it.id })
+        // 보낼 돈에 송금이 이어져 있으면 보낸 것
+        val payables = entries.filter { it.owe && it.id !in receiptsBy }.sortedWith(compareByDescending<EntryEntity> { it.epochDay }.thenByDescending { it.id })
 
         // 들어온 돈 → 정산일까: 나눠 낸 날부터 2주 안, 남은 받을 돈보다 크지 않게. 한 사람 몫과 같으면 먼저
         val received = entries.filter {
-            it.type == EntryType.INCOME.name && it.settleFor == null && it.incomeId == null && it.id !in dismissed
+            it.type == EntryType.INCOME.name && it.settleFor == null && it.incomeId == null && it.id !in dismissed && it.linkState != 2
         }.sortedBy { it.epochDay }.mapNotNull { inc ->
             open.filter { r -> inc.epochDay in r.entry.epochDay..(r.entry.epochDay + WINDOW_DAYS) && inc.amount <= r.left }
                 .minByOrNull { r ->
@@ -86,7 +91,7 @@ object Splits {
                 }?.let { SplitHint.Received(inc, it) }
         }
         // 나간 송금 → 보낼 돈일까: 같은 금액, 하루 전 ~ 2주 안
-        val sent = entries.filter { it.type == EntryType.SPEND.name && it.sentOut && !it.owe && it.id !in dismissed }
+        val sent = entries.filter { it.type == EntryType.SPEND.name && it.sentOut && !it.owe && it.settleFor == null && it.id !in dismissed && it.linkState != 2 }
             .sortedBy { it.epochDay }
             .mapNotNull { out ->
                 payables.filter { p -> p.amount == out.amount && out.epochDay in (p.epochDay - 1)..(p.epochDay + WINDOW_DAYS) }
@@ -95,6 +100,16 @@ object Splits {
             }
             // 보낼 돈 하나에는 송금 하나만
             .distinctBy { it.target.id }
-        return SplitBook(open, payables, received + sent, all.filter { !it.open })
+        val byId = entries.associateBy { it.id }
+        val auto = entries.filter { it.linkState == 1 && it.settleFor != null }
+            .mapNotNull { l -> byId[l.settleFor]?.let { AutoLink(l, it) } }
+            .sortedByDescending { it.link.epochDay }
+        return SplitBook(open, payables, received + sent, all.filter { !it.open }, auto)
     }
+}
+
+/** 저절로 이어도 될 만큼 확실한 짝인가: 금액이 한 사람 몫이나 남은 받을 돈 전부와 같거나, 보낼 돈과 같다 */
+fun SplitHint.isExact(): Boolean = when (this) {
+    is SplitHint.Received -> income.amount == target.perPerson || income.amount == target.left
+    is SplitHint.Sent -> out.amount == target.amount
 }

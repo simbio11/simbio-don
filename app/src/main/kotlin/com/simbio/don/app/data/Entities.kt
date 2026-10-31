@@ -160,6 +160,8 @@ data class EntryEntity(
     val fxText: String? = null,
     /** 알림에 원화 금액이 없어 어림 환율로 바꿨음 (환율을 받으면 다시 바꾼다) */
     @ColumnInfo(defaultValue = "0") val fxGuess: Boolean = false,
+    /** 정산 짝([settleFor])을 앱이 저절로 이었는지: 0 직접·없음, 1 저절로 (확인 전), 2 "아니에요" (다시 저절로 잇지 않음) */
+    @ColumnInfo(defaultValue = "0") val linkState: Int = 0,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */

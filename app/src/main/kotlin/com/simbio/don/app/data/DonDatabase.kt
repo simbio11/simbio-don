@@ -39,7 +39,7 @@ import com.simbio.don.budget.CategoryGuesser
         BalanceGapEntity::class,
         AppEventEntity::class,
     ],
-    version = 16,
+    version = 17,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -57,15 +57,23 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                 }
                 ).build().also { instance = it }
         }
 
         @VisibleForTesting
         fun resetForTests() = synchronized(this) {
-            instance?.close()
+            // 메모리 DB는 닫지 않고 놓기만 한다: 앞 테스트의 화면 밖 계산이 닫힌 DB를 읽어 다음 테스트를 깨지 않게
+            if (!inMemoryForTests) instance?.close()
             instance = null
+        }
+
+        /** v17: 정산 짝을 저절로 이었는지 (확인·되돌리기) */
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entry ADD COLUMN linkState INTEGER NOT NULL DEFAULT 0")
+            }
         }
 
         /** v16: 외화 결제·환율, 계획 자동 연결, 알림 잔액 차이, 앱 안 캘린더 일정 */

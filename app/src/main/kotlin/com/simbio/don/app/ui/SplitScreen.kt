@@ -67,6 +67,7 @@ fun SplitScreen(
     onPayWith: (owe: EntryEntity, out: EntryEntity) -> Unit,
     onDismiss: (key: Long) -> Unit,
     onAdd: () -> Unit,
+    onConfirmAuto: (EntryEntity) -> Unit = {},
     onOpen: (EntryEntity) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -91,6 +92,16 @@ fun SplitScreen(
                     color = DonColors.InkSoft,
                 )
                 SubButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("나눠 낸 것 적기") }
+            }
+
+            if (book.autoLinks.isNotEmpty()) {
+                FormCard("정산으로 저절로 묶었어요") {
+                    Text("금액이 딱 맞아서 묶었어요. 아니면 되돌리세요 — 다시 저절로 묶지 않아요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    book.autoLinks.forEachIndexed { i, a ->
+                        if (i > 0) Divider(Modifier.padding(vertical = 4.dp))
+                        AutoLinkRow(a, { onConfirmAuto(a.link) }, { onUnsettle(a.link) })
+                    }
+                }
             }
 
             if (book.hints.isNotEmpty()) {
@@ -146,7 +157,7 @@ fun SplitScreen(
                 }
             }
 
-            if (book.receivables.isEmpty() && book.payables.isEmpty() && book.hints.isEmpty()) {
+            if (book.receivables.isEmpty() && book.payables.isEmpty() && book.hints.isEmpty() && book.autoLinks.isEmpty()) {
                 FormCard {
                     Text("남은 정산이 없어요.", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
                     Text(
@@ -219,6 +230,27 @@ private fun ReceivableRow(r: Receivable, names: Map<Long, String>, onOpen: (Entr
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onUnsettle(rc) }.padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun AutoLinkRow(a: com.simbio.don.app.data.AutoLink, onOk: () -> Unit, onUndo: () -> Unit) {
+    val received = a.link.toAccountId != null || a.link.accountId == null
+    Text(
+        "${shortDate(LocalDate.ofEpochDay(a.link.epochDay))} ${if (received) "들어온 +" else "보낸 −"}${won(a.link.amount)} (${a.link.label})",
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = DonColors.Ink,
+    )
+    Text(
+        if (received) "'${a.target.label}' 정산으로 — 수입에 안 넣고 받을 돈을 줄였어요."
+        else "보낼 돈 '${a.target.label}'을 보낸 것으로 — 지출로 또 세지 않아요.",
+        fontSize = 12.sp,
+        color = DonColors.InkMuted,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        SmallButton(onClick = onOk) { Text("맞아요") }
+        TextButton(onClick = onUndo, color = DonColors.InkMuted) { Text(if (received) "아니에요 (수입으로)" else "아니에요 (송금 지출로)") }
     }
 }
 
@@ -311,6 +343,16 @@ fun SplitHomeCard(book: SplitBook, onOpen: () -> Unit) {
         Row(Modifier.fillMaxWidth()) {
             SplitTotal("받을 돈", book.toReceive, DonColors.Good, Modifier.weight(1f))
             SplitTotal("보낼 돈", book.toSend, DonColors.Warn, Modifier.weight(1f))
+        }
+        if (book.autoLinks.isNotEmpty()) {
+            Text(
+                "정산으로 저절로 묶은 돈 ${book.autoLinks.size}건 — 눌러서 확인해요",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = DonColors.Good,
+                modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(8.dp)).background(DonColors.GoodSurface).clickable(onClick = onOpen)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
         }
         if (book.hints.isNotEmpty()) {
             Spacer(Modifier.width(4.dp))

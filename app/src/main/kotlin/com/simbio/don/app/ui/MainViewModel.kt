@@ -170,6 +170,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
             // 계획에서 "썼어요"로 적었으면 계획과 잇는다 (계획과 실제를 견줌), 아니면 맞는 계획을 찾아 잇는다
             draft.planId?.let { repo.completePlan(it, id, draft.amount, draft.date) } ?: repo.autoLinkPlans()
+            // 나눠 냈거나 보낼 돈이면 이미 들어오거나 나간 돈과 정산 짝을
+            if (draft.share != null || draft.owe) repo.autoMatch()
         } else {
             val n = repo.updateEntry(
                 existing.copy(
@@ -179,7 +181,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     type = draft.type.name,
                     category = draft.category.name,
                     memo = draft.memo,
-                    accountId = if (draft.owe || existing.settleFor != null) null else draft.accountId,
+                    accountId = if (draft.owe) null else if (existing.settleFor != null) existing.accountId else draft.accountId,
                     toAccountId = if (draft.type == com.simbio.don.budget.EntryType.TRANSFER) draft.toAccountId else null,
                     minuteOfDay = draft.minuteOfDay,
                     sub = draft.sub,
@@ -192,7 +194,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
             if (n > 0) learned(n)
             // 나눠 냈다고 고치면 내 몫으로 계획과 다시 견준다
-            if (draft.share != existing.share || draft.amount != existing.amount) repo.autoLinkPlans()
+            if (draft.share != existing.share || draft.amount != existing.amount) {
+                repo.autoLinkPlans()
+                repo.autoMatch()
+            }
+            if (draft.owe != existing.owe) repo.autoMatch()
         }
     }
 
@@ -216,6 +222,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun settleWith(target: EntryEntity, income: EntryEntity) = viewModelScope.launch { repo.settleWith(target, income) }
     fun settleDirect(target: EntryEntity, amount: Long, accountId: Long?) = viewModelScope.launch { repo.settleDirect(target, amount, accountId, LocalDate.now()) }
+    fun confirmAutoLink(e: EntryEntity) = viewModelScope.launch { repo.confirmAutoLink(e.id) }
     fun forgiveSplit(target: EntryEntity) = viewModelScope.launch { repo.forgiveSplit(target) }
     fun unsettle(receipt: EntryEntity) = viewModelScope.launch { repo.unsettle(receipt) }
     fun markPaid(owe: EntryEntity, accountId: Long?) = viewModelScope.launch { repo.markPaid(owe, accountId) }
