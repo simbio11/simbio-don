@@ -196,4 +196,21 @@ class ReconcileRepoTest {
         assertEquals(980_000, balance(bank))
         assertEquals(20_000, repo.home(flowOf(at(27, 20))).first()!!.currentWeek!!.spent)
     }
+
+    @Test
+    fun `몇 명이서는 내가 고른 대로 — 3명으로 고치고, 혼자라고 하면 나눈 걸 푼다`() = runTest {
+        val dinner = repo.savePlan(PlanEntity(epochDay = LocalDate.of(2026, 10, 27).toEpochDay(), amount = 50_000, label = "동기 모임", category = Category.FOOD.name))
+        repo.handleNotification(RawNotification("card.app", "OO카드 승인", "삼겹살집 150,000원 결제", at(27, 22)))
+        val hint = repo.planHints(LocalDate.of(2026, 10, 27)).first().single()
+        repo.confirmPlanHint(dinner, hint.entry.id, 2)
+        assertEquals(2, db.dao().entryNow(hint.entry.id)!!.people)
+        assertEquals(75_000L, repo.planNow(dinner)!!.doneAmount)
+        // 다시 고르면 바뀐다
+        repo.confirmPlanHint(dinner, hint.entry.id, 3)
+        assertEquals(50_000L, db.dao().entryNow(hint.entry.id)!!.share)
+        // 혼자 → 나눈 것 풀기
+        repo.confirmPlanHint(dinner, hint.entry.id, 1)
+        assertNull(db.dao().entryNow(hint.entry.id)!!.share)
+        assertEquals(150_000L, repo.planNow(dinner)!!.doneAmount)
+    }
 }

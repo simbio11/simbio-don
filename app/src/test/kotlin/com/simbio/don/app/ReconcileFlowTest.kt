@@ -6,6 +6,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -105,8 +106,12 @@ class ReconcileFlowTest {
         waitText("이 결제, 계획한 거예요?")
         shot("r1_home_cards")
 
-        // 엔빵 4명 → 내 몫만 계획과
-        rule.onNodeWithText("4명이 나눠 냄").performScrollTo().performClick()
+        // 몇 명이서인지 앱이 정하지 않는다 → 내가 4명을 골라야 잇는다
+        rule.onNodeWithText("몇 명인지 골라 주세요").performScrollTo().performClick()
+        assertTrue(!bg { repo.plans.first() }.single().done)
+        rule.onAllNodesWithText("4명").onFirst().performScrollTo().performClick()
+        waitText("내 몫 50,000원만 생활비에", substring = true)
+        rule.onNodeWithText("4명이서 낸 계획이에요").performScrollTo().performClick()
         rule.waitUntil(5_000) { bg { repo.plans.first() }.single().done }
         assertEquals(50_000L, bg { repo.plans.first() }.single().doneAmount)
 

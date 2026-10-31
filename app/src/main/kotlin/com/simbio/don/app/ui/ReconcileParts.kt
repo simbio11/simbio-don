@@ -98,9 +98,16 @@ fun BalanceGapCard(
 
 // ── 계획과 실제 결제 짝 ──────────────────────────────────────
 
-/** "이 결제, '팀 회식' 계획인가요?" — 맞아요 / n명이 나눠 냄 / 아니에요 */
+/**
+ * "이 결제, '팀 회식' 계획인가요?" — 몇 명이서 냈는지는 내가 고른다 (앱이 정하지 않음) → 맞아요 / 아니에요.
+ * 계획보다 몇 배 많이 나온 결제는 아무것도 골라 두지 않아 혼자인지 나눠 냈는지 꼭 고르게 한다.
+ */
 @Composable
 fun PlanHintCard(h: PlanHint, onConfirm: (people: Int?) -> Unit, onReject: () -> Unit) {
+    val paid = h.entry.amount
+    val split = h.fit.kind == PlanFitKind.SPLIT
+    // 이미 나눠 적은 결제면 그 사람 수, 아니면 혼자 (많이 나온 결제는 고를 때까지 비워 둔다)
+    var people by remember(h.plan.id, h.entry.id) { mutableStateOf(h.entry.people ?: if (split) null else 1) }
     RealCard("이 결제, 계획한 거예요?", icon = { Icon(UiIcon.FLAG, 18.dp, DonColors.Real) }) {
         Text(
             "'${h.plan.label}' 계획 ${won(h.plan.amount)} · ${shortDate(LocalDate.ofEpochDay(h.plan.epochDay))}",
@@ -108,26 +115,50 @@ fun PlanHintCard(h: PlanHint, onConfirm: (people: Int?) -> Unit, onReject: () ->
             color = DonColors.InkSoft,
         )
         Text(
-            "${h.entry.label} ${won(h.entry.share ?: h.entry.amount)} · ${shortDate(LocalDate.ofEpochDay(h.entry.epochDay))}" +
-                (h.entry.share?.let { " (낸 돈 ${won(h.entry.amount)})" } ?: ""),
+            "${h.entry.label} ${won(paid)} · ${shortDate(LocalDate.ofEpochDay(h.entry.epochDay))}",
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             color = DonColors.Ink,
         )
-        val people = h.fit.people
-        if (h.fit.kind == PlanFitKind.SPLIT && people != null) {
-            Text("계획의 ${people}배쯤이에요. ${people}명이 나눠 냈으면 내 몫만 생활비에 넣고 나머지는 받을 돈으로 둬요.", fontSize = 12.sp, color = DonColors.InkMuted)
-        } else {
-            Text("맞으면 계획과 이어서 한 번만 세요 (계획 따로, 결제 따로 두 번 세지 않게).", fontSize = 12.sp, color = DonColors.InkMuted)
+        Text(
+            if (split) "계획보다 많이 나왔어요. 혼자 냈는지, 몇 명이서 나눠 냈는지 골라 주세요."
+            else "맞으면 계획과 이어서 한 번만 세요. 여럿이 먹고 내가 다 냈으면 몇 명이서인지 골라 주세요.",
+            fontSize = 12.sp,
+            color = DonColors.InkMuted,
+        )
+        PeoplePicker(people) { people = it }
+        val n = people
+        if (n != null && n > 1) {
+            val mine = com.simbio.don.app.data.Splits.myShare(paid, n)
+            Text(
+                "내 몫 ${won(mine)}만 생활비에 · 나머지 ${won(paid - mine)}은 받을 돈 (한 사람 ${won(com.simbio.don.app.data.Splits.perPerson(paid, n))})",
+                fontSize = 12.sp,
+                color = DonColors.InkSoft,
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            if (h.fit.kind == PlanFitKind.SPLIT && people != null) {
-                SmallButton(onClick = { onConfirm(people) }, modifier = Modifier.weight(1.4f)) { Text("${people}명이 나눠 냄") }
-                SubButton(onClick = { onConfirm(null) }, modifier = Modifier.weight(1f), containerColor = DonColors.SurfaceAlt) { Text("혼자 냄") }
-            } else {
-                SmallButton(onClick = { onConfirm(null) }, modifier = Modifier.weight(1f)) { Text("맞아요") }
+            SmallButton(onClick = { if (n != null) onConfirm(n) }, modifier = Modifier.weight(1.4f), containerColor = if (n == null) DonColors.InkMuted else DonColors.Real) {
+                Text(if (n == null) "몇 명인지 골라 주세요" else if (n > 1) "${n}명이서 낸 계획이에요" else "혼자 낸 계획이에요")
             }
-            SubButton(onClick = onReject, modifier = Modifier.weight(1f), containerColor = DonColors.SurfaceAlt) { Text("아니에요") }
+            SubButton(onClick = onReject, modifier = Modifier.weight(1f), containerColor = DonColors.SurfaceAlt) { Text("계획 아니에요") }
+        }
+    }
+}
+
+/** 몇 명이서: 혼자·2~6명 고르기, 더 많으면 − / + */
+@Composable
+fun PeoplePicker(people: Int?, onPick: (Int) -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+    ) {
+        (1..6).forEach { k -> FilterChip(selected = people == k, onClick = { onPick(k) }, label = { Text(if (k == 1) "혼자" else "${k}명") }) }
+        val more = people != null && people > 6
+        TextButton(onClick = { if (!more) onPick(7) }) { Text(if (more) "${people}명" else "7명+", fontSize = 13.sp) }
+        if (more) {
+            TextButton(onClick = { onPick(people!! - 1) }) { Text("−") }
+            TextButton(onClick = { onPick((people!! + 1).coerceAtMost(30)) }) { Text("+") }
         }
     }
 }

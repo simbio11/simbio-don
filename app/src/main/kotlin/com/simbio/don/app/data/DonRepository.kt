@@ -1763,8 +1763,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun confirmPlanHint(planId: Long, entryId: Long, people: Int? = null) = locked {
         val p = planNow(planId) ?: return@locked
         var e = dao.entryNow(entryId) ?: return@locked
-        if (people != null && people > 1 && e.share == null) {
+        // 몇 명이서는 내가 고른 대로 (1 = 혼자 → 예전에 나눠 적은 게 있으면 풀기, 이미 받은 정산이 있으면 그대로)
+        if (people != null && people > 1 && e.people != people) {
             e = e.copy(share = Splits.myShare(e.amount, people), people = people)
+            dao.updateEntry(e)
+        } else if (people == 1 && e.share != null && dao.allEntriesNow().none { it.settleFor == e.id }) {
+            e = e.copy(share = null, people = null)
             dao.updateEntry(e)
         }
         dao.savePlan(p.copy(doneEntryId = e.id, doneAmount = e.share ?: e.amount, doneEpochDay = e.epochDay, canceled = false, autoLinked = false))
