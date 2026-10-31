@@ -1,10 +1,5 @@
 package com.simbio.don.app.ui
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -13,6 +8,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.withFrameMillis
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -109,6 +108,7 @@ private fun hitAt(x: Int, y: Int): RoomHit? {
  * (끝 시각 ms, 그때까지 도착할 x) — 앞 구간과 x가 같으면 서 있는 구간.
  */
 private const val WALK_CYCLE = 16_000
+private const val ROOM_FRAME_MS = 83L
 private val WALK_PLAN: List<Pair<Int, Int>> by lazy {
     val home = RoomLayout.character.x
     listOf(
@@ -190,14 +190,16 @@ fun PixelRoom(
         listOf(Pose.STAND, Pose.BLINK, Pose.WALK_LEFT, Pose.WALK_RIGHT).map { CharacterRenderer.bitmap(context, look, mood, it) }
     }
 
-    val clock = rememberInfiniteTransition(label = "room")
-    val ms by clock.animateFloat(0f, WALK_CYCLE.toFloat(), infiniteRepeatable(tween(WALK_CYCLE, easing = LinearEasing)), label = "walk")
-    val skyOffset by clock.animateFloat(
-        0f,
-        RoomLayout.SKY_W.toFloat(),
-        infiniteRepeatable(tween(if (phase == DayPhase.NIGHT) 120_000 else 64_000, easing = LinearEasing)),
-        label = "sky",
-    )
+    // 도트 그림이라 1초에 12장이면 충분하다 (매 프레임 다시 그리면 폰이 버벅인다)
+    val elapsed = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        val start = withFrameMillis { it }
+        while (true) {
+            delay(ROOM_FRAME_MS)
+            elapsed.longValue = withFrameMillis { it } - start
+        }
+    }
+    val skyCycle = if (phase == DayPhase.NIGHT) 120_000L else 64_000L
 
     // 원본 크기(160×136) 버퍼에 한 장으로 겹쳐 그린 뒤 통째로 키운다.
     // 레이어끼리 픽셀 격자가 어긋나지 않고, 카드 너비를 빈틈없이 채운다.
@@ -223,6 +225,9 @@ fun PixelRoom(
                 contentDescription = "내 방: 물건 ${house.itemCount}개, 쓰레기 ${house.trash.size}개"
             },
         ) {
+            val now = elapsed.longValue
+            val ms = (now % WALK_CYCLE).toFloat()
+            val skyOffset = (now % skyCycle).toFloat() / skyCycle * RoomLayout.SKY_W
             val pose = poseAt(ms.toInt())
             bufferScope.draw(density, layoutDirection, androidx.compose.ui.graphics.Canvas(buffer), Size(RoomLayout.WIDTH.toFloat(), RoomLayout.HEIGHT.toFloat())) {
                 fun put(img: ImageBitmap, x: Int, y: Int) = drawImage(img, Offset(x.toFloat(), y.toFloat()))

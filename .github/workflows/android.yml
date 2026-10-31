@@ -24,11 +24,12 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: 테스트 + 디버그 APK 빌드
-        run: ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug --console=plain
+      # 폰에 까는 건 release (디버그 빌드는 화면이 느리다). 같은 키로 서명해 덮어 설치된다.
+      - name: 테스트 + APK 빌드
+        run: ./gradlew :core:test :app:testDebugUnitTest :app:assembleRelease --console=plain
 
-      - name: APK 이름 붙이기
-        run: cp app/build/outputs/apk/debug/app-debug.apk simbio-don-debug.apk
+      - name: APK 이름 붙이기 (예전 받기 주소 그대로)
+        run: cp app/build/outputs/apk/release/app-release.apk simbio-don-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -44,5 +45,5 @@ jobs:
           gh release create debug-latest simbio-don-debug.apk \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --title "최신 디버그 빌드 (${GITHUB_REF_NAME})" \
+            --title "최신 빌드 (${GITHUB_REF_NAME})" \
             --notes "커밋 ${GITHUB_SHA::7} · 브랜치 ${GITHUB_REF_NAME}. 폰에서 simbio-don-debug.apk를 눌러 설치하세요."

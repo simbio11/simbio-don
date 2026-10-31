@@ -13,8 +13,8 @@ android {
         applicationId = "com.simbio.don"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.20.2"
+        versionCode = 24
+        versionName = "0.20.3"
     }
 
     // CI에서 빌드할 때마다 서명이 바뀌면 폰에 덮어 설치가 안 되고 데이터가 지워진다.
@@ -25,6 +25,15 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+        }
+    }
+
+    // 폰에 까는 건 release: 디버그 빌드는 화면(Compose)이 몇 배 느리다.
+    // 같은 키로 서명해 지금 깔린 앱 위에 그대로 덮어 설치된다 (데이터 유지).
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
         }
     }
 
@@ -109,6 +118,11 @@ tasks.withType<Test>().configureEach {
     if (project.hasProperty("screenshots")) {
         systemProperty("screenshotDir", layout.buildDirectory.dir("screenshots").get().asFile.path)
         outputs.upToDateWhen { false }
+    }
+    // ./gradlew :app:testDebugUnitTest --tests '*PerfBench*' -Pbench -i → 1년치 기록으로 계산 시간 재기
+    if (project.hasProperty("bench")) {
+        systemProperty("bench", "1")
+        testLogging { showStandardStreams = true }
     }
     // ./gradlew :app:testDebugUnitTest --tests '*WidgetsTest*' -PwidgetSamples → 위젯 고르기 미리보기 그림을 다시 만든다
     if (project.hasProperty("widgetSamples")) {

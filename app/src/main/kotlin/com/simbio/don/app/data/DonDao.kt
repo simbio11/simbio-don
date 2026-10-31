@@ -106,6 +106,13 @@ interface DonDao {
     @Query("SELECT * FROM entry ORDER BY epochDay, id")
     fun allEntries(): Flow<List<EntryEntity>>
 
+    /** 자산 없이 적힌 기록 후보 (나머지 조건은 저장소에서 한 번 더) */
+    @Query("SELECT * FROM entry WHERE accountId IS NULL AND type != 'TRANSFER' ORDER BY epochDay, id")
+    fun entriesWithoutAccount(): Flow<List<EntryEntity>>
+
+    @Query("SELECT * FROM entry WHERE label IN (:labels) ORDER BY epochDay, id")
+    fun entriesLabeled(labels: List<String>): Flow<List<EntryEntity>>
+
     // 카테고리 규칙
     @Query("SELECT * FROM category_rule")
     fun categoryRules(): Flow<List<CategoryRuleEntity>>

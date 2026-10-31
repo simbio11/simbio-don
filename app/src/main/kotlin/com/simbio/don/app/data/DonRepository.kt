@@ -50,7 +50,9 @@ import com.simbio.don.notify.ReviewPolicy
 import com.simbio.don.notify.ReviewReason
 import com.simbio.don.notify.RuleAction
 import androidx.room.withTransaction
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -279,6 +281,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     private val writeLock = Mutex()
 
+    /** 쓰기는 한 번에 하나씩, 계산이 많아 화면(메인 스레드)을 멈추지 않게 다른 스레드에서 */
+    private suspend fun <T> locked(block: suspend () -> T): T =
+        withContext(Dispatchers.Default) { writeLock.withLock { block() } }
+
     val settings: Flow<SettingsEntity?> = dao.settings()
 
     /** 직접 만든 카테고리. 읽을 때마다 [Category]에 알려 준다 (기록을 읽기 전에 이름을 알게) */
@@ -319,11 +325,15 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         combine(dao.accounts(), dao.accountEntries(), dao.assetChecks()) { accounts, entries, checks -> AccountBalances.compute(accounts, entries, checks) }
 
     /** 모으는 돈 (저축·투자 통장): 지금 금액·넣은 돈·달마다 */
-    fun wealth(now: Flow<LocalDateTime>): Flow<Wealth> =
-        combine(accountBalances, dao.accountEntries(), dao.assetChecks(), dao.goals(), now) { b, e, c, g, t ->
+    fun wealth(now: Flow<LocalDateTime>): Flow<Wealth> = balancesAndWealth(now).map { it.second }
+
+    /** 잔액과 모으는 돈을 한 번 읽은 기록으로 같이 (모든 기록을 여러 번 읽지 않게) */
+    private fun balancesAndWealth(now: Flow<LocalDateTime>): Flow<Pair<List<AccountBalance>, Wealth>> =
+        combine(dao.accounts(), dao.accountEntries(), dao.assetChecks(), dao.goals(), now) { a, e, c, g, t ->
+            val b = AccountBalances.compute(a, e, c)
             // 목표에 이은 통장은 저축이 아니라 그 목표의 돈
             val forGoals = g.filter { !it.used }.mapNotNull { it.accountId }.toSet()
-            AccountBalances.wealth(b.filter { it.account.id !in forGoals }, e, c, t.toLocalDate())
+            b to AccountBalances.wealth(b.filter { it.account.id !in forGoals }, e, c, t.toLocalDate())
         }
 
     /** 최근 100일 기록 (한 줄 분석·정기 결제 찾기) */
@@ -335,6 +345,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val miles: List<MileTxEntity>,
         val plays: List<GamePlayEntity>,
         val wealth: Wealth,
+        val balances: List<AccountBalance>,
         val fixed: List<FixedExpenseEntity>,
         val recent: List<EntryEntity>,
         val plans: List<PlanEntity> = emptyList(),
@@ -343,17 +354,19 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     @OptIn(ExperimentalCoroutinesApi::class)
     fun home(now: Flow<LocalDateTime>): Flow<HomeState?> {
         val more = combine(
-            combine(dao.mileTx(), dao.gamePlays(), wealth(now)) { m, g, w -> Triple(m, g, w) },
+            combine(dao.mileTx(), dao.gamePlays(), balancesAndWealth(now)) { m, g, w -> Triple(m, g, w) },
             dao.fixedExpenses(),
             recentEntries(now),
             dao.plans(),
-        ) { mgw, f, r, p -> HomeMore(mgw.first, mgw.second, mgw.third, f, r, p) }
-        return combine(homeBase(now), extras, summaries(now), accountBalances, more) { h, x, sums, accounts, mo ->
+        ) { mgw, f, r, p -> HomeMore(mgw.first, mgw.second, mgw.third.second, mgw.third.first, f, r, p) }
+        return combine(homeBase(now), extras, summaries(now), more) { h, x, sums, mo ->
+            val accounts = mo.balances
             h?.let {
                 val goals = Summaries.goals(x.goals, x.moves, accounts.associate { b -> b.account.id to b.balance })
                 val split = Summaries.split(sums, mo.wealth.pots.takeIf { p -> p.isNotEmpty() }?.let { mo.wealth.total }, goals, x.moves)
                 val miles = mo.miles
                 val plays = mo.plays
+                val day = dayOf(it, mo.plans)
                 it.copy(
                     miles = MileState.of(miles),
                     game = GameState.of(miles, plays, it.currentWeek?.week),
@@ -361,8 +374,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                     assetCheckDue = mo.wealth.pots.isNotEmpty() && (mo.wealth.lastCheck?.isBefore(it.cycle.start) ?: true),
                     insights = insightsOf(it, mo.fixed, mo.recent, mo.plans),
                     plans = mo.plans,
-                    day = dayOf(it, mo.plans),
-                    todayAllowance = dayOf(it, mo.plans).allowance,
+                    day = day,
+                    todayAllowance = day.allowance,
                     categoryBudgets = x.budgets,
                     // 목표는 넣은 돈(또는 이은 통장)으로만 찬다 — 예금·적금(저축)은 목표에 저절로 안 들어간다
                     goals = goals,
@@ -726,7 +739,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     private suspend fun registerCategories() = Category.register(dao.categoryDefsNow().map { it.toCategory() })
 
     /** 카테고리 직접 만들기 ("U" + 번호) */
-    suspend fun addCategory(label: String, income: Boolean, icon: String, color: Long): Category = writeLock.withLock {
+    suspend fun addCategory(label: String, income: Boolean, icon: String, color: Long): Category = locked {
         val defs = dao.categoryDefsNow()
         val next = (defs.mapNotNull { it.name.removePrefix(Category.CUSTOM_PREFIX).toIntOrNull() }.maxOrNull() ?: 0) + 1
         val def = CategoryDefEntity("${Category.CUSTOM_PREFIX}$next", label.trim().take(12).ifBlank { "내 분류" }, income, icon, color, defs.size)
@@ -736,15 +749,15 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 이름·아이콘·색 고치기 (수입/지출은 그대로) */
-    suspend fun updateCategory(name: String, label: String, icon: String, color: Long) = writeLock.withLock {
-        val def = dao.categoryDefsNow().firstOrNull { it.name == name } ?: return@withLock
+    suspend fun updateCategory(name: String, label: String, icon: String, color: Long) = locked {
+        val def = dao.categoryDefsNow().firstOrNull { it.name == name } ?: return@locked
         dao.saveCategoryDef(def.copy(label = label.trim().take(12).ifBlank { def.label }, icon = icon, color = color))
         registerCategories()
     }
 
     /** 직접 만든 카테고리 지우기: 그 기록·고정 지출·반복 수입·가게 기억은 기타(수입이면 기타 수입)로 */
-    suspend fun deleteCategory(name: String) = writeLock.withLock {
-        val def = dao.categoryDefsNow().firstOrNull { it.name == name } ?: return@withLock
+    suspend fun deleteCategory(name: String) = locked {
+        val def = dao.categoryDefsNow().firstOrNull { it.name == name } ?: return@locked
         val to = if (def.income) Category.OTHER_INCOME.name else Category.ETC.name
         transaction {
             dao.moveCategory(name, to)
@@ -759,19 +772,19 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 소분류 더하기 (같은 이름이 있으면 그대로) */
-    suspend fun addSubcategory(category: Category, name: String) = writeLock.withLock {
+    suspend fun addSubcategory(category: Category, name: String) = locked {
         val n = name.trim().take(12)
-        if (n.isEmpty()) return@withLock
+        if (n.isEmpty()) return@locked
         val mine = dao.subcategoriesNow().filter { it.category == category.name }
-        if (mine.any { it.name == n }) return@withLock
+        if (mine.any { it.name == n }) return@locked
         dao.saveSubcategory(SubcategoryEntity(category = category.name, name = n, sortOrder = mine.size))
     }
 
     /** 소분류 이름 바꾸기 — 이미 적은 기록도 같이 */
-    suspend fun renameSubcategory(s: SubcategoryEntity, name: String) = writeLock.withLock {
+    suspend fun renameSubcategory(s: SubcategoryEntity, name: String) = locked {
         val n = name.trim().take(12)
-        if (n.isEmpty() || n == s.name) return@withLock
-        if (dao.subcategoriesNow().any { it.category == s.category && it.name == n }) return@withLock
+        if (n.isEmpty() || n == s.name) return@locked
+        if (dao.subcategoriesNow().any { it.category == s.category && it.name == n }) return@locked
         transaction {
             dao.saveSubcategory(s.copy(name = n))
             dao.renameSub(s.category, s.name, n)
@@ -779,7 +792,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 소분류 지우기 — 그 기록은 카테고리만 남는다 */
-    suspend fun deleteSubcategory(s: SubcategoryEntity) = writeLock.withLock {
+    suspend fun deleteSubcategory(s: SubcategoryEntity) = locked {
         transaction {
             dao.deleteSubcategory(s.id)
             dao.renameSub(s.category, s.name, null)
@@ -815,7 +828,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         memo: String = "",
         accountId: Long? = null,
         minuteOfDay: Int? = null,
-    ): Long = writeLock.withLock {
+    ): Long = locked {
         if (label.isNotBlank() && !category.income) learn(label, category)
         addInstallmentLocked(date, total, months, label.ifBlank { "할부" }, category, sub, memo, accountId, minuteOfDay, null)
     }
@@ -862,7 +875,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 할부 전체 지우기 (나눠 적은 기록 모두) */
-    suspend fun deleteInstallment(id: Long) = writeLock.withLock {
+    suspend fun deleteInstallment(id: Long) = locked {
         transaction {
             dao.deleteInstallmentEntries(id)
             dao.deleteInstallment(id)
@@ -877,7 +890,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 반복 수입 목록 저장. 새로 넣은 것은 이번 달 이미 지난 날을 건너뛴다 (이미 받은 것).
      * 이미 있던 것은 처리한 날을 그대로 둔다.
      */
-    suspend fun saveRecurringIncomes(items: List<RecurringIncomeEntity>, today: LocalDate = LocalDate.now()) = writeLock.withLock {
+    suspend fun saveRecurringIncomes(items: List<RecurringIncomeEntity>, today: LocalDate = LocalDate.now()) = locked {
         val before = dao.recurringIncomesNow().associateBy { it.id }
         val s = dao.settingsNow()
         val cycle = s?.let { dao.latestCycleNow()?.toPayCycle(it.payDay) }
@@ -1031,8 +1044,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 지갑 → 키우기 */
-    suspend fun depositMiles(amount: Long, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
-        if (amount <= 0 || dao.mileBalance("WALLET") < amount) return@withLock false
+    suspend fun depositMiles(amount: Long, today: LocalDate = LocalDate.now()): Boolean = locked {
+        if (amount <= 0 || dao.mileBalance("WALLET") < amount) return@locked false
         transaction {
             dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = -amount, kind = "DEPOSIT", memo = "키우기에 넣음"))
             dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = amount, kind = "DEPOSIT", account = "GROW", memo = "지갑에서"))
@@ -1041,8 +1054,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 키우기 → 지갑 */
-    suspend fun withdrawMiles(amount: Long, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
-        if (amount <= 0 || dao.mileBalance("GROW") < amount) return@withLock false
+    suspend fun withdrawMiles(amount: Long, today: LocalDate = LocalDate.now()): Boolean = locked {
+        if (amount <= 0 || dao.mileBalance("GROW") < amount) return@locked false
         transaction {
             dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = -amount, kind = "WITHDRAW", account = "GROW", memo = "지갑으로 뺌"))
             dao.insertMileTx(MileTxEntity(epochDay = today.toEpochDay(), amount = amount, kind = "WITHDRAW", memo = "키우기에서"))
@@ -1063,32 +1076,32 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     private suspend fun houseLocked(): HouseEntity = dao.houseNow() ?: HouseEntity()
 
     /** 이사 (더 큰 집으로만) */
-    suspend fun moveHouse(level: HouseLevel, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
+    suspend fun moveHouse(level: HouseLevel, today: LocalDate = LocalDate.now()): Boolean = locked {
         val h = houseLocked()
-        if (level.ordinal <= enumOr(h.level, HouseLevel.ONE_ROOM).ordinal) return@withLock false
-        if (!spendMilesLocked(Shop.moveCost(level), "${level.label}로 이사", today)) return@withLock false
+        if (level.ordinal <= enumOr(h.level, HouseLevel.ONE_ROOM).ordinal) return@locked false
+        if (!spendMilesLocked(Shop.moveCost(level), "${level.label}로 이사", today)) return@locked false
         dao.saveHouse(h.copy(level = level.name))
         true
     }
 
     /** 수납 가구 한 단계 올리기 */
-    suspend fun buyStorage(slot: Slot, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
+    suspend fun buyStorage(slot: Slot, today: LocalDate = LocalDate.now()): Boolean = locked {
         val h = houseLocked()
         val setup = HouseSetup.decode(h.setup)
         val next = (setup.storage[slot] ?: 0) + 1
-        if (next > Shop.MAX_STORAGE_LEVEL) return@withLock false
-        if (!spendMilesLocked(Shop.storageCost(next), "${slot.label} ${next}단계", today)) return@withLock false
+        if (next > Shop.MAX_STORAGE_LEVEL) return@locked false
+        if (!spendMilesLocked(Shop.storageCost(next), "${slot.label} ${next}단계", today)) return@locked false
         dao.saveHouse(h.copy(setup = setup.copy(storage = setup.storage + (slot to next)).encode()))
         true
     }
 
     /** 인테리어 색 고르기. 처음 고르는 색이면 마일로 산다 ([isDefault]면 공짜) */
-    suspend fun chooseInterior(part: Shop.Interior, theme: String, isDefault: Boolean, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock {
+    suspend fun chooseInterior(part: Shop.Interior, theme: String, isDefault: Boolean, today: LocalDate = LocalDate.now()): Boolean = locked {
         val h = houseLocked()
         val setup = HouseSetup.decode(h.setup)
         val key = "${part.name}:$theme"
         val owned = isDefault || key in setup.ownedInterior
-        if (!owned && !spendMilesLocked(part.cost, "${part.label} $theme", today)) return@withLock false
+        if (!owned && !spendMilesLocked(part.cost, "${part.label} $theme", today)) return@locked false
         dao.saveHouse(
             h.copy(setup = setup.copy(ownedInterior = if (owned) setup.ownedInterior else setup.ownedInterior + key, interior = setup.interior + (part to theme)).encode()),
         )
@@ -1096,7 +1109,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 옷장에서 사기 ("top:knit") */
-    suspend fun buyWardrobe(keys: List<String>, today: LocalDate = LocalDate.now()): Boolean = writeLock.withLock { buyWardrobeLocked(keys, today) }
+    suspend fun buyWardrobe(keys: List<String>, today: LocalDate = LocalDate.now()): Boolean = locked { buyWardrobeLocked(keys, today) }
 
     private suspend fun buyWardrobeLocked(keys: List<String>, today: LocalDate): Boolean {
         val h = houseLocked()
@@ -1112,7 +1125,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 새 모습 저장. 옷·모자·소품은 옷장에 있어야 하고 (없으면 마일로 산다), 얼굴·머리가 바뀌면 뷰티샵 값이 든다:
      * 첫 꾸미기는 공짜, [payWithMiles]면 마일로 바로, 아니면 모의 지갑으로 예약해 이번 주 결산 때 바뀐다.
      */
-    suspend fun applyLook(next: CharacterLook, payWithMiles: Boolean, now: LocalDateTime = LocalDateTime.now()): LookResult = writeLock.withLock {
+    suspend fun applyLook(next: CharacterLook, payWithMiles: Boolean, now: LocalDateTime = LocalDateTime.now()): LookResult = locked {
         val today = now.toLocalDate()
         val h = houseLocked()
         val current = CharacterLook.decode(h.look)
@@ -1121,8 +1134,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val won = procedures.sumOf { it.won }
         val clothesMiles = Shop.wardrobeNeeded(next, owned).sumOf { Shop.wardrobeCost(it) }
         val beautyMiles = if (procedures.isEmpty() || h.freeMakeover || !payWithMiles) 0 else Miles.ofWon(won)
-        if (dao.mileBalance("WALLET") < clothesMiles + beautyMiles) return@withLock LookResult.NOT_ENOUGH_MILES
-        if (procedures.isNotEmpty() && !h.freeMakeover && !payWithMiles && walletNowLocked(today) < won) return@withLock LookResult.NOT_ENOUGH_WALLET
+        if (dao.mileBalance("WALLET") < clothesMiles + beautyMiles) return@locked LookResult.NOT_ENOUGH_MILES
+        if (procedures.isNotEmpty() && !h.freeMakeover && !payWithMiles && walletNowLocked(today) < won) return@locked LookResult.NOT_ENOUGH_WALLET
         buyWardrobeLocked(Shop.wardrobeNeeded(next, owned), today)
         val h2 = houseLocked()
         when {
@@ -1172,14 +1185,14 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     // ── 캐릭터 ─────────────────────────────────────────────────
 
     /** 캐릭터 모습 저장 (집 단계·이름은 그대로) */
-    suspend fun saveLook(look: CharacterLook) = writeLock.withLock { saveLookLocked(look) }
+    suspend fun saveLook(look: CharacterLook) = locked { saveLookLocked(look) }
 
     // ── 도감·세트·미니게임 ─────────────────────────────────────
 
     /** 칭호 달기 (세트·도감으로 얻은 것만, 빈 칸이면 떼기) */
-    suspend fun chooseTitle(title: String): Boolean = writeLock.withLock {
+    suspend fun chooseTitle(title: String): Boolean = locked {
         val got = Dex.gotIds(dao.mockPurchasesNow().map { it.toItem() })
-        if (title.isNotEmpty() && title !in Sets.titles(got)) return@withLock false
+        if (title.isNotEmpty() && title !in Sets.titles(got)) return@locked false
         dao.saveHouse(houseLocked().copy(title = title))
         true
     }
@@ -1188,7 +1201,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 미니게임 한 판 기록. [reward]는 점수로 정한 마일이고, 이번 주 상한(결산 마일의 10%) 안에서만 지갑에 넣는다.
      * 실제로 받은 마일을 돌려준다.
      */
-    suspend fun playGame(game: MiniGame, score: Int, reward: Long, today: LocalDate = LocalDate.now()): Long = writeLock.withLock {
+    suspend fun playGame(game: MiniGame, score: Int, reward: Long, today: LocalDate = LocalDate.now()): Long = locked {
         val week = cycleAt(today)?.let { (c, cycle) -> planFor(c, cycle).let { plan -> plan.weekIndexOf(today)?.let(plan.weeks::get) } }
         val state = GameState.of(dao.mileTxNow(), emptyList(), week)
         val miles = MiniGameRewards.grant(reward, state.cap, state.earned)
@@ -1227,7 +1240,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         look: CharacterLook = CharacterLook.MALE,
         /** 결제 알림을 읽을 앱 (null이면 기본 앱 목록을 켜 둔다) */
         apps: List<AppRule>? = null,
-    ) = writeLock.withLock {
+    ) = locked {
         saveLookLocked(look)
         val ids = accounts.mapIndexed { i, a ->
             dao.saveAccount(AccountEntity(name = a.name.take(20), type = a.type.name, opening = a.opening, sortOrder = i, packageName = a.packageName))
@@ -1288,8 +1301,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         applyNow: Boolean,
         payDay: Int? = null,
         today: LocalDate = LocalDate.now(),
-    ) = writeLock.withLock {
-        val s = dao.settingsNow() ?: return@withLock
+    ) = locked {
+        val s = dao.settingsNow() ?: return@locked
         // 이미 처리한 납부일은 그대로 두고, 새로 넣은 고정비는 이번 달 이미 지난 납부일을 건너뛴다 (이미 낸 것)
         val before = dao.fixedExpensesNow().associateBy { it.id }
         val cycle0 = dao.latestCycleNow()?.toPayCycle(s.payDay)
@@ -1341,7 +1354,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 날짜가 바뀌었을 때 할 일: 월급날이 지났으면 새 달을 시작하고, 오늘까지 나간 고정 지출을 적는다.
      * 앱을 켤 때, 1분마다, 입금 알림이 올 때 부른다 (할 일이 없으면 아무것도 안 함).
      */
-    suspend fun dailyUpkeep(now: LocalDateTime) = writeLock.withLock {
+    suspend fun dailyUpkeep(now: LocalDateTime) = locked {
         rollOverLocked(now)
         recordDueFixedLocked(now.toLocalDate())
         recordDueIncomeLocked(now.toLocalDate())
@@ -1428,15 +1441,15 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun previousSalary(): Long? = dao.cyclesNow().getOrNull(1)?.salary
 
     /** 이번 달 월급 고치기 */
-    suspend fun updateSalary(amount: Long) = writeLock.withLock {
-        val c = dao.latestCycleNow() ?: return@withLock
-        if (amount <= 0) return@withLock
+    suspend fun updateSalary(amount: Long) = locked {
+        val c = dao.latestCycleNow() ?: return@locked
+        if (amount <= 0) return@locked
         dao.saveCycle(c.copy(salary = amount, salarySource = SalarySource.MANUAL.name, noticeShown = true))
     }
 
     /** 새 달 안내 닫기 */
-    suspend fun dismissSalaryNotice() = writeLock.withLock {
-        val c = dao.latestCycleNow() ?: return@withLock
+    suspend fun dismissSalaryNotice() = locked {
+        val c = dao.latestCycleNow() ?: return@locked
         if (!c.noticeShown) dao.saveCycle(c.copy(noticeShown = true))
     }
 
@@ -1571,10 +1584,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         e.accountId == null && !e.owe && e.settleFor == null && e.fxText == null &&
             e.type != EntryType.TRANSFER.name
 
-    val unassignedEntries: Flow<List<EntryEntity>> = dao.allEntries().map { l -> l.filter(::unassigned) }
+    val unassignedEntries: Flow<List<EntryEntity>> = dao.entriesWithoutAccount().map { l -> l.filter(::unassigned) }
 
     /** 자산 없이 적힌 기록을 기본 통장으로 (자산 탭 잔액에 생활비가 반영되게). 옮긴 수 */
-    suspend fun assignUnassigned(accountId: Long): Int = writeLock.withLock {
+    suspend fun assignUnassigned(accountId: Long): Int = locked {
         val list = dao.allEntriesNow().filter(::unassigned)
         dao.updateEntries(list.map { it.copy(accountId = accountId) })
         list.size
@@ -1602,7 +1615,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         share: Long? = null,
         people: Int? = null,
         owe: Boolean = false,
-    ) = writeLock.withLock {
+    ) = locked {
         val name = label.ifBlank {
             when (type) {
                 EntryType.EXCEPTION -> "예외 지출"
@@ -1721,7 +1734,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 확실히 맞는 지출은 계획과 저절로 잇는다 (계획 하나에 기록 하나). 이은 계획은 "자동으로 이었어요"로 보이고 풀 수 있다.
      * 알림·직접 적기·계획 저장 뒤에 부른다. 이은 수
      */
-    suspend fun autoLinkPlans(today: LocalDate = LocalDate.now()): Int = writeLock.withLock { autoLinkPlansLocked(today) }
+    suspend fun autoLinkPlans(today: LocalDate = LocalDate.now()): Int = locked { autoLinkPlansLocked(today) }
 
     private suspend fun autoLinkPlansLocked(today: LocalDate): Int {
         val plans = dao.plansNow()
@@ -1747,9 +1760,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
 
     /** "맞아요": 이 지출이 그 계획. [people]이면 그만큼 나눠 낸 것으로 (내 몫만 생활비) */
-    suspend fun confirmPlanHint(planId: Long, entryId: Long, people: Int? = null) = writeLock.withLock {
-        val p = planNow(planId) ?: return@withLock
-        var e = dao.entryNow(entryId) ?: return@withLock
+    suspend fun confirmPlanHint(planId: Long, entryId: Long, people: Int? = null) = locked {
+        val p = planNow(planId) ?: return@locked
+        var e = dao.entryNow(entryId) ?: return@locked
         if (people != null && people > 1 && e.share == null) {
             e = e.copy(share = Splits.myShare(e.amount, people), people = people)
             dao.updateEntry(e)
@@ -1758,8 +1771,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** "아니에요": 이 지출은 그 계획이 아님 (다시 묻거나 잇지 않음). 저절로 이었던 것이면 풀어 준다 */
-    suspend fun rejectPlanMatch(planId: Long, entryId: Long) = writeLock.withLock {
-        val p = planNow(planId) ?: return@withLock
+    suspend fun rejectPlanMatch(planId: Long, entryId: Long) = locked {
+        val p = planNow(planId) ?: return@locked
         val rejected = (p.rejected.split(",").filter { it.isNotBlank() } + entryId.toString()).distinct().joinToString(",")
         dao.savePlan(
             if (p.doneEntryId == entryId) p.copy(doneEntryId = null, doneAmount = null, doneEpochDay = null, autoLinked = false, rejected = rejected)
@@ -1863,7 +1876,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     suspend fun markSeen(pkg: String, at: LocalDateTime) = dao.markSeen(SeenAppEntity(pkg, at.epochSecond()))
 
-    suspend fun handleNotification(n: RawNotification) = writeLock.withLock {
+    suspend fun handleNotification(n: RawNotification) = locked {
         // 월급날 새벽에 온 알림이 지난달에 적히지 않게, 새 달이 됐으면 먼저 시작한다
         rollOverLocked(n.postedAt)
         val rules = dao.appRulesNow().map { it.toRule() }
@@ -1884,10 +1897,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 it.packageName == parsed.packageName && it.postedAtEpochSecond == at && (it.amount == parsed.amount || it.installmentId != null)
             } ||
                 inbox.any { it.packageName == parsed.packageName && it.amount == parsed.amount && it.postedAtEpochSecond == at }
-            if (seen) return@withLock
+            if (seen) return@locked
         }
         // 내 계좌끼리 이체로 이미 적은 돈의 다른 쪽(또는 다시 온 알림)이면 받은·보낸 통장만 채운다
-        if (parsed != null && (parsed.action == RuleAction.INCOME || SelfTransfer.isSendOut(parsed)) && completeSelfTransfer(parsed)) return@withLock
+        if (parsed != null && (parsed.action == RuleAction.INCOME || SelfTransfer.isSendOut(parsed)) && completeSelfTransfer(parsed)) return@locked
         // 할부 첫 기록은 산 금액 전체로 견준다 (다른 앱에 온 같은 결제 알림과 짝이 맞게)
         val recent = recentEntries.mapNotNull { e ->
             e.toParsedOrNull()?.let { p ->
@@ -2017,7 +2030,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 환율 저장. 직접 정한 환율과 2주 안의 내 환전 환율은 공개 환율이 덮지 않는다. 어림으로 바꿨던 기록은 이 환율로 다시 */
     suspend fun saveFxRate(currency: String, rate: Double, source: String, today: LocalDate = LocalDate.now()) =
-        writeLock.withLock { saveFxRateLocked(currency, rate, source, today) }
+        locked { saveFxRateLocked(currency, rate, source, today) }
 
     private suspend fun saveFxRateLocked(currency: String, rate: Double, source: String, today: LocalDate) {
         if (rate <= 0) return
@@ -2128,7 +2141,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun dismissBalanceGap(accountId: Long) = dao.deleteBalanceGap(accountId)
 
     /** 잔액 맞추기로 남긴 기록 (빠진 지출·입금·더 센 지출) */
-    val balanceFixEntries: Flow<List<EntryEntity>> = dao.allEntries().map { l -> l.filter { it.label in FIX_LABELS } }
+    val balanceFixEntries: Flow<List<EntryEntity>> = dao.entriesLabeled(FIX_LABELS.toList())
 
     /**
      * 잔액 맞춤 기록을 생활비에서 뺀다 (잔액은 그대로): 이미 적힌 지출이 통장에 안 들어가 생긴 차이를
@@ -2208,8 +2221,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 내 이름 (예금주) 저장: 송금·입금 알림에 보이면 내 계좌끼리로 본다 */
-    suspend fun saveOwnerName(name: String) = writeLock.withLock {
-        val s = dao.settingsNow() ?: return@withLock
+    suspend fun saveOwnerName(name: String) = locked {
+        val s = dao.settingsNow() ?: return@locked
         dao.saveSettings(s.copy(ownerName = name.trim().take(20).ifBlank { null }))
     }
 
@@ -2288,7 +2301,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         )
     }
 
-    suspend fun resolveReview(item: ReviewItemEntity, resolution: ReviewResolution) = writeLock.withLock {
+    suspend fun resolveReview(item: ReviewItemEntity, resolution: ReviewResolution) = locked {
         resolveReviewLocked(item, resolution)
     }
 
@@ -2313,15 +2326,15 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 주간 결산. [returnIds]는 사용자가 고른 반품 물건 (null이면 자동으로 고른다).
      * 자동 결산이면 확인함을 먼저 정리하고, 정리된 지출로 초과액을 다시 계산한다.
      */
-    suspend fun settle(pending: PendingWeek, now: LocalDateTime, returnIds: Set<Long>? = null) = writeLock.withLock {
-        val s = dao.settingsNow() ?: return@withLock
+    suspend fun settle(pending: PendingWeek, now: LocalDateTime, returnIds: Set<Long>? = null) = locked {
+        val s = dao.settingsNow() ?: return@locked
         val cycles = dao.cyclesNow()
         val i = cycles.indexOfFirst { it.nominal == pending.nominal }
-        if (i < 0) return@withLock
+        if (i < 0) return@locked
         val c = cycles[i]
         val week = pending.result
         // 이미 결산한 주 (버튼 두 번 누름 등)
-        if (dao.settledWeeksNow(c.nominal).any { it.weekIndex == week.week.index }) return@withLock
+        if (dao.settledWeeksNow(c.nominal).any { it.weekIndex == week.week.index }) return@locked
         val auto = Settlement.mustAutoSettle(week.week.end, now)
         if (auto) resolveLeftoverReviews(week.week.end)
         val result = weekResultNow(c, cycleOf(c, cycles.getOrNull(i - 1), s.payDay), week.week.index) ?: week
@@ -2392,7 +2405,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun updateGoal(g: SavingsGoalEntity) = dao.saveGoal(g)
 
     /** 목표 지우기: 넣은 돈 기록도 지워 아낀 돈은 다시 넣을 수 있게 된다 */
-    suspend fun deleteGoal(g: SavingsGoalEntity) = writeLock.withLock {
+    suspend fun deleteGoal(g: SavingsGoalEntity) = locked {
         dao.deleteGoalMoves(g.id)
         dao.deleteGoal(g)
     }
@@ -2426,16 +2439,16 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         Splits.book(dao.entriesBetweenNow(today.minusDays(120).toEpochDay(), today.plusDays(400).toEpochDay()), dismissed)
 
     /** 들어온 돈 [income]은 [target]의 정산 — 수입에서 빼고 그 통장 잔액에만 */
-    suspend fun settleWith(target: EntryEntity, income: EntryEntity) = writeLock.withLock {
-        val now = dao.entryNow(income.id) ?: return@withLock
+    suspend fun settleWith(target: EntryEntity, income: EntryEntity) = locked {
+        val now = dao.entryNow(income.id) ?: return@locked
         dao.updateEntry(
             now.copy(type = EntryType.TRANSFER.name, toAccountId = now.accountId, accountId = null, settleFor = target.id, sentOut = false),
         )
     }
 
     /** 현금 등으로 받음 (기록된 입금이 없을 때): 받은 통장을 고르면 그 잔액에 더한다 */
-    suspend fun settleDirect(target: EntryEntity, amount: Long, accountId: Long?, date: LocalDate): Long = writeLock.withLock {
-        if (amount <= 0) return@withLock 0L
+    suspend fun settleDirect(target: EntryEntity, amount: Long, accountId: Long?, date: LocalDate): Long = locked {
+        if (amount <= 0) return@locked 0L
         dao.insertEntry(
             EntryEntity(
                 epochDay = date.toEpochDay(),
@@ -2451,28 +2464,28 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 남은 받을 돈은 안 받기로 — 그만큼 내 몫(내 지출)이 된다 */
-    suspend fun forgiveSplit(target: EntryEntity) = writeLock.withLock {
-        val e = dao.entryNow(target.id) ?: return@withLock
+    suspend fun forgiveSplit(target: EntryEntity) = locked {
+        val e = dao.entryNow(target.id) ?: return@locked
         val received = dao.allEntriesNow().filter { it.settleFor == e.id }.sumOf { it.amount }
         dao.updateEntry(e.copy(share = (e.amount - received).coerceIn(0, e.amount)))
     }
 
     /** 정산으로 묶은 것을 되돌린다: 입금이면 다시 수입으로, 직접 적은 것이면 지운다 */
-    suspend fun unsettle(receipt: EntryEntity) = writeLock.withLock {
-        val e = dao.entryNow(receipt.id) ?: return@withLock
+    suspend fun unsettle(receipt: EntryEntity) = locked {
+        val e = dao.entryNow(receipt.id) ?: return@locked
         if (e.source == EntrySource.MANUAL.name && e.label == "정산 받음") dao.deleteEntry(e) else dao.updateEntry(asIncome(e))
     }
 
     /** 보낼 돈을 보냄 — 고른 통장에서 나간다 */
-    suspend fun markPaid(owe: EntryEntity, accountId: Long?) = writeLock.withLock {
-        val e = dao.entryNow(owe.id) ?: return@withLock
+    suspend fun markPaid(owe: EntryEntity, accountId: Long?) = locked {
+        val e = dao.entryNow(owe.id) ?: return@locked
         dao.updateEntry(e.copy(owe = false, accountId = accountId))
     }
 
     /** 보낼 돈 [owe]를 송금 [out]으로 보냈다: 송금 기록이 그 지출(내 몫)이 된다 — 날짜·내용·분류는 보낼 돈 것으로 */
-    suspend fun payWith(owe: EntryEntity, out: EntryEntity) = writeLock.withLock {
-        val o = dao.entryNow(owe.id) ?: return@withLock
-        val t = dao.entryNow(out.id) ?: return@withLock
+    suspend fun payWith(owe: EntryEntity, out: EntryEntity) = locked {
+        val o = dao.entryNow(owe.id) ?: return@locked
+        val t = dao.entryNow(out.id) ?: return@locked
         transaction {
             dao.updateEntry(
                 t.copy(
@@ -2497,14 +2510,14 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     }
 
     /** 목표에 넣기. [source]: 아낀 돈에서 / 따로 생긴 돈 */
-    suspend fun putIntoGoal(goalId: Long, amount: Long, source: GoalSource, today: LocalDate) = writeLock.withLock {
-        if (amount <= 0) return@withLock
+    suspend fun putIntoGoal(goalId: Long, amount: Long, source: GoalSource, today: LocalDate) = locked {
+        if (amount <= 0) return@locked
         dao.insertGoalMove(GoalMoveEntity(goalId = goalId, epochDay = today.toEpochDay(), amount = amount, source = source.name))
     }
 
     /** 목표에서 빼기: 아낀 돈에서 넣었던 만큼은 아낀 돈으로 돌아가고, 나머지는 따로 생긴 돈에서 뺀다 */
-    suspend fun takeFromGoal(goalId: Long, amount: Long, today: LocalDate) = writeLock.withLock {
-        if (amount <= 0) return@withLock
+    suspend fun takeFromGoal(goalId: Long, amount: Long, today: LocalDate) = locked {
+        if (amount <= 0) return@locked
         val mine = dao.goalMovesNow().filter { it.goalId == goalId }
         val total = mine.sumOf { it.amount }.coerceAtLeast(0)
         val out = minOf(amount, total)
@@ -2571,7 +2584,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 월급날 자산 점검: 모으는 통장마다 넣은 돈은 [fromAccountId]에서 옮긴 이체로 적고, 지금 금액을 남긴다.
      * 지금 금액과 (지난 금액 + 넣은 돈)의 차이가 그동안 불어나거나 줄어든 돈이다.
      */
-    suspend fun checkAssets(inputs: List<AssetCheckInput>, fromAccountId: Long?, today: LocalDate = LocalDate.now()) = writeLock.withLock {
+    suspend fun checkAssets(inputs: List<AssetCheckInput>, fromAccountId: Long?, today: LocalDate = LocalDate.now()) = locked {
         val accounts = dao.accountsNow().associateBy { it.id }
         transaction {
             inputs.forEach { i ->
@@ -2596,7 +2609,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
     }
 
-    suspend fun deleteAccount(a: AccountEntity) = writeLock.withLock {
+    suspend fun deleteAccount(a: AccountEntity) = locked {
         dao.deleteAssetChecksOf(a.id)
         dao.detachAccountFrom(a.id)
         dao.detachAccountTo(a.id)
@@ -2649,7 +2662,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 백업으로 지금 기록을 모두 바꾼다. 파일이 잘못됐으면 아무것도 바꾸지 않고 예외 */
     suspend fun restoreBackup(json: String) {
         val d = Backup.decode(json)
-        writeLock.withLock {
+        locked {
             transaction {
                 dao.wipeSettings(); dao.wipeFixed(); dao.wipeCycles(); dao.wipeEntries(); dao.wipeReviews(); dao.wipeIncome()
                 dao.wipeRules(); dao.wipeSeen(); dao.wipeSettled(); dao.wipeCategoryRules(); dao.wipeMocks(); dao.wipeHouses()

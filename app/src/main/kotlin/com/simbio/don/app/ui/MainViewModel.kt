@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
@@ -87,25 +88,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (s == null) flowOf(AppState.NeedsOnboarding)
             else repo.home(clock).map { h -> if (h == null) AppState.NeedsOnboarding else AppState.Ready(h) }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppState.Loading)
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppState.Loading)
 
-    val settings = repo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val fixedExpenses = repo.fixedExpenses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val reviewItems = repo.reviewItems.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val appRules = repo.appRules.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val seenApps = repo.seenApps.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val settings = repo.settings.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val fixedExpenses = repo.fixedExpenses.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val reviewItems = repo.reviewItems.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val appRules = repo.appRules.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val seenApps = repo.seenApps.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // 내역·통계: 고른 달 (null = 이번 달)
-    val cycles = repo.cycles.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val cycles = repo.cycles.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 달마다 요약 (월별 추이·모은 돈) */
-    val summaries = repo.summaries(clock).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val summaries = repo.summaries(clock).flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val categoryBudgets = repo.categoryBudgets.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    val categoryBudgets = repo.categoryBudgets.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     fun saveCategoryBudgets(b: Map<com.simbio.don.budget.Category, Long>) = viewModelScope.launch { repo.saveCategoryBudgets(b) }
 
-    val goals = repo.goals.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val goals = repo.goals.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun addGoal(name: String, target: Long, icon: String) = viewModelScope.launch { repo.addGoal(name, target, icon, clock.value.toLocalDate()) }
 
@@ -122,7 +123,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun useGoal(goalId: Long) = viewModelScope.launch { repo.useGoal(goalId, clock.value.toLocalDate()) }
 
-    val goalMoves = repo.goalMoves.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val goalMoves = repo.goalMoves.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val selectedNominal = MutableStateFlow<String?>(null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -131,7 +132,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val nominal = sel?.takeIf { n -> cs.any { it.nominal == n } } ?: cs.firstOrNull()?.nominal
             if (nominal == null) flowOf(null) else repo.month(nominal, t.toLocalDate())
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** [delta] = -1 지난달, +1 다음 달 */
     fun moveMonth(delta: Int) {
@@ -150,7 +151,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         selectedNominal.value = nominal
     }
 
-    val learned = repo.learnedCount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val learned = repo.learnedCount.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     suspend fun learnedMap() = repo.learned()
     fun resetLearned() = viewModelScope.launch { repo.resetLearned() }
 
@@ -195,7 +196,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    suspend fun lastMonthReport() = repo.lastMonthReport()
+    suspend fun lastMonthReport() = withContext(Dispatchers.Default) { repo.lastMonthReport() }
 
     fun setDailyCategories(names: Set<String>) = viewModelScope.launch { repo.setDailyCategories(names) }
 
@@ -204,7 +205,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val dismissedHints = MutableStateFlow(
         splitPrefs.getStringSet("dismissed", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet(),
     )
-    val splits = repo.splitBook(dismissedHints).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.simbio.don.app.data.SplitBook.Empty)
+    val splits = repo.splitBook(dismissedHints).flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.simbio.don.app.data.SplitBook.Empty)
 
     /** "아니에요": 이 입금·송금은 다시 안 묻는다 (최근 300개만 기억) */
     fun dismissSplitHint(key: Long) {
@@ -221,7 +222,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun payWith(owe: EntryEntity, out: EntryEntity) = viewModelScope.launch { repo.payWith(owe, out) }
 
     // ── 자산 ──
-    val accountBalances = repo.accountBalances.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val accountBalances = repo.accountBalances.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun saveAccount(a: com.simbio.don.app.data.AccountEntity, balance: Long? = null) = viewModelScope.launch { repo.saveAccount(a, balance) }
 
@@ -230,14 +231,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun checkAssets(inputs: List<com.simbio.don.app.data.DonRepository.AssetCheckInput>, from: Long?) =
         viewModelScope.launch { repo.checkAssets(inputs, from, LocalDate.now()) }
 
-    fun entriesOfAccount(id: Long) = repo.entriesOfAccount(id)
+    fun entriesOfAccount(id: Long) = repo.entriesOfAccount(id).flowOn(Dispatchers.Default)
 
     // ── 전체 검색 ──
     val searchQuery = MutableStateFlow("")
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val searchResults: StateFlow<List<EntryEntity>> = searchQuery.flatMapLatest { repo.search(it) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── 백업 ──
     fun exportBackup(uri: Uri, done: (Boolean) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
@@ -280,9 +281,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveLook(look: com.simbio.don.game.CharacterLook) = viewModelScope.launch { repo.saveLook(look) }
 
     // ── 카테고리·소분류·할부·반복 수입 ──
-    val customCategories = repo.customCategories.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    val subcategories = repo.subcategories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
-    val recurringIncomes = repo.recurringIncomes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val customCategories = repo.customCategories.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val subcategories = repo.subcategories.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    val recurringIncomes = repo.recurringIncomes.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun addCategory(label: String, income: Boolean, icon: String, color: Long) = viewModelScope.launch { repo.addCategory(label, income, icon, color) }
     fun updateCategory(name: String, label: String, icon: String, color: Long) = viewModelScope.launch { repo.updateCategory(name, label, icon, color) }
@@ -311,7 +312,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val year = MutableStateFlow(LocalDate.now().year)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val yearView = year.flatMapLatest { repo.year(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val yearView = year.flatMapLatest { repo.year(it) }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun pickYear(y: Int) { year.value = y }
 
@@ -343,7 +344,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _deleted.value = null
     }
 
-    suspend fun quickPicks() = repo.quickPicks(clock.value.toLocalDate())
+    suspend fun quickPicks() = clock.value.toLocalDate().let { d -> withContext(Dispatchers.Default) { repo.quickPicks(d) } }
 
     fun resolve(item: ReviewItemEntity, r: ReviewResolution) = viewModelScope.launch { repo.resolveReview(item, r) }
 
@@ -367,10 +368,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveOwnerName(name: String) = viewModelScope.launch { repo.saveOwnerName(name) }
 
     // ── 돈 나갈 계획 ──
-    val plans = repo.plans.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val plans = repo.plans.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 계획과 맞을 것 같은 결제 (물어볼 것) */
-    val planHints = repo.planHints(LocalDate.now()).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val planHints = repo.planHints(LocalDate.now()).flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun confirmPlanHint(planId: Long, entryId: Long, people: Int?) = viewModelScope.launch { repo.confirmPlanHint(planId, entryId, people) }
 
@@ -378,19 +379,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun rejectPlanMatch(planId: Long, entryId: Long) = viewModelScope.launch { repo.rejectPlanMatch(planId, entryId) }
 
     /** 어느 자산인지 없이 적힌 수입·지출 (자산 잔액에 안 들어감) */
-    val unassigned = repo.unassignedEntries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val unassigned = repo.unassignedEntries.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun assignUnassigned(done: (Int) -> Unit = {}) = viewModelScope.launch {
         val id = repo.mainAccount() ?: return@launch done(0)
         done(repo.assignUnassigned(id))
     }
 
-    val balanceFixEntries = repo.balanceFixEntries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val balanceFixEntries = repo.balanceFixEntries.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun keepBalanceDropFix(entryId: Long) = viewModelScope.launch { repo.keepBalanceDropFix(entryId) }
 
     // ── 실제 잔액 맞추기 ──
-    val balanceGaps = repo.balanceGaps.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val balanceGaps = repo.balanceGaps.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun fixBalance(accountId: Long, diff: Long, how: com.simbio.don.app.data.DonRepository.BalanceFix) =
         viewModelScope.launch { repo.fixBalance(accountId, diff, how) }
@@ -398,7 +399,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissBalanceGap(accountId: Long) = viewModelScope.launch { repo.dismissBalanceGap(accountId) }
 
     // ── 환율 ──
-    val fxRates = repo.fxRates.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val fxRates = repo.fxRates.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun saveFxRate(currency: String, rate: Double) =
         viewModelScope.launch { repo.saveFxRate(currency, rate, com.simbio.don.app.data.DonRepository.FX_MANUAL) }
@@ -442,14 +443,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val calendarEvents: StateFlow<Map<LocalDate, List<CalEvent>>> =
         combine(phoneEvents, repo.appEvents, calendarRange) { phone, local, range ->
             PhoneCalendar.byDay(phone + com.simbio.don.app.calendar.LocalCalendar.toEvents(local, range.first, range.second))
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /** 캘린더 탭 달력(앞뒤 주 포함)의 가계부 기록 */
     @OptIn(ExperimentalCoroutinesApi::class)
     val calendarEntries: StateFlow<List<EntryEntity>> = calendarMonth.flatMapLatest { ym ->
         val (from, to) = gridRange(ym)
         repo.entriesIn(from, to)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 달력 칸 (일요일부터 6주) */
     fun gridRange(ym: java.time.YearMonth): Pair<LocalDate, LocalDate> {

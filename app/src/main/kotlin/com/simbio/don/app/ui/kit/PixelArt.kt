@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -116,6 +118,8 @@ data class IdleFrame(val blink: Boolean, val bob: Int)
 @Composable
 fun rememberIdleFrame(): IdleFrame {
     val t = rememberInfiniteTransition(label = "idle")
-    val phase by t.animateFloat(0f, 1f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "phase")
-    return IdleFrame(blink = phase > 0.94f, bob = if ((phase * 4).toInt() % 2 == 0) 0 else 1)
+    val phase = t.animateFloat(0f, 1f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "phase")
+    // 바뀔 때만 다시 그린다 (매 프레임 화면을 다시 만들지 않게)
+    val frame by remember { derivedStateOf { phase.value.let { p -> IdleFrame(blink = p > 0.94f, bob = if ((p * 4).toInt() % 2 == 0) 0 else 1) } } }
+    return frame
 }
