@@ -14,6 +14,9 @@ enum class RuleAction {
     /** 광고·혜택 등 — 버림. 가장 먼저 검사한다 */
     IGNORE,
 
+    /** 환전 (원화 ↔ 외화) — 지출이 아니라 이체, 환율을 배운다 */
+    EXCHANGE,
+
     /** 취소·환불 */
     REFUND,
 
@@ -37,8 +40,11 @@ data class AppRule(
     val merchantSpot: MerchantSpot? = null,
 ) {
     companion object {
+        val EXCHANGE_KEYWORDS = listOf("환전", "외화로 바꿨", "달러로 바꿨", "외화 구매", "외화 판매")
+
         val DEFAULT_KEYWORD_RULES = listOf(
             KeywordRule(listOf("광고", "혜택", "이벤트", "쿠폰", "인증번호"), RuleAction.IGNORE),
+            KeywordRule(EXCHANGE_KEYWORDS, RuleAction.EXCHANGE),
             KeywordRule(listOf("취소", "환불"), RuleAction.REFUND),
             KeywordRule(listOf("입금"), RuleAction.INCOME),
             KeywordRule(listOf("결제", "승인", "사용", "출금", "이체", "송금"), RuleAction.SPEND),

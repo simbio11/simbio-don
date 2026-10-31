@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 창밖 날씨만 받아온다 (Open-Meteo, 고른 도시 좌표만 보냄). 가계부 기록·알림 내용은 보내지 않는다 -->
+    <!-- 창밖 날씨(Open-Meteo, 고른 도시 좌표만)·켤 때만 쇼핑 검색어·AI·해외 결제 공개 환율(통화 이름만). 가계부 기록·알림 내용은 보내지 않는다 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- 매일 밤 지출 알림 (설정에서 켤 때만 묻는다) -->
@@ -130,6 +130,9 @@
 
         <receiver
             android:name=".notify.DailyReminder$Receiver"
+            android:exported="false" />
+        <receiver
+            android:name=".notify.EventReminders$Receiver"
             android:exported="false" />
         <receiver
             android:name=".notify.DailyReminder$BootReceiver"

@@ -25,6 +25,9 @@ sealed interface Decision {
 
     /** 입금 — 지출로 쓰지 않고 월급 제안 후보로만 둔다 */
     data class Income(val payment: ParsedPayment) : Decision
+
+    /** 환전 — 지출이 아니라 원화 ↔ 외화 이체, 환율을 배운다 */
+    data class Exchange(val payment: ParsedPayment) : Decision
 }
 
 /** 확실한 건 자동 반영, 의심스러운 건 확인함으로. */
@@ -54,6 +57,7 @@ object ReviewPolicy {
         }
         return when (payment.action) {
             RuleAction.INCOME -> Decision.Income(payment)
+            RuleAction.EXCHANGE -> Decision.Exchange(payment)
             RuleAction.REFUND -> {
                 val dup = recent.firstOrNull { isDuplicate(payment, it) }
                 Decision.NeedsReview(payment, if (dup != null) ReviewReason.POSSIBLE_DUPLICATE else ReviewReason.REFUND, dup)

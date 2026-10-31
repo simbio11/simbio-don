@@ -222,6 +222,13 @@ fun EntryEditScreen(
                 when (existing?.source) {
                     EntrySource.NOTIFICATION.name -> {
                         Text("결제 알림에서 자동으로 기록됐어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                        existing.fxText?.let { fx ->
+                            Text(
+                                "$fx · " + if (existing.fxGuess) "환율을 몰라 어림으로 바꿨어요. 오늘 환율을 받으면 다시 계산해요 (설정 › 해외 결제·환율)." else "원화로 바꿔 적었어요.",
+                                fontSize = 12.sp,
+                                color = if (existing.fxGuess) DonColors.Warn else DonColors.InkMuted,
+                            )
+                        }
                         // 받은 알림 글: 가게 이름이 어디 있었는지 보고 고칠 수 있게 (이 폰에만 있는 글)
                         existing.rawText?.let { raw ->
                             var open by remember { mutableStateOf(existing.nameUnknown) }

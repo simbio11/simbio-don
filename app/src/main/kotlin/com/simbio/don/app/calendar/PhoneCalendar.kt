@@ -8,34 +8,78 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.annotation.VisibleForTesting
+import com.simbio.don.cal.Repeat
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 
 /** 폰에 있는 캘린더 하나 (구글 계정·삼성 캘린더 등) */
 data class DeviceCalendar(val id: Long, val name: String, val account: String, val color: Int, val writable: Boolean)
 
-/** 캘린더 일정 하나 (반복 일정은 날마다 따로) */
+/**
+ * 캘린더 일정 하나가 보이는 날. 반복 일정은 회차마다, 여러 날 일정은 날마다 하나씩 ([date]가 보이는 날, [startDate]가 시작한 날).
+ */
 data class CalEvent(
     val eventId: Long,
     val calendarId: Long,
     val title: String,
     val date: LocalDate,
-    /** 0시부터 분 (하루 종일이면 null) */
+    /** 시작 시각 0시부터 분 (하루 종일이면 null) */
     val minuteOfDay: Int?,
     val color: Int,
     val location: String? = null,
-)
+    val startDate: LocalDate = date,
+    val endDate: LocalDate = startDate,
+    /** 끝 시각 (하루 종일이면 null) */
+    val endMinute: Int? = null,
+    val memo: String? = null,
+    val repeat: Repeat = Repeat.NONE,
+    /** 몇 분 전 알림 */
+    val reminder: Int? = null,
+    /** 이 앱 안 캘린더 일정 (폰 캘린더가 아님) */
+    val local: Boolean = false,
+) {
+    val allDay: Boolean get() = minuteOfDay == null
+    val multiDay: Boolean get() = endDate.isAfter(startDate)
+
+    /** 이 날 칸에 제목을 쓰는지 (여러 날 일정은 시작 날과 주의 첫날만) */
+    val labelHere: Boolean get() = date == startDate || date.dayOfWeek == java.time.DayOfWeek.SUNDAY
+}
+
+/** 일정 만들기·고치기 입력 */
+data class EventDraft(
+    val title: String,
+    val startDate: LocalDate,
+    val startMinute: Int?,
+    val endDate: LocalDate = startDate,
+    val endMinute: Int? = startMinute?.let { minOf(it + 60, 24 * 60 - 1) },
+    val location: String = "",
+    val memo: String = "",
+    val repeat: Repeat = Repeat.NONE,
+    val reminder: Int? = null,
+) {
+    val allDay: Boolean get() = startMinute == null
+
+    /** 시작부터 끝까지 (분, 하루 종일이면 날 수 × 하루) */
+    fun durationMinutes(): Long = if (allDay) (ChronoUnit.DAYS.between(startDate, endDate) + 1) * 24 * 60
+    else ChronoUnit.MINUTES.between(startDate.atStartOfDay().plusMinutes(startMinute!!.toLong()), endDate.atStartOfDay().plusMinutes((endMinute ?: startMinute).toLong())).coerceAtLeast(0)
+
+    companion object {
+        fun of(e: CalEvent) = EventDraft(e.title, e.startDate, e.minuteOfDay, e.endDate, e.endMinute, e.location.orEmpty(), e.memo.orEmpty(), e.repeat, e.reminder)
+    }
+}
 
 /** 폰 캘린더 읽고 쓰기 (테스트는 가짜로 바꾼다) */
 interface CalendarSource {
     fun calendars(): List<DeviceCalendar>
     fun events(from: LocalDate, to: LocalDate, calendarIds: Set<Long>?): List<CalEvent>
 
-    /** 일정 만들기 → 일정 id (못 만들면 null). [minuteOfDay]가 없으면 하루 종일 */
-    fun insert(calendarId: Long, title: String, date: LocalDate, minuteOfDay: Int?, description: String): Long?
+    /** 일정 만들기 → 일정 id (못 만들면 null) */
+    fun insert(calendarId: Long, draft: EventDraft): Long?
+    fun update(eventId: Long, draft: EventDraft): Boolean
     fun delete(eventId: Long): Boolean
 }
 
@@ -83,18 +127,37 @@ object PhoneCalendar {
     fun events(c: Context, from: LocalDate, to: LocalDate): Map<LocalDate, List<CalEvent>> {
         if (!isOn(c)) return emptyMap()
         val list = runCatching { source(c)?.events(from, to, shownIds(c)).orEmpty() }.getOrDefault(emptyList())
-        return list.sortedWith(compareBy({ it.date }, { it.minuteOfDay ?: -1 }, { it.title })).groupBy { it.date }
+        return byDay(list)
     }
 
-    fun insert(c: Context, title: String, date: LocalDate, minuteOfDay: Int?, budget: Long?): Long? {
+    /** 날짜별로 (하루 종일·여러 날이 먼저, 그다음 시각순) */
+    fun byDay(list: List<CalEvent>): Map<LocalDate, List<CalEvent>> =
+        list.sortedWith(compareBy({ it.date }, { if (it.multiDay) 0 else 1 }, { it.minuteOfDay ?: -1 }, { it.title })).groupBy { it.date }
+
+    fun insert(c: Context, title: String, date: LocalDate, minuteOfDay: Int?, budget: Long?): Long? =
+        insert(c, EventDraft(title, date, minuteOfDay, memo = budgetMemo(budget)))
+
+    fun insert(c: Context, draft: EventDraft, calendarId: Long? = null): Long? {
         if (!isOn(c)) return null
-        val cal = writeCalendarId(c) ?: return null
-        val description = budget?.let { "돈't 예산 %,d원".format(it) }.orEmpty()
-        return runCatching { source(c)?.insert(cal, title, date, minuteOfDay, description) }.getOrNull()
+        val cal = calendarId ?: writeCalendarId(c) ?: return null
+        return runCatching { source(c)?.insert(cal, draft) }.getOrNull()
     }
+
+    fun update(c: Context, eventId: Long, draft: EventDraft): Boolean =
+        isOn(c) && runCatching { source(c)?.update(eventId, draft) == true }.getOrDefault(false)
 
     fun delete(c: Context, eventId: Long): Boolean =
         isOn(c) && runCatching { source(c)?.delete(eventId) == true }.getOrDefault(false)
+
+    fun budgetMemo(budget: Long?): String = budget?.let { "돈't 예산 %,d원".format(it) }.orEmpty()
+}
+
+/** 일정 하나를 [from]~[to] 안의 날마다 펼친다 */
+fun spread(e: CalEvent, from: LocalDate, to: LocalDate): List<CalEvent> {
+    val first = maxOf(e.startDate, from)
+    val last = minOf(e.endDate, to)
+    if (last.isBefore(first)) return emptyList()
+    return generateSequence(first) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }.map { e.copy(date = it) }.toList()
 }
 
 /** 실제 폰 캘린더 (ContentResolver) */
@@ -148,6 +211,9 @@ class DeviceCalendarSource(private val resolver: ContentResolver) : CalendarSour
                 CalendarContract.Instances.ALL_DAY,
                 CalendarContract.Instances.DISPLAY_COLOR,
                 CalendarContract.Instances.EVENT_LOCATION,
+                CalendarContract.Instances.END,
+                CalendarContract.Instances.DESCRIPTION,
+                CalendarContract.Instances.RRULE,
             ),
             null, null, "${CalendarContract.Instances.BEGIN} ASC",
         )?.use { cur ->
@@ -156,10 +222,16 @@ class DeviceCalendarSource(private val resolver: ContentResolver) : CalendarSour
                 if (calendarIds != null && calId !in calendarIds) continue
                 val allDay = cur.getInt(4) == 1
                 val startMs = cur.getLong(3)
-                // 하루 종일 일정은 UTC 자정으로 저장된다
-                val start = if (allDay) LocalDateTime.ofInstant(Instant.ofEpochMilli(startMs), ZoneOffset.UTC) else LocalDateTime.ofInstant(Instant.ofEpochMilli(startMs), zone)
-                if (start.toLocalDate() !in from..to) continue
-                out += CalEvent(
+                val endMs = if (cur.isNull(7)) startMs else cur.getLong(7)
+                // 하루 종일 일정은 UTC 자정으로 저장되고 끝은 다음 날 0시 (그날은 빼고)
+                val start = time(startMs, allDay)
+                val endRaw = time(endMs, allDay)
+                val endDay = when {
+                    allDay -> endRaw.toLocalDate().minusDays(1)
+                    endRaw.toLocalTime() == java.time.LocalTime.MIDNIGHT && endRaw.isAfter(start) -> endRaw.toLocalDate().minusDays(1)
+                    else -> endRaw.toLocalDate()
+                }.let { if (it.isBefore(start.toLocalDate())) start.toLocalDate() else it }
+                val e = CalEvent(
                     eventId = cur.getLong(0),
                     calendarId = calId,
                     title = cur.getString(2).orEmpty().ifBlank { "(제목 없음)" },
@@ -167,31 +239,73 @@ class DeviceCalendarSource(private val resolver: ContentResolver) : CalendarSour
                     minuteOfDay = if (allDay) null else start.hour * 60 + start.minute,
                     color = cur.getInt(5),
                     location = cur.getString(6),
+                    startDate = start.toLocalDate(),
+                    endDate = endDay,
+                    endMinute = if (allDay) null else endRaw.hour * 60 + endRaw.minute,
+                    memo = cur.getString(8),
+                    repeat = Repeat.fromRrule(cur.getString(9)),
                 )
+                out += spread(e, from, to)
             }
         }
         return out
     }
 
-    override fun insert(calendarId: Long, title: String, date: LocalDate, minuteOfDay: Int?, description: String): Long? {
-        val v = ContentValues().apply {
-            put(CalendarContract.Events.CALENDAR_ID, calendarId)
-            put(CalendarContract.Events.TITLE, title)
-            put(CalendarContract.Events.DESCRIPTION, description)
-            if (minuteOfDay == null) {
-                val utc = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-                put(CalendarContract.Events.DTSTART, utc)
-                put(CalendarContract.Events.DTEND, utc + 24 * 60 * 60 * 1000L)
-                put(CalendarContract.Events.ALL_DAY, 1)
-                put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
-            } else {
-                val start = date.atStartOfDay(zone).plusMinutes(minuteOfDay.toLong()).toInstant().toEpochMilli()
-                put(CalendarContract.Events.DTSTART, start)
-                put(CalendarContract.Events.DTEND, start + 60 * 60 * 1000L)
-                put(CalendarContract.Events.EVENT_TIMEZONE, zone.id)
-            }
+    private fun time(ms: Long, allDay: Boolean): LocalDateTime =
+        LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), if (allDay) ZoneOffset.UTC else zone)
+
+    private fun values(d: EventDraft, calendarId: Long?): ContentValues = ContentValues().apply {
+        calendarId?.let { put(CalendarContract.Events.CALENDAR_ID, it) }
+        put(CalendarContract.Events.TITLE, d.title)
+        put(CalendarContract.Events.DESCRIPTION, d.memo)
+        put(CalendarContract.Events.EVENT_LOCATION, d.location)
+        val startMs: Long
+        if (d.allDay) {
+            startMs = d.startDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            put(CalendarContract.Events.ALL_DAY, 1)
+            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+        } else {
+            startMs = d.startDate.atStartOfDay(zone).plusMinutes(d.startMinute!!.toLong()).toInstant().toEpochMilli()
+            put(CalendarContract.Events.ALL_DAY, 0)
+            put(CalendarContract.Events.EVENT_TIMEZONE, zone.id)
         }
-        return resolver.insert(CalendarContract.Events.CONTENT_URI, v)?.let { ContentUris.parseId(it) }
+        put(CalendarContract.Events.DTSTART, startMs)
+        val minutes = d.durationMinutes().coerceAtLeast(if (d.allDay) 24 * 60L else 0)
+        // 반복 일정은 끝 시각 대신 길이(DURATION)를 쓴다 (CalendarContract 규칙)
+        if (d.repeat.rrule != null) {
+            put(CalendarContract.Events.RRULE, d.repeat.rrule)
+            put(CalendarContract.Events.DURATION, if (d.allDay) "P${minutes / (24 * 60)}D" else "PT${minutes * 60}S")
+            putNull(CalendarContract.Events.DTEND)
+        } else {
+            putNull(CalendarContract.Events.RRULE)
+            putNull(CalendarContract.Events.DURATION)
+            put(CalendarContract.Events.DTEND, startMs + minutes * 60_000L)
+        }
+    }
+
+    private fun setReminder(eventId: Long, minutes: Int?) {
+        resolver.delete(CalendarContract.Reminders.CONTENT_URI, "${CalendarContract.Reminders.EVENT_ID} = ?", arrayOf(eventId.toString()))
+        if (minutes == null) return
+        resolver.insert(
+            CalendarContract.Reminders.CONTENT_URI,
+            ContentValues().apply {
+                put(CalendarContract.Reminders.EVENT_ID, eventId)
+                put(CalendarContract.Reminders.MINUTES, minutes)
+                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+            },
+        )
+    }
+
+    override fun insert(calendarId: Long, draft: EventDraft): Long? {
+        val id = resolver.insert(CalendarContract.Events.CONTENT_URI, values(draft, calendarId))?.let { ContentUris.parseId(it) } ?: return null
+        runCatching { setReminder(id, draft.reminder) }
+        return id
+    }
+
+    override fun update(eventId: Long, draft: EventDraft): Boolean {
+        val n = resolver.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId), values(draft, null), null, null)
+        runCatching { setReminder(eventId, draft.reminder) }
+        return n > 0
     }
 
     override fun delete(eventId: Long): Boolean =
@@ -208,12 +322,23 @@ class FakeCalendarSource(
     override fun calendars() = cals
 
     override fun events(from: LocalDate, to: LocalDate, calendarIds: Set<Long>?) =
-        list.filter { it.date in from..to && (calendarIds == null || it.calendarId in calendarIds) }
+        list.filter { calendarIds == null || it.calendarId in calendarIds }.flatMap { spread(it, from, to) }
 
-    override fun insert(calendarId: Long, title: String, date: LocalDate, minuteOfDay: Int?, description: String): Long {
+    private fun event(id: Long, calendarId: Long, d: EventDraft) = CalEvent(
+        id, calendarId, d.title, d.startDate, d.startMinute, cals.firstOrNull { it.id == calendarId }?.color ?: 0,
+        d.location.ifBlank { null }, d.startDate, d.endDate, d.endMinute.takeIf { !d.allDay }, d.memo.ifBlank { null }, d.repeat, d.reminder,
+    )
+
+    override fun insert(calendarId: Long, draft: EventDraft): Long {
         val id = next++
-        list += CalEvent(id, calendarId, title, date, minuteOfDay, cals.firstOrNull { it.id == calendarId }?.color ?: 0)
+        list += event(id, calendarId, draft)
         return id
+    }
+
+    override fun update(eventId: Long, draft: EventDraft): Boolean {
+        val i = list.indexOfFirst { it.eventId == eventId }.takeIf { it >= 0 } ?: return false
+        list[i] = event(eventId, list[i].calendarId, draft)
+        return true
     }
 
     override fun delete(eventId: Long) = list.removeAll { it.eventId == eventId }

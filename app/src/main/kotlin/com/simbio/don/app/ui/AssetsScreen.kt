@@ -84,6 +84,8 @@ fun AssetsScreen(
     checkDue: Boolean = false,
     onCheck: () -> Unit = {},
     onAddPot: () -> Unit = {},
+    /** 실제 잔액 맞추기 (결제 알림을 놓쳐 안 맞을 때) */
+    onBalanceFix: () -> Unit = {},
 ) {
     val shown = balances.filter { !it.account.hidden }
     Column(
@@ -92,6 +94,9 @@ fun AssetsScreen(
     ) {
         ScreenTitle("자산", trailing = { SmallButton(onClick = onAdd) { Text("+ 자산 추가") } })
         NetWorthCard(balances, shown.size >= 2, onTransfer)
+        if (shown.any(::fixable)) {
+            SubButton(onClick = onBalanceFix, modifier = Modifier.fillMaxWidth(), containerColor = DonColors.Surface) { Text("실제 잔액과 다르면 · 잔액 맞추기") }
+        }
         WealthCard(wealth, checkDue, onCheck, onAddPot)
         if (shown.isEmpty()) {
             SectionCard("자산이 없어요") {
@@ -172,7 +177,7 @@ fun AccountDetailScreen(
                         Text(balance.type.label, fontSize = 13.sp, color = DonColors.InkMuted)
                     }
                     Text(balanceText(balance), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = if (balance.balance < 0) DonColors.Expense else DonColors.Ink)
-                    Text("처음 잔액 ${won(balance.account.opening)}에서 시작해 아래 기록으로 계산했어요. 실제와 다르면 \"수정\"에서 지금 잔액을 맞춰요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    Text("처음 잔액 ${won(balance.account.opening)}에서 시작해 아래 기록으로 계산했어요. 실제와 다르면 자산 탭의 \"잔액 맞추기\"에서 차이를 빠진 지출·입금으로 남기거나 잔액만 맞춰요.", fontSize = 12.sp, color = DonColors.InkMuted)
                     SubButton(onClick = onTransfer, modifier = Modifier.fillMaxWidth()) {
                         Text(if (balance.type == AccountType.CARD) "카드값 내기 (이체)" else "이체 적기")
                     }

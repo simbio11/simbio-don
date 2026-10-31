@@ -44,10 +44,11 @@ class FakeCalendarProvider : ContentProvider() {
         val instances = mutableListOf<Array<Any?>>()
         val inserted = mutableListOf<ContentValues>()
         val deleted = mutableListOf<Uri>()
+        val reminders = mutableListOf<ContentValues>()
         var instancesUri: Uri? = null
 
         fun reset() {
-            calendars.clear(); instances.clear(); inserted.clear(); deleted.clear(); instancesUri = null
+            calendars.clear(); instances.clear(); inserted.clear(); deleted.clear(); reminders.clear(); instancesUri = null
         }
     }
 
@@ -66,11 +67,16 @@ class FakeCalendarProvider : ContentProvider() {
     }
 
     override fun insert(uri: Uri, values: ContentValues?): Uri {
+        if (uri.toString().startsWith(CalendarContract.Reminders.CONTENT_URI.toString())) {
+            reminders += ContentValues(values)
+            return ContentUris.withAppendedId(uri, 1)
+        }
         inserted += ContentValues(values)
         return ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, 500L + inserted.size)
     }
 
     override fun delete(uri: Uri, selection: String?, args: Array<out String>?): Int {
+        if (uri.toString().startsWith(CalendarContract.Reminders.CONTENT_URI.toString())) return 0
         deleted += uri
         return 1
     }
@@ -116,15 +122,28 @@ class PhoneCalendarTest {
         val utcMidnight = day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val seven = day.atTime(19, 0).atZone(seoul).toInstant().toEpochMilli()
         val nightBefore = day.minusDays(1).atTime(23, 0).atZone(seoul).toInstant().toEpochMilli()
-        FakeCalendarProvider.instances += arrayOf<Any?>(10L, 1L, "민지 결혼식", utcMidnight, 1, 0xFF4285F4.toInt(), "강남")
-        FakeCalendarProvider.instances += arrayOf<Any?>(11L, 1L, "팀 회식", seven, 0, 0xFF4285F4.toInt(), null)
-        FakeCalendarProvider.instances += arrayOf<Any?>(12L, 2L, "개천절", utcMidnight, 1, 0xFF0B8043.toInt(), null)
-        FakeCalendarProvider.instances += arrayOf<Any?>(13L, 1L, "전날 밤", nightBefore, 0, 0, null)
+        val day1 = 24 * 60 * 60 * 1000L
+        FakeCalendarProvider.instances += arrayOf<Any?>(10L, 1L, "민지 결혼식", utcMidnight, 1, 0xFF4285F4.toInt(), "강남", utcMidnight + day1, "축의금 챙기기", null)
+        FakeCalendarProvider.instances += arrayOf<Any?>(11L, 1L, "팀 회식", seven, 0, 0xFF4285F4.toInt(), null, seven + 2 * 3_600_000L, null, "FREQ=WEEKLY;BYDAY=WE")
+        FakeCalendarProvider.instances += arrayOf<Any?>(12L, 2L, "개천절", utcMidnight, 1, 0xFF0B8043.toInt(), null, utcMidnight + day1, null, null)
+        // 전날 밤 11시 ~ 그날 밤 0시 (그날까지 걸쳐 끝나지 않음)
+        FakeCalendarProvider.instances += arrayOf<Any?>(13L, 1L, "전날 밤", nightBefore, 0, 0, null, nightBefore + 3_600_000L, null, null)
+        // 사흘 여행 (하루 종일, 끝은 다음 날 0시)
+        val tripStart = day.minusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        FakeCalendarProvider.instances += arrayOf<Any?>(14L, 1L, "제주 여행", tripStart, 1, 0, null, tripStart + 3 * day1, null, null)
         val list = DeviceCalendarSource(context.contentResolver).events(day, day, setOf(1L))
-        assertEquals(listOf("민지 결혼식", "팀 회식"), list.map { it.title })
-        assertEquals(listOf<Int?>(null, 19 * 60), list.map { it.minuteOfDay })
+        assertEquals(listOf("민지 결혼식", "팀 회식", "제주 여행"), list.map { it.title })
+        assertEquals(listOf<Int?>(null, 19 * 60, null), list.map { it.minuteOfDay })
         assertTrue(list.all { it.date == day })
         assertEquals("강남", list[0].location)
+        assertEquals("축의금 챙기기", list[0].memo)
+        assertEquals(day, list[0].endDate)
+        assertEquals(21 * 60, list[1].endMinute)
+        assertEquals(com.simbio.don.cal.Repeat.WEEKLY, list[1].repeat)
+        // 여러 날 일정: 시작·끝 날과 이 날
+        assertEquals(day.minusDays(1), list[2].startDate)
+        assertEquals(day.plusDays(1), list[2].endDate)
+        assertTrue(list[2].multiDay)
         // Instances는 그날 0시~다음 날 0시 (폰 시간대)로 묻는다
         val segs = FakeCalendarProvider.instancesUri!!.pathSegments
         assertEquals(day.atStartOfDay(seoul).toInstant().toEpochMilli(), segs[segs.size - 2].toLong())
@@ -135,7 +154,7 @@ class PhoneCalendarTest {
     fun `일정 넣기 — 하루 종일은 UTC로, 시각은 폰 시간대로 한 시간, 지우기`() {
         val src = DeviceCalendarSource(context.contentResolver)
         val day = LocalDate.of(2026, 10, 28)
-        val id = src.insert(1, "엄마 생일", day, null, "돈't 예산 50,000원")
+        val id = src.insert(1, com.simbio.don.app.calendar.EventDraft("엄마 생일", day, null, memo = "돈't 예산 50,000원"))
         assertEquals(501L, id)
         val allDay = FakeCalendarProvider.inserted[0]
         assertEquals(day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(), allDay.getAsLong(CalendarContract.Events.DTSTART))
@@ -143,12 +162,20 @@ class PhoneCalendarTest {
         assertEquals("UTC", allDay.getAsString(CalendarContract.Events.EVENT_TIMEZONE))
         assertEquals("돈't 예산 50,000원", allDay.getAsString(CalendarContract.Events.DESCRIPTION))
 
-        src.insert(1, "치과", day, 12 * 60, "")
+        src.insert(1, com.simbio.don.app.calendar.EventDraft("치과", day, 12 * 60, reminder = 30))
         val timed = FakeCalendarProvider.inserted[1]
         val noon = day.atTime(12, 0).atZone(seoul).toInstant().toEpochMilli()
         assertEquals(noon, timed.getAsLong(CalendarContract.Events.DTSTART))
         assertEquals(noon + 3_600_000, timed.getAsLong(CalendarContract.Events.DTEND))
         assertEquals("Asia/Seoul", timed.getAsString(CalendarContract.Events.EVENT_TIMEZONE))
+        assertEquals(30, FakeCalendarProvider.reminders.single().getAsInteger(CalendarContract.Reminders.MINUTES))
+
+        // 반복 일정은 끝 대신 길이 (DURATION)
+        src.insert(1, com.simbio.don.app.calendar.EventDraft("요가", day, 19 * 60, day, 20 * 60, repeat = com.simbio.don.cal.Repeat.WEEKLY))
+        val weekly = FakeCalendarProvider.inserted[2]
+        assertEquals("FREQ=WEEKLY", weekly.getAsString(CalendarContract.Events.RRULE))
+        assertEquals("PT3600S", weekly.getAsString(CalendarContract.Events.DURATION))
+        assertNull(weekly.getAsLong(CalendarContract.Events.DTEND))
 
         assertTrue(src.delete(501))
         assertEquals(501L, ContentUris.parseId(FakeCalendarProvider.deleted.single()))
@@ -178,6 +205,8 @@ class PhoneCalendarTest {
         PhoneCalendar.setWriteCalendarId(context, 1)
         val id = PhoneCalendar.insert(context, "모임", day, null, 30_000)!!
         assertEquals("모임", fake.list.single { it.eventId == id }.title)
+        assertTrue(PhoneCalendar.update(context, id, com.simbio.don.app.calendar.EventDraft("동창 모임", day, 18 * 60)))
+        assertEquals("동창 모임", fake.list.single { it.eventId == id }.title)
         assertTrue(PhoneCalendar.delete(context, id))
         assertTrue(fake.list.none { it.eventId == id })
 

@@ -65,4 +65,32 @@ class PlansTest {
         assertEquals(Category.CAFE, Plans.categoryFor("스타벅스에서 스터디"))
         assertEquals(Category.ETC, Plans.categoryFor("회의"))
     }
+
+    @Test
+    fun `계획과 실제 지출 짝 — 확실하면 잇고, 엔빵이면 몇 명인지, 애매하면 묻는다`() {
+        val dinner = Plan(1, d, 50_000, "팀 회식", Category.FOOD)
+        // 같은 날 같은 분류, 예산의 ±50% → 확실
+        assertEquals(PlanFitKind.STRONG, Plans.fit(dinner, Entry(d, 62_000, "고깃집", category = Category.FOOD))?.kind)
+        // 다음 날 새벽 결제도
+        assertEquals(PlanFitKind.STRONG, Plans.fit(dinner, Entry(d.plusDays(1), 41_000, "호프", category = Category.FOOD))?.kind)
+        // 친구에게 보낸 내 몫 (분류는 기타지만 금액이 거의 같음)
+        assertEquals(PlanFitKind.STRONG, Plans.fit(dinner, Entry(d, 50_000, "김철수", category = Category.ETC))?.kind)
+        // 내가 다 낸 20만 원 → 4명이 나눴나?
+        val split = Plans.fit(dinner, Entry(d, 200_000, "고깃집", category = Category.FOOD))!!
+        assertEquals(PlanFitKind.SPLIT, split.kind)
+        assertEquals(4, split.people)
+        // 이미 나눠 냈다고 적었으면 내 몫으로 견준다
+        assertEquals(PlanFitKind.STRONG, Plans.fit(dinner, Entry(d, 50_000, "고깃집", category = Category.FOOD), paid = 200_000, alreadySplit = true)?.kind)
+        // 점심값은 아님
+        assertNull(Plans.fit(dinner, Entry(d, 9_000, "김밥", category = Category.FOOD)))
+        // 일주일 전에 미리 산 선물은 물어본다
+        val gift = Plan(2, d, 50_000, "엄마 생일 선물", Category.EVENT)
+        assertEquals(PlanFitKind.MAYBE, Plans.fit(gift, Entry(d.minusDays(5), 46_000, "꽃집", category = Category.EVENT))?.kind)
+        assertNull(Plans.fit(gift, Entry(d.minusDays(10), 46_000, "꽃집", category = Category.EVENT)))
+        // 끝난 계획은 짝이 없다
+        assertNull(Plans.fit(dinner.copy(actual = 50_000), Entry(d, 50_000, "고깃집", category = Category.FOOD)))
+        // 여럿 중 가장 잘 맞는 것
+        val best = Plans.best(listOf(1L to dinner, 2L to gift), Entry(d, 48_000, "꽃집", category = Category.EVENT))
+        assertEquals(2L, best?.first)
+    }
 }

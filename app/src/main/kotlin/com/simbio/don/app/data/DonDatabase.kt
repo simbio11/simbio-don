@@ -35,8 +35,11 @@ import com.simbio.don.budget.CategoryGuesser
         AssetCheckEntity::class,
         PlanEntity::class,
         GoalMoveEntity::class,
+        FxRateEntity::class,
+        BalanceGapEntity::class,
+        AppEventEntity::class,
     ],
-    version = 15,
+    version = 16,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -54,7 +57,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                 }
                 ).build().also { instance = it }
         }
@@ -63,6 +66,24 @@ abstract class DonDatabase : RoomDatabase() {
         fun resetForTests() = synchronized(this) {
             instance?.close()
             instance = null
+        }
+
+        /** v16: 외화 결제·환율, 계획 자동 연결, 알림 잔액 차이, 앱 안 캘린더 일정 */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entry ADD COLUMN fxText TEXT")
+                db.execSQL("ALTER TABLE entry ADD COLUMN fxGuess INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `plan` ADD COLUMN autoLinked INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `plan` ADD COLUMN rejected TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `fx_rate` (`currency` TEXT NOT NULL, `rate` REAL NOT NULL, `epochDay` INTEGER NOT NULL, `source` TEXT NOT NULL, PRIMARY KEY(`currency`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `balance_gap` (`accountId` INTEGER NOT NULL, `real` INTEGER NOT NULL, `app` INTEGER NOT NULL, `atEpochSecond` INTEGER NOT NULL, PRIMARY KEY(`accountId`))")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `app_event` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, " +
+                        "`startEpochDay` INTEGER NOT NULL, `startMinute` INTEGER, `endEpochDay` INTEGER NOT NULL, `endMinute` INTEGER, " +
+                        "`location` TEXT NOT NULL DEFAULT '', `memo` TEXT NOT NULL DEFAULT '', `repeat` TEXT NOT NULL DEFAULT 'NONE', " +
+                        "`reminder` INTEGER, `color` INTEGER NOT NULL DEFAULT 0)",
+                )
+            }
         }
 
         /** v15: 알림 기록의 알림 글·가게 이름 모름, 앱마다 배운 가게 이름 자리 */

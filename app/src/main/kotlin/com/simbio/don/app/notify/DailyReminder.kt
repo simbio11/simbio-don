@@ -143,7 +143,10 @@ object DailyReminder {
     /** 폰을 다시 켜면 알람이 사라지므로 다시 건다 */
     class BootReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == Intent.ACTION_BOOT_COMPLETED && isOn(context)) schedule(context)
+            if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+            if (isOn(context)) schedule(context)
+            // 앱 안 캘린더 일정 알림도 다시
+            EventReminders.reschedule(context)
         }
     }
 }

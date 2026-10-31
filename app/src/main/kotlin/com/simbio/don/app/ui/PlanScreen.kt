@@ -117,6 +117,8 @@ fun PlanScreen(
     onBack: () -> Unit,
     /** 폰 캘린더를 이었고 넣을 곳이 있으면 "캘린더에도 넣기"를 보인다 */
     calendarOn: Boolean = false,
+    /** 저절로 이은 결제가 아니면 풀기 */
+    onUnlink: (PlanEntity) -> Unit = {},
 ) {
     var date by remember { mutableStateOf(today.plusDays(1)) }
     var toCalendar by remember { mutableStateOf(true) }
@@ -230,6 +232,12 @@ fun PlanScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(p.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
                                 Text("${won(p.amount)} → ${won(p.doneAmount ?: 0)}", fontSize = 12.sp, color = DonColors.InkMuted)
+                                if (p.autoLinked) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("들어온 결제와 저절로 이었어요", fontSize = 11.sp, color = DonColors.Real)
+                                        TextButton(onClick = { onUnlink(p) }) { Text("아니에요", fontSize = 11.sp) }
+                                    }
+                                }
                             }
                             Text(
                                 when {

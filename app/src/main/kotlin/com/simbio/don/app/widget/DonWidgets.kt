@@ -31,7 +31,7 @@ import java.time.LocalDateTime
 /** 고를 수 있는 위젯 (설정에서 홈 화면에 바로 놓기) */
 enum class WidgetKind(val label: String, val description: String, val cls: Class<*>) {
     WEEK("이번 주 남은 돈", "남은 돈과 오늘 쓸 수 있는 돈, + 버튼으로 바로 적기", WeekWidget::class.java),
-    GRASS("달력 + 잔디", "큰 달력(날마다 수입·지출, 바탕은 그날 잔디 색)과 오른쪽 아래 작은 잔디", GrassWidget::class.java),
+    GRASS("잔디", "깃허브 잔디처럼 날마다 한 칸 — 안 쓴 날은 진한 초록, 넘긴 날은 빨강 (설정에서 큰 달력도 같이)", GrassWidget::class.java),
     CALENDAR("이번 달 달력", "날마다 수입·지출·다가올 계획, + 버튼으로 바로 적기", CalendarWidget::class.java),
     SAVED("모은 돈", "지금까지 모은 돈과 목표까지 남은 돈", SavedWidget::class.java),
     BUDDY("내 캐릭터", "이번 주 씀씀이에 따라 표정이 바뀌어요", BuddyWidget::class.java),
@@ -167,7 +167,7 @@ class GrassWidget : DonWidget() {
         val chosen = com.simbio.don.app.UiPrefs.grassWeeks(context)
         if (com.simbio.don.app.UiPrefs.grassCalendar(context)) {
             // 큰 달력 + (넓으면) 오른쪽 위 이번 달 합계, 오른쪽 아래 작은 잔디
-            val cal = CalendarWidget.cells(home, context)
+            val cal = CalendarWidget.cells(home, CalendarWidget.eventColors(context, home))
             v.setTextViewText(R.id.widget_title, CalendarWidget.range(home))
             Widgets.pills(context, v, st, R.id.widget_title)
             if (gw >= WidgetArt.CALENDAR_MIN_WIDTH) {
@@ -180,7 +180,8 @@ class GrassWidget : DonWidget() {
             }
             return v
         }
-        val g = repo.grass(home.today, weeks(WidgetArt.grassWeeks(gw, gh), chosen), plan)
+        // 자동이면 앱을 쓰기 전 빈 주는 빼고 (적어도 8주)
+        val g = repo.grass(home.today, weeks(WidgetArt.grassWeeks(gw, gh), chosen), plan).let { if (chosen <= 0) it.trimLeadingEmpty(8) else it }
         v.setTextViewText(R.id.widget_title, context.getString(R.string.widget_grass_title))
         Widgets.pills(context, v, st, R.id.widget_title)
         v.setTextViewText(R.id.widget_sub, subtitle(g))
@@ -220,7 +221,7 @@ class CalendarWidget : DonWidget() {
             v.setTextViewText(R.id.widget_sub, "앱을 열어 처음 설정을 해 주세요")
             return v
         }
-        val cal = cells(home, context)
+        val cal = cells(home, eventColors(context, home))
         v.setTextViewText(R.id.widget_title, range(home))
         Widgets.pills(context, v, st, R.id.widget_title, R.id.widget_sub)
         v.setTextViewText(R.id.widget_sub, "생활비 ${compactWon(home.monthLiving)}원 · 무지출 ${cal.noSpend.size}일")
@@ -234,13 +235,17 @@ class CalendarWidget : DonWidget() {
         /** "10/23 ~ 11/24" */
         fun range(home: HomeState) = "${home.cycle.start.monthValue}/${home.cycle.start.dayOfMonth} ~ ${home.cycle.end.monthValue}/${home.cycle.end.dayOfMonth}"
 
-        /** [context]를 주면 폰 캘린더 일정도 (연동을 켰을 때만, 이 폰 안에서 읽음) */
-        fun cells(home: HomeState, context: Context? = null): CalendarCells {
+        /** 일정 색 점: 폰 캘린더(켰을 때만) + 앱 안 캘린더, 이 폰 안에서만 읽음 */
+        suspend fun eventColors(context: Context, home: HomeState): Map<LocalDate, List<Int>> {
+            val from = home.cycle.start.minusDays(7)
+            val to = home.cycle.end.plusDays(7)
+            val phone = com.simbio.don.app.calendar.PhoneCalendar.events(context, from, to).values.flatten()
+            val local = com.simbio.don.app.calendar.LocalCalendar.toEvents(DonRepository.get(context).appEventsNow(), from, to)
+            return com.simbio.don.app.calendar.PhoneCalendar.byDay(phone + local).mapValues { (_, l) -> l.map { it.color } }
+        }
+
+        fun cells(home: HomeState, events: Map<LocalDate, List<Int>> = emptyMap()): CalendarCells {
             val entries = home.entries.mapNotNull { runCatching { it.toEntry() }.getOrNull() }
-            val events = context?.let { c ->
-                com.simbio.don.app.calendar.PhoneCalendar.events(c, home.cycle.start.minusDays(7), home.cycle.end.plusDays(7))
-                    .mapValues { (_, l) -> l.map { it.color } }
-            }.orEmpty()
             return CalendarCells(
             start = home.cycle.start,
             end = home.cycle.end,

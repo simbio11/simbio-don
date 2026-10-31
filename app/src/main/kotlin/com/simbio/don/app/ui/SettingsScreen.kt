@@ -112,6 +112,11 @@ fun SettingsScreen(
     onCalendarOff: () -> Unit = {},
     onCalendarShown: (Long, Boolean) -> Unit = { _, _ -> },
     onWriteCalendar: (Long) -> Unit = {},
+    /** 해외 결제 환율 */
+    fxRates: List<com.simbio.don.app.data.FxRateEntity> = emptyList(),
+    fxAuto: Boolean = true,
+    onFxAuto: (Boolean) -> Unit = {},
+    onFxRate: (String, Double) -> Unit = { _, _ -> },
     version: String = "",
     weatherCity: String? = null,
     onWeatherCity: (String?) -> Unit = {},
@@ -282,6 +287,8 @@ fun SettingsScreen(
                 TextButton(onClick = onCalendarOff, color = DonColors.Warn) { Text("연동 끄기") }
             }
         }
+
+        FxRatesCard(fxRates, fxAuto, onFxAuto, onFxRate)
 
         RealCard("AI 도우미 (선택)") {
             Text(
@@ -569,7 +576,10 @@ fun SettingsScreen(
 fun RuleEditScreen(rule: AppRule, onSave: (AppRule) -> Unit, onDelete: () -> Unit, onBack: () -> Unit) {
     val fields = remember(rule) {
         RuleAction.entries.associateWith { a ->
-            mutableStateOf(rule.keywordRules.filter { it.action == a }.flatMap { it.keywords }.joinToString(", "))
+            // 환전 규칙이 없던 때 저장한 앱은 기본 환전 낱말을 보여 준다 (읽을 때도 그걸 쓴다)
+            val words = rule.keywordRules.filter { it.action == a }.flatMap { it.keywords }
+                .ifEmpty { if (a == RuleAction.EXCHANGE && rule.keywordRules.none { it.action == a }) AppRule.EXCHANGE_KEYWORDS else emptyList() }
+            mutableStateOf(words.joinToString(", "))
         }
     }
     var name by remember(rule) { mutableStateOf(rule.displayName) }
@@ -591,6 +601,7 @@ fun RuleEditScreen(rule: AppRule, onSave: (AppRule) -> Unit, onDelete: () -> Uni
                     Text(
                         when (a) {
                             RuleAction.IGNORE -> "무시 (광고 등)"
+                            RuleAction.EXCHANGE -> "환전 (지출 아님, 환율을 배워요)"
                             RuleAction.REFUND -> "환불·취소"
                             RuleAction.INCOME -> "입금 (수입으로 기록, 월급 알아보기)"
                             RuleAction.SPEND -> "지출"

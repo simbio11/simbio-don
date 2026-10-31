@@ -85,6 +85,9 @@ interface DonDao {
     @Insert
     suspend fun insertEntry(e: EntryEntity): Long
 
+    @Query("SELECT MAX(id) FROM entry")
+    suspend fun maxEntryId(): Long?
+
     @Delete
     suspend fun deleteEntry(e: EntryEntity)
 
@@ -412,6 +415,39 @@ interface DonDao {
     @Query("DELETE FROM plan WHERE id = :id")
     suspend fun deletePlan(id: Long)
 
+    // ── 환율 ──
+    @Query("SELECT * FROM fx_rate ORDER BY currency")
+    fun fxRates(): Flow<List<FxRateEntity>>
+
+    @Query("SELECT * FROM fx_rate")
+    suspend fun fxRatesNow(): List<FxRateEntity>
+
+    @Upsert
+    suspend fun saveFxRate(r: FxRateEntity)
+
+    // ── 알림 잔액 차이 ──
+    @Query("SELECT * FROM balance_gap ORDER BY atEpochSecond DESC")
+    fun balanceGaps(): Flow<List<BalanceGapEntity>>
+
+    @Upsert
+    suspend fun saveBalanceGap(g: BalanceGapEntity)
+
+    @Query("DELETE FROM balance_gap WHERE accountId = :accountId")
+    suspend fun deleteBalanceGap(accountId: Long)
+
+    // ── 앱 안 캘린더 일정 ──
+    @Query("SELECT * FROM app_event ORDER BY startEpochDay, startMinute")
+    fun appEvents(): Flow<List<AppEventEntity>>
+
+    @Query("SELECT * FROM app_event ORDER BY startEpochDay, startMinute")
+    suspend fun appEventsNow(): List<AppEventEntity>
+
+    @Upsert
+    suspend fun saveAppEvent(e: AppEventEntity): Long
+
+    @Query("DELETE FROM app_event WHERE id = :id")
+    suspend fun deleteAppEvent(id: Long)
+
     // ── 백업·복원 ──
     @Query("SELECT * FROM fixed_expense") suspend fun allFixed(): List<FixedExpenseEntity>
     @Query("SELECT * FROM cycle") suspend fun allCycles(): List<CycleEntity>
@@ -444,6 +480,8 @@ interface DonDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putAssetChecks(x: List<AssetCheckEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putPlans(x: List<PlanEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putGoalMoves(x: List<GoalMoveEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putFxRates(x: List<FxRateEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putAppEvents(x: List<AppEventEntity>)
 
     @Query("DELETE FROM settings") suspend fun wipeSettings()
     @Query("DELETE FROM fixed_expense") suspend fun wipeFixed()
@@ -469,4 +507,7 @@ interface DonDao {
     @Query("DELETE FROM asset_check") suspend fun wipeAssetChecks()
     @Query("DELETE FROM plan") suspend fun wipePlans()
     @Query("DELETE FROM goal_move") suspend fun wipeGoalMoves()
+    @Query("DELETE FROM fx_rate") suspend fun wipeFxRates()
+    @Query("DELETE FROM balance_gap") suspend fun wipeBalanceGaps()
+    @Query("DELETE FROM app_event") suspend fun wipeAppEvents()
 }

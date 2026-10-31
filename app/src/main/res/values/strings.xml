@@ -6,9 +6,9 @@
     <string name="widget_title">이번 주 남은 돈</string>
     <string name="widget_add">지출 입력</string>
     <string name="widget_description">이번 주 남은 돈과 오늘 쓸 수 있는 돈</string>
-    <string name="widget_grass_label">달력 + 잔디</string>
+    <string name="widget_grass_label">잔디</string>
     <string name="widget_grass_title">무지출 잔디</string>
-    <string name="widget_grass_description">날마다 수입·지출이 적힌 큰 달력과 작은 무지출 잔디</string>
+    <string name="widget_grass_description">날마다 한 칸씩 쌓이는 무지출 잔디</string>
     <string name="widget_calendar_label">이번 달 달력</string>
     <string name="widget_calendar_description">날마다 수입·지출과 다가올 계획</string>
     <string name="widget_saved_label">모은 돈</string>

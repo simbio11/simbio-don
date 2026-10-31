@@ -156,6 +156,10 @@ data class EntryEntity(
     val rawText: String? = null,
     /** 알림에 가게 이름이 없어 "○○카드 결제"처럼 적은 것 — 이름을 적어 달라고 보인다 */
     @ColumnInfo(defaultValue = "0") val nameUnknown: Boolean = false,
+    /** 외화로 낸 것이면 외화 금액 ("USD 12.99") — [amount]는 원화 */
+    val fxText: String? = null,
+    /** 알림에 원화 금액이 없어 어림 환율로 바꿨음 (환율을 받으면 다시 바꾼다) */
+    @ColumnInfo(defaultValue = "0") val fxGuess: Boolean = false,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */
@@ -422,7 +426,52 @@ data class PlanEntity(
     val eventId: Long? = null,
     /** 이 앱이 캘린더에 만든 일정이면 계획을 지울 때 일정도 지운다 */
     @ColumnInfo(defaultValue = "0") val calendarOwned: Boolean = false,
+    /** 들어온 결제와 저절로 이었음 (아니면 "아니에요"로 풀 수 있게) */
+    @ColumnInfo(defaultValue = "0") val autoLinked: Boolean = false,
+    /** "이 계획 아니에요" 한 기록 id들 ("12,40") — 다시 묻거나 잇지 않는다 */
+    @ColumnInfo(defaultValue = "") val rejected: String = "",
 ) {
+    fun rejects(entryId: Long): Boolean = rejected.split(",").any { it == entryId.toString() }
+
     val done: Boolean get() = doneAmount != null
     val open: Boolean get() = !done && !canceled
 }
+
+/** 환율 (1단위에 몇 원). [source]: EXCHANGE(내 환전 알림) · PUBLIC(공개 환율) · MANUAL(직접) */
+@Entity(tableName = "fx_rate")
+data class FxRateEntity(
+    @PrimaryKey val currency: String,
+    val rate: Double,
+    val epochDay: Long,
+    val source: String,
+)
+
+/** 알림에 온 잔액과 앱이 계산한 잔액이 다를 때 (자산마다 마지막 한 건) */
+@Entity(tableName = "balance_gap")
+data class BalanceGapEntity(
+    @PrimaryKey val accountId: Long,
+    /** 알림에 적힌 실제 잔액 */
+    val real: Long,
+    /** 그때 앱이 계산한 잔액 */
+    val app: Long,
+    val atEpochSecond: Long,
+)
+
+/** 폰 캘린더를 안 이었을 때 이 앱 안에 두는 일정 (이으면 폰 캘린더로 옮길 수 있다) */
+@Entity(tableName = "app_event")
+data class AppEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val startEpochDay: Long,
+    /** 0시부터 분 (하루 종일이면 null) */
+    val startMinute: Int? = null,
+    val endEpochDay: Long,
+    val endMinute: Int? = null,
+    @ColumnInfo(defaultValue = "") val location: String = "",
+    @ColumnInfo(defaultValue = "") val memo: String = "",
+    /** 반복: NONE · DAILY · WEEKLY · MONTHLY · YEARLY */
+    @ColumnInfo(defaultValue = "NONE") val repeat: String = "NONE",
+    /** 몇 분 전에 알림 (없으면 null) */
+    val reminder: Int? = null,
+    @ColumnInfo(defaultValue = "0") val color: Int = 0,
+)

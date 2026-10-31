@@ -41,7 +41,7 @@ import java.time.LocalDate
 
 /** 일정에 이은 예산 (없으면 null). 반복 일정은 날마다 따로라 날짜도 본다 */
 fun planOf(e: CalEvent, plans: List<PlanEntity>): PlanEntity? =
-    plans.firstOrNull { it.eventId == e.eventId && it.epochDay == e.date.toEpochDay() }
+    plans.firstOrNull { it.eventId == e.eventId && it.epochDay == e.startDate.toEpochDay() }
 
 /** 가계부·홈 달력이 쓰는 폰 캘린더 상태와 동작 */
 class CalendarHooks(
@@ -49,11 +49,15 @@ class CalendarHooks(
     val on: Boolean = false,
     /** 새 일정을 넣을 캘린더가 있는지 */
     val canWrite: Boolean = false,
+    /** 폰 캘린더(구글 등)를 이었는지 */
+    val phoneOn: Boolean = false,
     val events: Map<LocalDate, List<CalEvent>> = emptyMap(),
     val onBudget: (CalEvent, Long) -> Unit = { _, _ -> },
     val onAdd: (LocalDate, String, Int?, Long?) -> Unit = { _, _, _, _ -> },
     val onSpent: (PlanEntity) -> Unit = {},
     val onConnect: () -> Unit = {},
+    /** 저절로 이은 결제가 아니면 풀기 */
+    val onUnlink: (PlanEntity) -> Unit = {},
 ) {
     companion object {
         val Off = CalendarHooks()
@@ -108,6 +112,7 @@ fun DayEventsCard(
     onAdd: (title: String, minuteOfDay: Int?, budget: Long?) -> Unit,
     onSpent: (PlanEntity) -> Unit,
     onConnect: () -> Unit,
+    onUnlink: (PlanEntity) -> Unit = {},
 ) {
     var adding by remember(date) { mutableStateOf(false) }
     var budgeting by remember(date) { mutableStateOf<Long?>(null) }
@@ -135,7 +140,7 @@ fun DayEventsCard(
                     Text(e.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, maxLines = 1)
                     Text(listOfNotNull(eventTime(e), e.location?.takeIf { it.isNotBlank() }).joinToString(" · "), fontSize = 12.sp, color = DonColors.InkMuted, maxLines = 1)
                 }
-                EventBudget(p, date, today, onSpent) { budgeting = if (budgeting == e.eventId) null else e.eventId }
+                EventBudget(p, date, today, onSpent, onUnlink) { budgeting = if (budgeting == e.eventId) null else e.eventId }
             }
             if (budgeting == e.eventId) {
                 BudgetPanel(e.title, p?.amount, { amount -> onBudget(e, amount); budgeting = null }) { budgeting = null }
@@ -147,7 +152,7 @@ fun DayEventsCard(
 
 /** 일정 오른쪽: 예산 없음 → 정하기 / 예산 → 썼어요 / 쓴 뒤 → 예산과 실제 */
 @Composable
-private fun EventBudget(p: PlanEntity?, date: LocalDate, today: LocalDate, onSpent: (PlanEntity) -> Unit, onEdit: () -> Unit) {
+private fun EventBudget(p: PlanEntity?, date: LocalDate, today: LocalDate, onSpent: (PlanEntity) -> Unit, onUnlink: (PlanEntity) -> Unit, onEdit: () -> Unit) {
     when {
         p == null -> SmallButton(onClick = onEdit, containerColor = DonColors.SurfaceAlt, contentColor = DonColors.Real) { Text("예산 정하기") }
         p.canceled -> Text("안 썼어요", fontSize = 12.sp, color = DonColors.Good)
@@ -162,7 +167,11 @@ private fun EventBudget(p: PlanEntity?, date: LocalDate, today: LocalDate, onSpe
                     fontWeight = FontWeight.Bold,
                     color = if (kept) DonColors.Good else DonColors.Warn,
                 )
-                TextButton(onClick = { onSpent(p) }) { Text("더 썼어요", fontSize = 12.sp) }
+                Row {
+                    // 들어온 결제와 저절로 이었으면 아니라고 풀 수 있게
+                    if (p.autoLinked) TextButton(onClick = { onUnlink(p) }) { Text("이 결제 아니에요", fontSize = 12.sp) }
+                    TextButton(onClick = { onSpent(p) }) { Text("더 썼어요", fontSize = 12.sp) }
+                }
             }
         }
         else -> Column(horizontalAlignment = Alignment.End) {

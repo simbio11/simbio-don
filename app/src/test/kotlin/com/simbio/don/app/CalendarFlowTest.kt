@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -130,35 +132,37 @@ class CalendarFlowTest {
         rule.waitUntil(5_000) { vm.writeCalendarId.value == 1L }
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
 
-        // 홈 "일주일 안에": 예산 안 정한 일정 → 누르면 그날 달력
+        // 홈 "일주일 안에": 예산 안 정한 일정 → 누르면 그날 캘린더
         waitText("예산 안 정한 일정")
         rule.onNodeWithText("민지 결혼식").performScrollTo()
         shot("c1_home_events")
         rule.onNodeWithText("민지 결혼식").performClick()
-        waitText("일정")
-        waitText("하루 종일")
-        shot("c2_ledger_day_events")
+        waitText("${today.plusDays(1).monthValue}월 ${today.plusDays(1).dayOfMonth}일", substring = true)
+        shot("c2_calendar_day")
 
-        // 결혼식에 10만 원
-        rule.onNodeWithText("예산 정하기").performScrollTo().performClick()
-        waitText("'민지 결혼식'에 쓸 돈")
+        // 결혼식 일정 → 10만 원
+        rule.onAllNodesWithText("민지 결혼식").onLast().performClick()
+        waitText("이 일정에 쓸 돈")
         rule.onAllNodes(hasSetTextAction() and hasText("예산")).onFirst().performTextReplacement("100000")
-        rule.onAllNodesWithText("예산 정하기").onLast().performScrollTo().performClick()
+        rule.onNodeWithText("예산 정하기").performClick()
         rule.waitUntil(5_000) { bg { repo.plans.first() }.any { it.eventId == 2L } }
         val wedding = bg { repo.plans.first() }.single { it.eventId == 2L }
         assertEquals(100_000L, wedding.amount)
         assertEquals(Category.EVENT.name, wedding.category)
         assertEquals(today.plusDays(1).toEpochDay(), wedding.epochDay)
         waitText("예산 100,000원")
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
 
         // 오늘: 팀 회식 5만 원 → 썼어요 (실제 62,000원)
-        rule.onNodeWithContentDescription(shortDate(today)).performClick()
-        waitText("팀 회식")
-        rule.onNodeWithText("예산 정하기").performScrollTo().performClick()
+        // 내일이 다음 달이면 오늘 칸이 안 보이니 "오늘"로 돌아간다
+        rule.onAllNodesWithText("오늘").onFirst().performClick()
+        waitText("을지로", substring = true)
+        rule.onAllNodesWithText("팀 회식").onLast().performClick()
+        waitText("이 일정에 쓸 돈")
         rule.onAllNodes(hasSetTextAction() and hasText("예산")).onFirst().performTextReplacement("50000")
-        rule.onAllNodesWithText("예산 정하기").onLast().performScrollTo().performClick()
+        rule.onNodeWithText("예산 정하기").performClick()
         waitText("예산 50,000원")
-        rule.onNodeWithText("썼어요").performScrollTo().performClick()
+        rule.onNodeWithText("썼어요").performClick()
         waitText("저장")
         rule.onAllNodes(hasSetTextAction() and hasText("금액")).onFirst().performTextReplacement("62000")
         rule.onNodeWithText("저장").performClick()
@@ -166,19 +170,25 @@ class CalendarFlowTest {
         val dinner = bg { repo.plans.first() }.single { it.eventId == 1L }
         assertEquals(62_000L, dinner.doneAmount)
         assertEquals(Category.FOOD.name, dinner.category)
-        waitText("12,000원 넘음", substring = true)
-        rule.onNodeWithText("12,000원 넘음", substring = true).performScrollTo()
+        waitText("1.2만 넘음", substring = true)
         shot("c3_event_over")
         // 미리 정한 돈이라 오늘 몫(그날 쓰는 돈)에는 안 들어간다
         val home = bg { repo.home(flowOf(LocalDateTime.now())).first()!! }
         assertEquals(0L, home.day.spentDaily)
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
 
-        // 앱에서 일정 넣기: 치과 · 점심 12시 · 3만 원
-        rule.onNodeWithText("+ 일정 추가").performScrollTo().performClick()
+        // 가계부 달력에서도 일정 넣기: 치과 · 점심 12시 · 3만 원 (폰 캘린더로)
+        rule.onAllNodesWithText("가계부").onLast().performClick()
+        waitText("달력")
+        rule.onNodeWithText("달력").performClick()
+        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정 추가"))
+        rule.onNodeWithText("+ 일정 추가").performClick()
         waitText("일정 추가", substring = true)
         rule.onAllNodes(hasSetTextAction() and hasText("일정 (예: 친구 생일 모임)")).onFirst().performTextReplacement("치과")
-        rule.onNodeWithText("점심 12시").performScrollTo().performClick()
         rule.onAllNodes(hasSetTextAction() and hasText("쓸 돈 (선택)")).onFirst().performTextReplacement("30000")
+        rule.waitForIdle()
+        rule.onNodeWithText("점심 12시").performClick()
+        rule.waitForIdle()
         shot("c4_add_event")
         rule.onNodeWithText("캘린더에 넣기").performScrollTo().performClick()
         rule.waitUntil(5_000) { fake.list.any { it.title == "치과" } }
@@ -190,7 +200,6 @@ class CalendarFlowTest {
         assertEquals(Category.HEALTH.name, bg { repo.plans.first() }.single { it.eventId == added.eventId }.category)
         waitText("치과")
         waitText("12:00", substring = true)
-        rule.onAllNodesWithText("치과").onLast().performScrollTo()
         shot("c5_after_add")
     }
 }

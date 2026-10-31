@@ -82,6 +82,9 @@ data class HomeInsights(
 )
 
 /** 첫 화면에 필요한 것 전부. */
+/** 계획과 맞을 것 같은 실제 지출 */
+data class PlanHint(val plan: PlanEntity, val entry: EntryEntity, val fit: com.simbio.don.budget.PlanFit)
+
 data class HomeState(
     val today: LocalDate,
     /** 지금 (1분마다 갱신) — 방 창밖 시간대, 찜 24시간 */
@@ -1669,19 +1672,73 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 이미 적힌 지출을 이 계획을 쓴 것으로 */
     suspend fun linkPlan(id: Long, entry: EntryEntity) = completePlan(id, entry.id, entry.amount, LocalDate.ofEpochDay(entry.epochDay))
 
-    /** 계획을 쓴 것 같은 실제 지출 (계획 id → 기록). 이미 다른 계획에 이은 기록은 빼고 */
-    fun planMatches(plans: List<PlanEntity>, entries: List<EntryEntity>): Map<Long, EntryEntity> {
-        val byId = entries.associateBy { it.id }
-        val taken = plans.mapNotNull { it.doneEntryId }.toMutableSet()
-        val candidates = entries.mapNotNull { e -> runCatching { e.id to e.toEntry() }.getOrNull() }
-        val out = mutableMapOf<Long, EntryEntity>()
-        plans.filter { it.open }.forEach { p ->
-            com.simbio.don.budget.Plans.match(p.toPlan(), candidates, taken)?.let { id ->
-                taken += id
-                byId[id]?.let { out[p.id] = it }
-            }
+    /** 계획을 쓴 것 같은 실제 지출 (계획 id → 기록, 확실·아마 모두). 이미 다른 계획에 이은 기록·아니라고 한 것은 빼고 */
+    fun planMatches(plans: List<PlanEntity>, entries: List<EntryEntity>): Map<Long, EntryEntity> =
+        planCandidates(plans, entries).groupBy { it.plan.id }.mapValues { (_, l) -> l.first().entry }
+
+    /** 계획과 아직 안 이은 지출 짝 (가장 잘 맞는 계획 하나씩, 잘 맞는 순) */
+    private fun planCandidates(plans: List<PlanEntity>, entries: List<EntryEntity>): List<PlanHint> {
+        val linked = plans.mapNotNull { it.doneEntryId }.toSet()
+        val open = plans.filter { it.open }
+        if (open.isEmpty()) return emptyList()
+        return entries.filter { e ->
+            e.id !in linked && e.settleFor == null && e.installmentId == null &&
+                (e.type == EntryType.SPEND.name || e.type == EntryType.EXCEPTION.name)
+        }.mapNotNull { e ->
+            val entry = runCatching { e.toEntry() }.getOrNull() ?: return@mapNotNull null
+            val pairs = open.filter { !it.rejects(e.id) }.map { it to it.toPlan() }
+            com.simbio.don.budget.Plans.best(pairs, entry, paid = e.amount, alreadySplit = e.share != null)?.let { (p, fit) -> PlanHint(p, e, fit) }
+        }.sortedWith(compareBy({ it.fit.kind.ordinal }, { kotlin.math.abs(it.entry.epochDay - it.plan.epochDay) }))
+    }
+
+    /**
+     * 확실히 맞는 지출은 계획과 저절로 잇는다 (계획 하나에 기록 하나). 이은 계획은 "자동으로 이었어요"로 보이고 풀 수 있다.
+     * 알림·직접 적기·계획 저장 뒤에 부른다. 이은 수
+     */
+    suspend fun autoLinkPlans(today: LocalDate = LocalDate.now()): Int = writeLock.withLock { autoLinkPlansLocked(today) }
+
+    private suspend fun autoLinkPlansLocked(today: LocalDate): Int {
+        val plans = dao.plansNow()
+        if (plans.none { it.open }) return 0
+        val entries = dao.entriesBetweenNow(today.minusDays(30).toEpochDay(), today.plusDays(3).toEpochDay())
+        val used = mutableSetOf<Long>()
+        var n = 0
+        planCandidates(plans, entries).filter { it.fit.kind == com.simbio.don.budget.PlanFitKind.STRONG }.forEach { h ->
+            if (!used.add(h.plan.id)) return@forEach
+            dao.savePlan(
+                h.plan.copy(doneEntryId = h.entry.id, doneAmount = h.entry.share ?: h.entry.amount, doneEpochDay = h.entry.epochDay, canceled = false, autoLinked = true),
+            )
+            n++
         }
-        return out
+        return n
+    }
+
+    /** 물어볼 짝: 아마 맞는 것·엔빵 같은 것 (확실한 것은 이미 이었다) */
+    fun planHints(today: LocalDate): Flow<List<PlanHint>> =
+        combine(dao.plans(), dao.entriesBetween(today.minusDays(30).toEpochDay(), today.plusDays(3).toEpochDay())) { plans, entries ->
+            val seen = mutableSetOf<Long>()
+            planCandidates(plans, entries).filter { it.fit.kind != com.simbio.don.budget.PlanFitKind.STRONG && seen.add(it.plan.id) }
+        }
+
+    /** "맞아요": 이 지출이 그 계획. [people]이면 그만큼 나눠 낸 것으로 (내 몫만 생활비) */
+    suspend fun confirmPlanHint(planId: Long, entryId: Long, people: Int? = null) = writeLock.withLock {
+        val p = planNow(planId) ?: return@withLock
+        var e = dao.entryNow(entryId) ?: return@withLock
+        if (people != null && people > 1 && e.share == null) {
+            e = e.copy(share = Splits.myShare(e.amount, people), people = people)
+            dao.updateEntry(e)
+        }
+        dao.savePlan(p.copy(doneEntryId = e.id, doneAmount = e.share ?: e.amount, doneEpochDay = e.epochDay, canceled = false, autoLinked = false))
+    }
+
+    /** "아니에요": 이 지출은 그 계획이 아님 (다시 묻거나 잇지 않음). 저절로 이었던 것이면 풀어 준다 */
+    suspend fun rejectPlanMatch(planId: Long, entryId: Long) = writeLock.withLock {
+        val p = planNow(planId) ?: return@withLock
+        val rejected = (p.rejected.split(",").filter { it.isNotBlank() } + entryId.toString()).distinct().joinToString(",")
+        dao.savePlan(
+            if (p.doneEntryId == entryId) p.copy(doneEntryId = null, doneAmount = null, doneEpochDay = null, autoLinked = false, rejected = rejected)
+            else p.copy(rejected = rejected),
+        )
     }
 
     /**
@@ -1784,7 +1841,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         // 월급날 새벽에 온 알림이 지난달에 적히지 않게, 새 달이 됐으면 먼저 시작한다
         rollOverLocked(n.postedAt)
         val rules = dao.appRulesNow().map { it.toRule() }
-        val result = NotificationParser.parse(n, rules)
+        val result = NotificationParser.parse(n, rules, fxRateMap())
         val parsed = when (result) {
             is ParseResult.Payment -> result.payment
             is ParseResult.Unclassified -> result.payment
@@ -1817,12 +1874,17 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val fixed = dao.fixedExpensesNow().map { it.toFixed() }
 
         val owner = dao.settingsNow()?.ownerName
-        when (val d = ReviewPolicy.decide(result, (recent + pending).map { it.first }, fixed)) {
+        val lastId = dao.maxEntryId() ?: 0L
+        val decision = ReviewPolicy.decide(result, (recent + pending).map { it.first }, fixed)
+        when (val d = decision) {
             null -> Unit
+            is Decision.Exchange -> insertExchange(d.payment)
             is Decision.AutoApply -> when {
                 // 내 계좌끼리: 한쪽만 와도 알아보거나, 막 들어온 같은 금액과 합친다
                 SelfTransfer.looksSelf(d.payment, owner) -> insertSelfTransfer(d.payment, out = true)
                 SelfTransfer.isSendOut(d.payment) && mergeSelfTransfer(d.payment, out = true) -> Unit
+                // 해외 결제가 며칠 뒤 원화 청구 금액으로 다시 오면 그 기록의 금액만 고친다
+                mergeForeignBilling(d.payment) -> Unit
                 !recordFixedFromPayment(d.payment) -> insertFromPayment(d.payment, EntryType.SPEND)
             }
             is Decision.Income -> if (SelfTransfer.looksSelf(d.payment, owner)) {
@@ -1855,7 +1917,192 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 ),
             )
         }
+        // 알림에 온 잔액과 앱 잔액 견주기 (확인함으로 간 것은 아직 안 센 것이라 빼고)
+        if (parsed?.balanceAfter != null && decision != null && decision !is Decision.NeedsReview) {
+            checkBalanceLocked(parsed.packageName, parsed.balanceAfter!!, parsed.postedAt)
+        }
+        // 새로 적은 지출이 계획과 맞으면 잇는다 (계획과 실제가 둘 다 세이지 않게)
+        if ((dao.maxEntryId() ?: 0L) > lastId) autoLinkPlansLocked(n.postedAt.toLocalDate())
     }
+
+    // ── 해외 결제·환전 ─────────────────────────────────────────
+
+    /** 받아 둔 환율 (통화 → 1단위에 원) */
+    suspend fun fxRateMap(): Map<String, Double> = dao.fxRatesNow().associate { it.currency to it.rate }
+
+    val fxRates: Flow<List<FxRateEntity>> = dao.fxRates()
+
+    /**
+     * 환전: 지출이 아니라 이체 (원화를 외화로 사면 그 앱 자산에서 나감, 팔면 들어옴). 원화·외화가 같이 오면 환율을 배운다.
+     */
+    private suspend fun insertExchange(p: ParsedPayment) {
+        val f = p.foreign
+        val won = NotificationParser.extractAmount(p.rawText)
+        if (f != null && won != null) {
+            com.simbio.don.notify.Currencies.rateOf(won, f)
+                ?.takeIf { com.simbio.don.notify.Currencies.plausible(f.currency, it) }
+                ?.let { saveFxRateLocked(f.currency, it, FX_EXCHANGE, p.postedAt.toLocalDate()) }
+        }
+        val sell = listOf("원화로", "팔았", "매도", "외화 판매").any { it in p.rawText }
+        val account = accountFor(p.packageName)
+        dao.insertEntry(
+            EntryEntity(
+                epochDay = p.postedAt.toLocalDate().toEpochDay(),
+                amount = p.amount,
+                label = p.label,
+                type = EntryType.TRANSFER.name,
+                source = EntrySource.NOTIFICATION.name,
+                packageName = p.packageName,
+                postedAtEpochSecond = p.postedAt.epochSecond(),
+                category = Category.ETC.name,
+                accountId = if (sell) null else account,
+                toAccountId = if (sell) account else null,
+                minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
+                rawText = p.rawText.take(300).ifBlank { null },
+                fxText = f?.text(),
+                fxGuess = p.rateGuess,
+            ),
+        )
+    }
+
+    /** 이 앱으로 최근 [currency]를 산 적이 있으면 (외화 지갑에서 낸 결제) */
+    private suspend fun boughtForeign(pkg: String, currency: String, at: LocalDate): Boolean =
+        dao.entriesBetweenNow(at.minusDays(90).toEpochDay(), at.toEpochDay()).any {
+            it.packageName == pkg && it.type == EntryType.TRANSFER.name && it.fxText?.startsWith("$currency ") == true
+        }
+
+    /**
+     * 해외 결제의 원화 청구 알림: 같은 앱에서 일주일 안에 외화로 적은 기록이 이름이 겹치고 금액이 ±15% 안이면
+     * 새로 적지 않고 그 기록의 금액을 청구 금액으로 고친다.
+     */
+    private suspend fun mergeForeignBilling(p: ParsedPayment): Boolean {
+        if (p.foreign != null) return false
+        val date = p.postedAt.toLocalDate()
+        val key = CategoryGuesser.key(p.label)
+        if (key.length < 2) return false
+        val target = dao.entriesBetweenNow(date.minusDays(7).toEpochDay(), date.toEpochDay()).firstOrNull { e ->
+            e.packageName == p.packageName && e.fxText != null && e.type == EntryType.SPEND.name &&
+                CategoryGuesser.key(e.label).let { it.isNotEmpty() && (it in key || key in it) } &&
+                kotlin.math.abs(e.amount - p.amount) * 100 <= p.amount * 15
+        } ?: return false
+        dao.updateEntry(target.copy(amount = p.amount, fxGuess = false))
+        return true
+    }
+
+    /** 환율 저장. 직접 정한 환율과 2주 안의 내 환전 환율은 공개 환율이 덮지 않는다. 어림으로 바꿨던 기록은 이 환율로 다시 */
+    suspend fun saveFxRate(currency: String, rate: Double, source: String, today: LocalDate = LocalDate.now()) =
+        writeLock.withLock { saveFxRateLocked(currency, rate, source, today) }
+
+    private suspend fun saveFxRateLocked(currency: String, rate: Double, source: String, today: LocalDate) {
+        if (rate <= 0) return
+        val old = dao.fxRatesNow().firstOrNull { it.currency == currency }
+        if (source == FX_PUBLIC && old != null &&
+            (old.source == FX_MANUAL || (old.source == FX_EXCHANGE && today.toEpochDay() - old.epochDay <= 14))
+        ) return
+        dao.saveFxRate(FxRateEntity(currency, rate, today.toEpochDay(), source))
+        val guessed = dao.allEntriesNow().filter { it.fxGuess && it.fxText?.startsWith("$currency ") == true }
+        dao.updateEntries(
+            guessed.mapNotNull { e ->
+                com.simbio.don.notify.Currencies.find(e.fxText!!)?.let { f -> e.copy(amount = f.toWon(rate), fxGuess = false) }
+            },
+        )
+    }
+
+    /** 공개 환율을 받아야 할 때: 어림으로 바꾼 기록이 있거나, 최근 해외 결제가 있는데 오늘 안 받았을 때 */
+    suspend fun needsFxRefresh(today: LocalDate): Set<String> {
+        val recent = dao.entriesBetweenNow(today.minusDays(30).toEpochDay(), today.toEpochDay()).filter { it.fxText != null }
+        val rates = dao.fxRatesNow().associateBy { it.currency }
+        return recent.mapNotNull { e -> e.fxText?.substringBefore(' ') }.filter { c ->
+            recent.any { it.fxGuess && it.fxText?.startsWith("$c ") == true } || (rates[c]?.epochDay ?: 0) < today.toEpochDay()
+        }.toSet()
+    }
+
+    // ── 앱 안 캘린더 ──────────────────────────────────────────
+
+    val appEvents: Flow<List<AppEventEntity>> = dao.appEvents()
+
+    suspend fun appEventsNow(): List<AppEventEntity> = dao.appEventsNow()
+
+    /** 앱 안 캘린더 일정 저장 → 일정 id (음수, 계획과 이을 때 쓰는 것) */
+    suspend fun saveAppEvent(entityId: Long?, d: com.simbio.don.app.calendar.EventDraft): Long {
+        val e = com.simbio.don.app.calendar.LocalCalendar.entity(entityId ?: 0, d)
+        val id = dao.saveAppEvent(e).takeIf { it > 0 } ?: entityId ?: 0
+        return com.simbio.don.app.calendar.LocalCalendar.eventId(id)
+    }
+
+    suspend fun deleteAppEvent(entityId: Long) = dao.deleteAppEvent(entityId)
+
+    /** 일정을 지우면 아직 안 쓴 그 일정 예산도 지운다 (쓴 기록과 견준 것은 남김) */
+    suspend fun deletePlansOfEvent(eventId: Long) {
+        dao.plansNow().filter { it.eventId == eventId && it.open }.forEach { dao.deletePlan(it.id) }
+    }
+
+    /** 일정 날을 옮기면 그 일정의 안 쓴 예산도 같은 날로 */
+    suspend fun movePlansOfEvent(eventId: Long, from: LocalDate, to: LocalDate) {
+        if (from == to) return
+        dao.plansNow().filter { it.eventId == eventId && it.open && it.epochDay == from.toEpochDay() }
+            .forEach { dao.savePlan(it.copy(epochDay = to.toEpochDay())) }
+    }
+
+    fun entriesIn(from: LocalDate, to: LocalDate): Flow<List<EntryEntity>> = dao.entriesBetween(from.toEpochDay(), to.toEpochDay())
+
+    // ── 실제 잔액과 맞추기 ─────────────────────────────────────
+
+    val balanceGaps: Flow<List<BalanceGapEntity>> = dao.balanceGaps()
+
+    /** 알림의 잔액 [real]과 그 앱 자산(통장·현금)의 앱 잔액이 다르면 남겨 둔다 (같으면 지움) */
+    private suspend fun checkBalanceLocked(pkg: String, real: Long, at: LocalDateTime) {
+        val account = dao.accountsNow().firstOrNull {
+            it.packageName == pkg && !it.hidden && enumOr(it.type, AccountType.ETC).let { t -> t == AccountType.BANK || t == AccountType.CASH }
+        } ?: return
+        // 늦게 읽은 옛 알림이면 그 뒤 기록까지 센 잔액과 견주게 되니 건너뛴다
+        val sec = at.epochSecond()
+        val later = dao.entriesBetweenNow(at.toLocalDate().toEpochDay(), Long.MAX_VALUE / 2).any { e ->
+            (e.accountId == account.id || e.toAccountId == account.id) &&
+                ((e.postedAtEpochSecond ?: Long.MIN_VALUE) > sec || (e.postedAtEpochSecond == null && e.epochDay > at.toLocalDate().toEpochDay()))
+        }
+        if (later) return
+        val app = balanceOf(account)
+        if (app == real) dao.deleteBalanceGap(account.id) else dao.saveBalanceGap(BalanceGapEntity(account.id, real, app, sec))
+    }
+
+    private suspend fun balanceOf(a: AccountEntity): Long =
+        AccountBalances.compute(listOf(a), dao.allEntriesNow(), dao.assetChecksNow().filter { it.accountId == a.id }).single().balance
+
+    /** 실제 잔액과 다른 만큼을 어떻게 볼지 */
+    enum class BalanceFix {
+        /** 빠진 지출 (생활비에 들어감) */
+        MISSING_SPEND,
+
+        /** 빠진 입금 (수입) */
+        MISSING_INCOME,
+
+        /** 지출을 더 셌음 (생활비에서 뺌) */
+        OVERCOUNTED,
+
+        /** 잔액만 맞춤 (기록·생활비는 그대로) */
+        BALANCE_ONLY,
+    }
+
+    /**
+     * 자산 [accountId]의 잔액을 실제와 맞춘다. [diff] = 실제 − 앱 (음수면 실제가 적음).
+     * 빠진 지출·입금·더 센 지출은 오늘 날짜 기록으로 남겨 생활비도 맞고, 잔액만 맞추면 처음 잔액을 옮긴다.
+     */
+    suspend fun fixBalance(accountId: Long, diff: Long, how: BalanceFix, today: LocalDate = LocalDate.now()) {
+        val a = dao.accountsNow().firstOrNull { it.id == accountId } ?: return
+        if (diff != 0L) when (how) {
+            BalanceFix.MISSING_SPEND -> addManual(today, kotlin.math.abs(diff), "빠진 지출 (잔액 맞춤)", EntryType.SPEND, Category.ETC, "실제 잔액과 맞춘 차이", accountId)
+            BalanceFix.MISSING_INCOME -> addManual(today, kotlin.math.abs(diff), "빠진 입금 (잔액 맞춤)", EntryType.INCOME, Category.OTHER_INCOME, "실제 잔액과 맞춘 차이", accountId)
+            BalanceFix.OVERCOUNTED -> addManual(today, kotlin.math.abs(diff), "더 센 지출 (잔액 맞춤)", EntryType.REFUND, Category.ETC, "실제 잔액과 맞춘 차이", accountId)
+            BalanceFix.BALANCE_ONLY -> saveAccount(a, balanceOf(a) + diff)
+        }
+        dao.deleteBalanceGap(accountId)
+    }
+
+    suspend fun dismissBalanceGap(accountId: Long) = dao.deleteBalanceGap(accountId)
+
+    /** 자산의 지금 앱 잔액 */
+    suspend fun balanceNow(accountId: Long): Long? = dao.accountsNow().firstOrNull { it.id == accountId }?.let { balanceOf(it) }
 
     /** 내 계좌끼리 옮긴 돈 한쪽만 봤을 때: 이 앱의 자산에서 나가거나(out) 들어온 이체로 */
     private suspend fun insertSelfTransfer(p: ParsedPayment, out: Boolean) {
@@ -1938,6 +2185,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         } else {
             CategoryGuesser.guess(p.label, learned).takeIf { it != Category.ETC } ?: CategoryGuesser.guess(p.rawText, learned)
         }
+        // 외화로만 온 결제를 이 앱에서 미리 산 외화로 냈으면 원화 통장은 환전 때 이미 줄었다
+        val f = p.foreign
+        val fromWallet = f != null && type == EntryType.SPEND && NotificationParser.extractAmount(p.rawText) == null &&
+            boughtForeign(p.packageName, f.currency, p.postedAt.toLocalDate())
+        val account = if (fromWallet) null else accountFor(p.packageName)
         // 할부 결제 알림 ("3개월")이면 달마다 나눠 적는다
         val months = if (type == EntryType.SPEND) Installments.monthsIn(p.rawText) else null
         if (months != null && p.amount >= months) {
@@ -1957,11 +2209,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 packageName = p.packageName,
                 postedAtEpochSecond = p.postedAt.epochSecond(),
                 category = category.name,
-                accountId = accountFor(p.packageName),
+                accountId = account,
                 minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
                 sentOut = type == EntryType.SPEND && SelfTransfer.isSendOut(p),
                 rawText = p.rawText.take(300).ifBlank { null },
                 nameUnknown = p.nameUnknown,
+                fxText = p.foreign?.text(),
+                fxGuess = p.rateGuess,
             ),
         )
         return category
@@ -2345,6 +2599,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             assetChecks = dao.assetChecksNow(),
             plans = dao.plansNow(),
             goalMoves = dao.goalMovesNow(),
+            fxRates = dao.fxRatesNow(),
+            appEvents = dao.appEventsNow(),
         ),
         now,
     )
@@ -2359,6 +2615,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.wipeCategoryBudgets(); dao.wipeGoals(); dao.wipeAccounts()
                 dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes(); dao.wipeMileTx()
                 dao.wipeGamePlays(); dao.wipeAssetChecks(); dao.wipePlans(); dao.wipeGoalMoves()
+                dao.wipeFxRates(); dao.wipeBalanceGaps(); dao.wipeAppEvents()
                 dao.putSettings(d.settings); dao.putFixed(d.fixed); dao.putCycles(d.cycles); dao.putEntries(d.entries)
                 dao.putReviews(d.reviews); dao.putRules(d.rules); dao.putSettled(d.settled); dao.putCategoryRules(d.categoryRules)
                 dao.putMocks(d.mocks); dao.putHouses(d.houses); dao.putCategoryBudgets(d.categoryBudgets); dao.putGoals(d.goals)
@@ -2366,6 +2623,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.putCategoryDefs(d.categoryDefs); dao.putSubcategories(d.subcategories); dao.putInstallments(d.installments)
                 dao.putRecurringIncomes(d.recurringIncomes); dao.putMileTx(d.mileTx)
                 dao.putGamePlays(d.gamePlays); dao.putAssetChecks(d.assetChecks); dao.putPlans(d.plans); dao.putGoalMoves(d.goalMoves)
+                dao.putFxRates(d.fxRates); dao.putAppEvents(d.appEvents)
             }
             Category.register(dao.categoryDefsNow().map { it.toCategory() })
         }
@@ -2387,6 +2645,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
         /** 내 계좌끼리 옮긴 돈 기록 이름 */
         const val SELF_TRANSFER_LABEL = "내 계좌 이체"
+
+        /** 환율이 어디서 왔는지 */
+        const val FX_EXCHANGE = "EXCHANGE"
+        const val FX_PUBLIC = "PUBLIC"
+        const val FX_MANUAL = "MANUAL"
 
         /** 한 줄 분석·정기 결제 찾기에 보는 날 수 */
         const val RECENT_DAYS = 100L

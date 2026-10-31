@@ -71,7 +71,10 @@ object WidgetArt {
     fun grassWeeks(widthDp: Float, heightDp: Float): Int =
         floor(widthDp / grassPitch(heightDp)).toInt().coerceIn(4, 53)
 
-    /** 잔디만 (달력을 껐을 때): 요일 글자 없이, 위에는 달 이름만, 아래 범례 */
+    /**
+     * 잔디만 (기본): 깃허브 잔디처럼 둥근 네모를 가지런히. 위에 달 이름만 작게, 아래 왼쪽에 기간·무지출 수,
+     * 오른쪽에 범례(무지출 → 넘음). 칸 묶음은 가운데로, 요일 글자는 없이.
+     */
     fun grass(g: Grass, widthDp: Float, heightDp: Float, density: Float, st: WidgetStyle = WidgetStyle.Light): Bitmap {
         val d = density
         val w = (widthDp * d).roundToInt().coerceAtLeast(1)
@@ -79,22 +82,25 @@ object WidgetArt {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-        val label = text(9.5f * d, st.inkMuted)
-        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.4f * d; color = st.ink }
+        val label = text(9f * d, st.inkMuted)
         val rect = RectF()
-        val y0 = TOP * d
-        val gridH = h - (TOP + LEGEND) * d
+        // 낮은 위젯은 달 이름·아래 줄 없이 칸만 크게
+        val compact = (heightDp - TOP - LEGEND) / 7f < 7f
+        val top = if (compact) 0f else TOP * d
+        val gridH = h - if (compact) 0f else (TOP + LEGEND) * d
 
-        val left = 0f
-
-        // 최근 몇 주 잔디 (남는 자리는 가운데로)
-        val weeks = g.weeks.size
-        val pitch = min(gridH / 7f, (w - left) / weeks)
-        val gap = (pitch * 0.16f).coerceAtLeast(1.5f * d)
+        val weeks = g.weeks.size.coerceAtLeast(1)
+        val pitch = min(gridH / 7f, w.toFloat() / weeks)
+        val gap = (pitch * 0.2f).coerceAtLeast(1.5f * d)
         val size = pitch - gap
-        val x0 = left + ((w - left) - weeks * pitch) / 2 + gap / 2
+        val gridW = weeks * pitch - gap
+        val x0 = (w - gridW) / 2
+        val y0 = top + (gridH - (7 * pitch - gap)) / 2
+        val r = (size * 0.28f).coerceAtMost(4f * d)
+
+        // 달 이름: 그 달 1일이 든 주 위에 (겹치면 건너뜀)
         var labelEnd = -1f
-        g.weeks.forEachIndexed { i, week ->
+        if (!compact) g.weeks.forEachIndexed { i, week ->
             val first = week.filterNotNull().firstOrNull { it.date.dayOfMonth == 1 }?.date
                 ?: if (i == 0) week.firstNotNullOfOrNull { it }?.date else null
             if (first != null) {
@@ -102,35 +108,48 @@ object WidgetArt {
                 val name = "${first.monthValue}월"
                 if (x > labelEnd) {
                     drawLabel(c, name, x, y0 - 4f * d, label, st, d)
-                    labelEnd = x + label.measureText(name) + 4 * d
+                    labelEnd = x + label.measureText(name) + 6 * d
                 }
             }
         }
-        val r = (size * 0.22f).coerceAtMost(3f * d)
+        // 칸
+        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.5f * d; color = st.real }
         g.weeks.forEachIndexed { i, week ->
             week.forEachIndexed { row, day ->
                 if (day == null) return@forEachIndexed
                 rect.set(x0 + i * pitch, y0 + row * pitch, x0 + i * pitch + size, y0 + row * pitch + size)
                 fill.color = color(day.level, st)
                 c.drawRoundRect(rect, r, r, fill)
-                if (day.date == g.today) c.drawRoundRect(rect, r, r, ring)
+                if (day.date == g.today) {
+                    rect.inset(-0.6f * d, -0.6f * d)
+                    c.drawRoundRect(rect, r, r, ring)
+                }
             }
         }
-
-        // 범례: 많이 씀 ■■■■ 무지출
+        if (compact) return bmp
+        // 아래: 왼쪽 요약, 오른쪽 범례 (칸 묶음 너비에 맞춰, 좁으면 요약을 줄이거나 범례를 뺀다)
         val ly = h - 3f * d
-        val ls = 9f * d
+        val ls = 8f * d
+        val legendW = label.measureText("무지출") + label.measureText("넘음") + 4 * (ls + 2f * d) + 8 * d
+        val summary = listOf(
+            "최근 ${weeks}주 · 무지출 ${g.noSpend}일" + if (g.over > 0) " · 넘은 날 ${g.over}일" else "",
+            "최근 ${weeks}주 · 무지출 ${g.noSpend}일",
+            "무지출 ${g.noSpend}일",
+        ).firstOrNull { label.measureText(it) + legendW + 8 * d <= gridW }
+        label.textAlign = Paint.Align.LEFT
+        drawLabel(c, summary ?: "최근 ${weeks}주 · 무지출 ${g.noSpend}일", x0, ly, label, st, d)
+        if (summary == null) return bmp
         label.textAlign = Paint.Align.RIGHT
-        var x = w.toFloat()
-        drawLabel(c, "무지출", x, ly, label, st, d)
-        x -= label.measureText("무지출") + 4 * d
-        listOf(GrassLevel.OVER, GrassLevel.OK, GrassLevel.LOW, GrassLevel.NO_SPEND).asReversed().forEach { lv ->
-            rect.set(x - ls, ly - ls + 1 * d, x, ly + 1 * d)
+        var x = x0 + gridW
+        drawLabel(c, "넘음", x, ly, label, st, d)
+        x -= label.measureText("넘음") + 4 * d
+        listOf(GrassLevel.NO_SPEND, GrassLevel.LOW, GrassLevel.OK, GrassLevel.OVER).asReversed().forEach { lv ->
+            rect.set(x - ls, ly - ls + 0.5f * d, x, ly + 0.5f * d)
             fill.color = color(lv, st)
             c.drawRoundRect(rect, 2 * d, 2 * d, fill)
-            x -= ls + 2.5f * d
+            x -= ls + 2f * d
         }
-        drawLabel(c, "많이 씀", x - 1.5f * d, ly, label, st, d)
+        drawLabel(c, "무지출", x - 2f * d, ly, label, st, d)
         return bmp
     }
 

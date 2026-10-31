@@ -11,7 +11,7 @@ import java.time.LocalDateTime
 object Backup {
     const val FORMAT = "dont-backup"
     /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12), 5: 자산 점검 (0.13), 6: 돈 나갈 계획·내 이름 (0.14) */
-    const val VERSION = 9
+    const val VERSION = 10
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -36,6 +36,8 @@ object Backup {
         val assetChecks: List<AssetCheckEntity> = emptyList(),
         val plans: List<PlanEntity> = emptyList(),
         val goalMoves: List<GoalMoveEntity> = emptyList(),
+        val fxRates: List<FxRateEntity> = emptyList(),
+        val appEvents: List<AppEventEntity> = emptyList(),
     )
 
     class BadBackup(message: String) : Exception(message)
@@ -67,6 +69,7 @@ object Backup {
             o.putOpt("fixedId", x.fixedId); o.putOpt("sub", x.sub); o.putOpt("installmentId", x.installmentId)
             o.putOpt("installmentNo", x.installmentNo); o.putOpt("incomeId", x.incomeId)
             o.putOpt("share", x.share); o.putOpt("people", x.people); o.putOpt("settleFor", x.settleFor); o.put("owe", x.owe)
+            o.putOpt("fxText", x.fxText); o.put("fxGuess", x.fxGuess)
         })
         put("reviews", arr(d.reviews) { o, x ->
             o.put("id", x.id); o.put("packageName", x.packageName); o.put("action", x.action); o.put("amount", x.amount)
@@ -135,9 +138,18 @@ object Backup {
             o.putOpt("doneEpochDay", x.doneEpochDay); o.put("canceled", x.canceled)
             // 캘린더 일정 id는 이 폰에서만 뜻이 있어 다른 폰에 되살리면 이어짐이 풀린다 (계획은 그대로)
             o.putOpt("eventId", x.eventId); o.put("calendarOwned", x.calendarOwned)
+            o.put("autoLinked", x.autoLinked); o.put("rejected", x.rejected)
         })
         put("goalMoves", arr(d.goalMoves) { o, x ->
             o.put("id", x.id); o.put("goalId", x.goalId); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("source", x.source)
+        })
+        put("fxRates", arr(d.fxRates) { o, x ->
+            o.put("currency", x.currency); o.put("rate", x.rate); o.put("epochDay", x.epochDay); o.put("source", x.source)
+        })
+        put("appEvents", arr(d.appEvents) { o, x ->
+            o.put("id", x.id); o.put("title", x.title); o.put("startEpochDay", x.startEpochDay); o.putOpt("startMinute", x.startMinute)
+            o.put("endEpochDay", x.endEpochDay); o.putOpt("endMinute", x.endMinute); o.put("location", x.location); o.put("memo", x.memo)
+            o.put("repeat", x.repeat); o.putOpt("reminder", x.reminder); o.put("color", x.color)
         })
     }.toString()
 
@@ -173,7 +185,8 @@ object Backup {
                         o.optString("category", "ETC"), o.optString("memo", ""), o.longOrNull("accountId"), o.longOrNull("toAccountId"),
                         o.intOrNull("minuteOfDay"), o.longOrNull("fixedId"), o.strOrNull("sub"), o.longOrNull("installmentId"),
                         o.strOrNull("installmentNo"), o.longOrNull("incomeId"), share = o.longOrNull("share"),
-                        people = o.intOrNull("people"), settleFor = o.longOrNull("settleFor"), owe = o.optBoolean("owe", false))
+                        people = o.intOrNull("people"), settleFor = o.longOrNull("settleFor"), owe = o.optBoolean("owe", false),
+                        fxText = o.strOrNull("fxText"), fxGuess = o.optBoolean("fxGuess", false))
                 },
                 reviews = list(root, "reviews") { o ->
                     ReviewItemEntity(o.getLong("id"), o.getString("packageName"), o.getString("action"), o.getLong("amount"),
@@ -235,10 +248,19 @@ object Backup {
                 plans = list(root, "plans") { o ->
                     PlanEntity(o.getLong("id"), o.getLong("epochDay"), o.getLong("amount"), o.getString("label"), o.optString("category", "ETC"),
                         o.optString("memo", ""), o.longOrNull("doneEntryId"), o.longOrNull("doneAmount"), o.longOrNull("doneEpochDay"),
-                        o.optBoolean("canceled", false), o.longOrNull("eventId"), o.optBoolean("calendarOwned", false))
+                        o.optBoolean("canceled", false), o.longOrNull("eventId"), o.optBoolean("calendarOwned", false),
+                        o.optBoolean("autoLinked", false), o.optString("rejected", ""))
                 },
                 goalMoves = list(root, "goalMoves") { o ->
                     GoalMoveEntity(o.getLong("id"), o.getLong("goalId"), o.getLong("epochDay"), o.getLong("amount"), o.optString("source", GoalSource.EXTRA.name))
+                },
+                fxRates = list(root, "fxRates") { o ->
+                    FxRateEntity(o.getString("currency"), o.getDouble("rate"), o.getLong("epochDay"), o.optString("source", "MANUAL"))
+                },
+                appEvents = list(root, "appEvents") { o ->
+                    AppEventEntity(o.getLong("id"), o.getString("title"), o.getLong("startEpochDay"), o.intOrNull("startMinute"), o.getLong("endEpochDay"),
+                        o.intOrNull("endMinute"), o.optString("location", ""), o.optString("memo", ""), o.optString("repeat", "NONE"),
+                        o.intOrNull("reminder"), o.optInt("color", 0))
                 },
             ).also {
                 if (it.settings.isEmpty() || it.cycles.isEmpty()) throw BadBackup("백업에 설정이 없어요")

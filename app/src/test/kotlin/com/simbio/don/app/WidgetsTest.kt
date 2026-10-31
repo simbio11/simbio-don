@@ -166,17 +166,31 @@ class WidgetsTest {
     }
 
     @Test
+    fun 잔디_위젯은_기본으로_스택만_깔끔하게() {
+        seed()
+        assertTrue(!com.simbio.don.app.UiPrefs.grassCalendar(context))
+        val wide = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w1_stack")
+        assertTrue(wide.text(R.id.widget_sub).isNotBlank())
+        render(runBlocking { GrassWidget().views(context, 1, 250f, 110f) }, 250, 110, "w1_stack_small")
+        render(runBlocking { GrassWidget().views(context, 1, 400f, 200f) }, 400, 200, "w1_stack_big")
+        // 어둡게 · 투명
+        com.simbio.don.app.UiPrefs.setWidgetTheme(context, com.simbio.don.app.ui.ThemeMode.DARK)
+        com.simbio.don.app.UiPrefs.setWidgetOpacity(context, 0)
+        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w1_stack_clear", busy = true)
+    }
+
+    @Test
     fun 캘린더를_이으면_위젯_달력에_일정_점() {
         seed()
         val home = runBlocking { Widgets.home(context) }!!
-        assertTrue(CalendarWidget.cells(home, context).events.isEmpty())
+        assertTrue(CalendarWidget.cells(home, runBlocking { CalendarWidget.eventColors(context, home) }).events.isEmpty())
         val fake = com.simbio.don.app.calendar.FakeCalendarSource()
         fake.list += com.simbio.don.app.calendar.CalEvent(1, 1, "민지 결혼식", today.plusDays(2), null, 0xFFE67C73.toInt())
         fake.list += com.simbio.don.app.calendar.CalEvent(2, 1, "팀 회식", today, 19 * 60, 0xFF4285F4.toInt())
         com.simbio.don.app.calendar.PhoneCalendar.sourceForTests = fake
         try {
             com.simbio.don.app.calendar.PhoneCalendar.setOn(context, true)
-            val cells = CalendarWidget.cells(home, context)
+            val cells = CalendarWidget.cells(home, runBlocking { CalendarWidget.eventColors(context, home) })
             assertEquals(listOf(0xFFE67C73.toInt()), cells.events[today.plusDays(2)])
             assertEquals(listOf(0xFF4285F4.toInt()), cells.events[today])
             render(runBlocking { CalendarWidget().views(context, 2, 330f, 320f) }, 330, 320, "w2_calendar_events")

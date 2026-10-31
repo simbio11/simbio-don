@@ -47,6 +47,16 @@ class PaymentListenerService : NotificationListenerService() {
         }
     }
 
+    /**
+     * 알림 접근이 다시 이어졌을 때 (폰이 앱을 잠시 멈췄다가 다시 켠 뒤 등): 그동안 온 결제 알림이 알림창에 남아 있으면
+     * 지금 읽는다. 이미 센 알림은 앱·시각·금액이 같아 다시 세지 않는다.
+     */
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        val active = runCatching { activeNotifications }.getOrNull() ?: return
+        active.sortedBy { it.postTime }.forEach { runCatching { onNotificationPosted(it) } }
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val pkg = sbn.packageName
         if (pkg == packageName) return

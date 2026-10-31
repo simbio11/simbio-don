@@ -123,6 +123,7 @@ import java.time.LocalDate
 private enum class Tab(val label: String, val icon: UiIcon, val selectedIcon: UiIcon) {
     Home("홈", UiIcon.HOME, UiIcon.HOME_ON),
     Ledger("가계부", UiIcon.LIST, UiIcon.LIST_ON),
+    Calendar("캘린더", UiIcon.CALENDAR, UiIcon.CALENDAR),
     Stats("통계", UiIcon.PIE, UiIcon.PIE_ON),
     Assets("자산", UiIcon.BANK, UiIcon.BANK_ON),
     House("내 집", UiIcon.HOUSE, UiIcon.HOUSE_ON),
@@ -147,6 +148,13 @@ private sealed interface Overlay {
     data class EditAccount(val id: Long?, val type: com.simbio.don.app.data.AccountType? = null) : Overlay
     data object AssetCheck : Overlay
     data object Plans : Overlay
+
+    /** 실제 잔액 맞추기 */
+    data object BalanceFix : Overlay
+
+    /** 캘린더 일정 보기 · 만들기/고치기 */
+    data class EventDetail(val event: com.simbio.don.app.calendar.CalEvent) : Overlay
+    data class EventEdit(val existing: com.simbio.don.app.calendar.CalEvent?, val date: LocalDate) : Overlay
 
     /** 홈 꾸미기 (카드 숨기기·차례) */
     data object HomeCards : Overlay
@@ -315,8 +323,10 @@ class MainActivity : ComponentActivity() {
         val connect = calendarConnect()
         return remember(on, events, write) {
             CalendarHooks(
-                on = on,
-                canWrite = write != null,
+                // 폰 캘린더를 안 이어도 앱 안 캘린더로 일정을 쓴다
+                on = true,
+                canWrite = true,
+                phoneOn = on,
                 events = events,
                 onBudget = { e, amount -> vm.budgetEvent(e, amount) },
                 onAdd = { d, title, minute, budget ->
@@ -326,6 +336,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onSpent = { p -> open(Overlay.Edit(null, spentDraft(p))) },
                 onConnect = connect,
+                onUnlink = { p -> p.doneEntryId?.let { vm.rejectPlanMatch(p.id, it) } },
             )
         }
     }
@@ -378,6 +389,8 @@ class MainActivity : ComponentActivity() {
         var ledgerDate by remember { mutableStateOf<LocalDate?>(null) }
         var ledgerCategory by remember { mutableStateOf<Category?>(null) }
         var ledgerMode by rememberSaveable { mutableStateOf(LedgerMode.DAILY) }
+        // 캘린더 탭에서 고른 날
+        var calDate by remember { mutableStateOf(LocalDate.now()) }
         LaunchedEffect(shared) {
             shared?.let { screens.clear(); screens.push(Overlay.Shop(it)); shared = null }
         }
@@ -392,8 +405,9 @@ class MainActivity : ComponentActivity() {
             when (openRequested) {
                 ACTION_CALENDAR -> {
                     screens.clear()
-                    ledgerMode = LedgerMode.CALENDAR
-                    tab = Tab.Ledger
+                    calDate = LocalDate.now()
+                    vm.showCalendarMonth(java.time.YearMonth.now())
+                    tab = Tab.Calendar
                 }
                 ACTION_ASSETS -> {
                     screens.clear()
@@ -417,9 +431,14 @@ class MainActivity : ComponentActivity() {
         val names = home.accounts.associate { it.account.id to it.account.name }
         ScreenHost(
             screens,
-            base = { MainTabs(home, tab, { tab = it }, screens, snackbar, names, ledgerDate, { ledgerDate = it }, ledgerCategory, { ledgerCategory = it }, ledgerMode, { ledgerMode = it }, weather) },
+            base = {
+                MainTabs(
+                    home, tab, { tab = it }, screens, snackbar, names, ledgerDate, { ledgerDate = it }, ledgerCategory, { ledgerCategory = it }, ledgerMode,
+                    { ledgerMode = it }, weather, calDate, { calDate = it },
+                )
+            },
         ) { o, close ->
-            Overlay(o, home, close, open = { screens.push(it) }, goHouse = { screens.clear(); tab = Tab.House })
+            Overlay(o, home, close, open = { screens.push(it) }, goHouse = { screens.clear(); tab = Tab.House }, screens = screens)
         }
     }
 
@@ -438,8 +457,12 @@ class MainActivity : ComponentActivity() {
         ledgerMode: LedgerMode,
         onLedgerMode: (LedgerMode) -> Unit,
         weather: com.simbio.don.app.weather.Weather?,
+        calDate: LocalDate,
+        onCalDate: (LocalDate) -> Unit,
     ) {
         val calendar = calendarHooks { screens.push(it) }
+        var calView by rememberSaveable { mutableStateOf(com.simbio.don.app.ui.CalView.MONTH) }
+        var calMoney by remember { mutableStateOf(UiPrefs.calendarMoney(this)) }
         Scaffold(
             containerColor = DonColors.Bg,
             snackbarHost = {
@@ -466,6 +489,9 @@ class MainActivity : ComponentActivity() {
                 }
             },
             floatingActionButton = {
+                if (tab == Tab.Calendar) {
+                    AddFab(onClick = { screens.push(Overlay.EventEdit(null, calDate)) }, contentDescription = "일정 추가")
+                }
                 if (tab == Tab.Home || tab == Tab.Ledger) {
                     AddFab(
                         onClick = {
@@ -507,7 +533,15 @@ class MainActivity : ComponentActivity() {
                         report = produceState<com.simbio.don.budget.MonthReport?>(null, home.cycle.start) { value = vm.lastMonthReport() }.value,
                         onCanBuy = { screens.push(Overlay.CanBuy) },
                         calendar = calendar,
+                        gaps = vm.balanceGaps.collectAsStateWithLifecycle().value,
+                        onFixGap = { g, how -> vm.fixBalance(g.accountId, g.real - g.app, how) },
+                        onDismissGap = { vm.dismissBalanceGap(it.accountId) },
+                        onBalanceFix = { screens.push(Overlay.BalanceFix) },
+                        hints = vm.planHints.collectAsStateWithLifecycle().value,
+                        onConfirmHint = { h, people -> vm.confirmPlanHint(h.plan.id, h.entry.id, people) },
+                        onRejectHint = { h -> vm.rejectPlanMatch(h.plan.id, h.entry.id) },
                         onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
+                        onEventDay = { d -> onCalDate(d); vm.showCalendarMonth(java.time.YearMonth.from(d)); onTab(Tab.Calendar) },
                         onAddFixed = { s ->
                             vm.addFixedExpense(s.label, s.amount, s.day)
                             Toast.makeText(this, "${s.label}을 고정비로 넣었어요. 다음 달부터 미리 빼 둘게요", Toast.LENGTH_SHORT).show()
@@ -538,7 +572,41 @@ class MainActivity : ComponentActivity() {
                         checkDue = home.assetCheckDue,
                         onCheck = { screens.push(Overlay.AssetCheck) },
                         onAddPot = { screens.push(Overlay.EditAccount(null, com.simbio.don.app.data.AccountType.SAVINGS)) },
+                        onBalanceFix = { screens.push(Overlay.BalanceFix) },
                     )
+                    Tab.Calendar -> {
+                        val month by vm.calendarMonth.collectAsStateWithLifecycle()
+                        val events by vm.calendarEvents.collectAsStateWithLifecycle()
+                        val entries by vm.calendarEntries.collectAsStateWithLifecycle()
+                        val plans by vm.plans.collectAsStateWithLifecycle()
+                        com.simbio.don.app.ui.CalendarScreen(
+                            month = month,
+                            onMonth = { ym ->
+                                vm.showCalendarMonth(ym)
+                                if (java.time.YearMonth.from(calDate) != ym) onCalDate(if (ym == java.time.YearMonth.from(home.today)) home.today else ym.atDay(1))
+                            },
+                            selected = calDate,
+                            onSelect = { d ->
+                                onCalDate(d)
+                                if (java.time.YearMonth.from(d) != month) vm.showCalendarMonth(java.time.YearMonth.from(d))
+                            },
+                            today = home.today,
+                            events = events,
+                            entries = entries,
+                            plans = plans,
+                            phoneOn = calendar.phoneOn,
+                            onConnect = calendar.onConnect,
+                            showMoney = calMoney,
+                            onShowMoney = { on -> UiPrefs.setCalendarMoney(this@MainActivity, on); calMoney = on },
+                            view = calView,
+                            onView = { calView = it },
+                            onOpenEvent = { screens.push(Overlay.EventDetail(it)) },
+                            onAddEvent = { d -> screens.push(Overlay.EventEdit(null, d)) },
+                            onOpenEntry = { screens.push(Overlay.Edit(it)) },
+                            onAddEntry = { d -> screens.push(Overlay.Edit(null, EntryDraft(d, 0, "", EntryType.SPEND, Category.ETC, "", false))) },
+                            accountNames = names,
+                        )
+                    }
                     Tab.Ledger, Tab.Stats -> {
                         val view by vm.month.collectAsStateWithLifecycle()
                         val cycles by vm.cycles.collectAsStateWithLifecycle()
@@ -618,6 +686,8 @@ class MainActivity : ComponentActivity() {
         val shownCalendars by vm.shownCalendarIds.collectAsStateWithLifecycle()
         val writeCalendar by vm.writeCalendarId.collectAsStateWithLifecycle()
         val connectCalendar = calendarConnect()
+        val fxRates by vm.fxRates.collectAsStateWithLifecycle()
+        var fxAuto by remember { mutableStateOf(com.simbio.don.app.fx.FxRates.isAuto(this)) }
         var naverOn by remember { mutableStateOf(NaverShopping.isOn(this)) }
         var themeMode by remember { mutableStateOf(UiPrefs.themeMode(this)) }
         var effectsAlways by remember { mutableStateOf(UiPrefs.effectsAlways(this)) }
@@ -743,6 +813,10 @@ class MainActivity : ComponentActivity() {
                 onCalendarOff = { vm.disconnectCalendar() },
                 onCalendarShown = { id, on -> vm.setCalendarShown(id, on) },
                 onWriteCalendar = { vm.setWriteCalendar(it) },
+                fxRates = fxRates,
+                fxAuto = fxAuto,
+                onFxAuto = { on -> com.simbio.don.app.fx.FxRates.setAuto(this, on); fxAuto = on },
+                onFxRate = { c, r -> vm.saveFxRate(c, r) },
                 onAiOff = {
                     com.simbio.don.app.ai.Ai.clear(this)
                     aiKey = null
@@ -795,7 +869,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun Overlay(o: Overlay, home: HomeState, close: () -> Unit, open: (Overlay) -> Unit, goHouse: () -> Unit) {
+    private fun Overlay(o: Overlay, home: HomeState, close: () -> Unit, open: (Overlay) -> Unit, goHouse: () -> Unit, screens: ScreenStack<Overlay>) {
         when (o) {
             is Overlay.Edit -> {
                 val learned by produceState<Map<String, Category>?>(null) { value = vm.learnedMap() }
@@ -1036,12 +1110,83 @@ class MainActivity : ComponentActivity() {
                     onAdd = { p, toCalendar -> vm.savePlan(p, toCalendar) },
                     calendarOn = vm.calendarOn.collectAsStateWithLifecycle().value && vm.writeCalendarId.collectAsStateWithLifecycle().value != null,
                     onSpent = { p -> open(Overlay.Edit(null, spentDraft(p))) },
+                    onUnlink = { p -> p.doneEntryId?.let { vm.rejectPlanMatch(p.id, it) } },
                     onLink = { p, e -> vm.linkPlan(p.id, e) },
                     onCancel = { p, c -> vm.cancelPlan(p.id, c) },
                     onDelete = { vm.deletePlan(it.id) },
                     onBack = close,
                 )
             }
+            is Overlay.EventDetail -> {
+                val plans by vm.plans.collectAsStateWithLifecycle()
+                val calEntries by vm.calendarEntries.collectAsStateWithLifecycle()
+                val cals by vm.deviceCalendars.collectAsStateWithLifecycle()
+                val e = o.event
+                val plan = com.simbio.don.app.ui.planOf(e, plans)
+                val linked = plan?.doneEntryId?.let { id -> home.entries.firstOrNull { it.id == id } ?: calEntries.firstOrNull { it.id == id } }
+                com.simbio.don.app.ui.EventDetailScreen(
+                    e = e,
+                    calendarName = if (e.local) com.simbio.don.app.calendar.LocalCalendar.NAME else cals.firstOrNull { it.id == e.calendarId }?.name ?: "폰 캘린더",
+                    plan = plan,
+                    linked = linked,
+                    today = home.today,
+                    onEdit = { open(Overlay.EventEdit(e, e.startDate)) },
+                    onDelete = {
+                        vm.deleteEvent(e) { ok -> Toast.makeText(this, if (ok) "일정을 지웠어요" else "지우지 못했어요", Toast.LENGTH_SHORT).show() }
+                        close()
+                    },
+                    onBudget = { vm.budgetEvent(e, it) },
+                    onSpent = { p -> open(Overlay.Edit(null, spentDraft(p))) },
+                    onUnlink = { p -> p.doneEntryId?.let { vm.rejectPlanMatch(p.id, it) } },
+                    onOpenEntry = { open(Overlay.Edit(it)) },
+                    onBack = close,
+                )
+            }
+            is Overlay.EventEdit -> {
+                val plans by vm.plans.collectAsStateWithLifecycle()
+                val cals by vm.deviceCalendars.collectAsStateWithLifecycle()
+                val phoneOn by vm.calendarOn.collectAsStateWithLifecycle()
+                val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                    if (!granted) Toast.makeText(this, "알림을 허용해야 일정 알림이 와요", Toast.LENGTH_SHORT).show()
+                }
+                val e = o.existing
+                val now = java.time.LocalTime.now()
+                val initial = e?.let { com.simbio.don.app.calendar.EventDraft.of(it) } ?: com.simbio.don.app.calendar.EventDraft(
+                    "", o.date, if (o.date == home.today) ((now.hour + 1) * 60).coerceAtMost(23 * 60) else 9 * 60,
+                )
+                val choices = listOf(
+                    com.simbio.don.app.ui.CalendarChoice(com.simbio.don.app.calendar.LocalCalendar.CALENDAR_ID, "돈't (이 앱 안)", com.simbio.don.app.calendar.LocalCalendar.COLOR),
+                ) + if (phoneOn) cals.filter { it.writable }.map { com.simbio.don.app.ui.CalendarChoice(it.id, it.name.ifBlank { it.account }, it.color) } else emptyList()
+                com.simbio.don.app.ui.EventEditScreen(
+                    initial = initial,
+                    isNew = e == null,
+                    choices = choices,
+                    target = vm.defaultTarget(),
+                    budget = e?.let { com.simbio.don.app.ui.planOf(it, plans)?.amount },
+                    onSave = { draft, target, budget ->
+                        val local = e?.local ?: (target == com.simbio.don.app.calendar.LocalCalendar.CALENDAR_ID)
+                        if (local && draft.reminder != null && !DailyReminder.canNotify(this) && Build.VERSION.SDK_INT >= 33) {
+                            askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        vm.saveEvent(e, draft, target, budget) { ok ->
+                            Toast.makeText(this, if (ok) "일정을 저장했어요" else "저장하지 못했어요", Toast.LENGTH_SHORT).show()
+                        }
+                        close()
+                        // 일정 보기에서 고쳤으면 그 화면도 닫는다 (옛 내용이라)
+                        if (e != null && screens.top is Overlay.EventDetail) screens.pop()
+                    },
+                    onBack = close,
+                )
+            }
+            Overlay.BalanceFix -> com.simbio.don.app.ui.BalanceFixScreen(
+                balances = home.accounts,
+                gaps = vm.balanceGaps.collectAsStateWithLifecycle().value,
+                onFix = { id, diff, how ->
+                    vm.fixBalance(id, diff, how)
+                    Toast.makeText(this, "잔액을 맞췄어요", Toast.LENGTH_SHORT).show()
+                },
+                onBack = close,
+            )
             Overlay.AssetCheck -> AssetCheckScreen(
                 wealth = home.wealth,
                 sources = home.accounts.filter { !it.account.hidden && (it.type == com.simbio.don.app.data.AccountType.BANK || it.type == com.simbio.don.app.data.AccountType.CASH) },

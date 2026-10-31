@@ -19,6 +19,11 @@ data class Plan(
     val open: Boolean get() = actual == null && !canceled
 }
 
+enum class PlanFitKind { STRONG, SPLIT, MAYBE }
+
+/** 계획과 지출이 얼마나 맞는지. [people]은 엔빵 같을 때 몇 명이서 */
+data class PlanFit(val kind: PlanFitKind, val people: Int? = null)
+
 /**
  * 한 달 계획 요약.
  * @property planned 이 달 계획 합계 (안 쓰기로 한 것 빼고)
@@ -76,6 +81,43 @@ object Plans {
                 kotlin.math.abs(e.amount - plan.amount) * 10 <= plan.amount * 3 &&
                 (e.category == plan.category || nameOverlaps(plan.label, e.label))
         }.minByOrNull { (_, e) -> kotlin.math.abs(e.amount - plan.amount) * 1000 + kotlin.math.abs(ChronoUnit.DAYS.between(plan.date, e.date)) }?.first
+
+    /**
+     * 실제 지출 [e]가 계획 [plan]을 쓴 것인지. [paid]는 낸 돈 전부 (나눠 냈으면 [e].amount는 내 몫).
+     * - 확실(STRONG): 계획 날 ±1일에, 같은 분류·이름이면 금액이 계획의 ±50% 안, 아니면 거의 같은 금액(±3%) — 자동으로 잇는다
+     * - 엔빵 같음(SPLIT): 계획 날 ±1일에 같은 분류인데 낸 돈이 계획의 2~8배(±12%) — "n명이 나눠 냈나요?"
+     * - 아마(MAYBE): 그 밖에 그럴듯한 것 (일주일 전에 미리 산 것 등) — 물어본다
+     */
+    fun fit(plan: Plan, e: Entry, paid: Long = e.amount, alreadySplit: Boolean = false): PlanFit? {
+        if (!plan.open || plan.amount <= 0) return null
+        if (e.type != EntryType.SPEND && e.type != EntryType.EXCEPTION) return null
+        val days = ChronoUnit.DAYS.between(plan.date, e.date)
+        if (days !in -7..2) return null
+        val near = days in -1..1
+        val same = e.category == plan.category || nameOverlaps(plan.label, e.label)
+        val p = plan.amount
+        val a = e.amount
+        val diff = kotlin.math.abs(a - p)
+        return when {
+            near && ((same && diff * 2 <= p) || diff * 100 <= p * 3) -> PlanFit(PlanFitKind.STRONG)
+            near && same && !alreadySplit && paid >= p * 2 -> (2..8).firstOrNull { n -> kotlin.math.abs(paid - p * n) * 100 <= p * n * 12 }
+                ?.let { PlanFit(PlanFitKind.SPLIT, it) }
+                ?: if (paid <= p * 3) PlanFit(PlanFitKind.MAYBE) else null
+            near && same && a * 10 >= p * 4 && a <= p * 3 -> PlanFit(PlanFitKind.MAYBE)
+            same && diff * 10 <= p * 3 -> PlanFit(PlanFitKind.MAYBE)
+            near && diff * 10 <= p * 3 -> PlanFit(PlanFitKind.MAYBE)
+            else -> null
+        }
+    }
+
+    /** 여러 계획 중 이 지출과 가장 잘 맞는 것 (확실 > 엔빵 > 아마, 날이 가깝고 금액이 비슷한 순) */
+    fun <T> best(plans: List<Pair<T, Plan>>, e: Entry, paid: Long = e.amount, alreadySplit: Boolean = false): Pair<T, PlanFit>? =
+        plans.mapNotNull { (id, p) -> fit(p, e, paid, alreadySplit)?.let { Triple(id, p, it) } }
+            .minWithOrNull(
+                compareBy<Triple<T, Plan, PlanFit>> { it.third.kind.ordinal }
+                    .thenBy { kotlin.math.abs(ChronoUnit.DAYS.between(it.second.date, e.date)) }
+                    .thenBy { kotlin.math.abs(e.amount - it.second.amount) },
+            )?.let { it.first to it.third }
 
     /** 캘린더 일정 이름으로 계획 카테고리 짐작 (결혼식·생일 → 경조사, 회식·약속 → 식비…). 모르면 가게 이름처럼 */
     fun categoryFor(title: String): Category {

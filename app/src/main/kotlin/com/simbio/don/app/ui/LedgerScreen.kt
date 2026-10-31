@@ -118,6 +118,7 @@ fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEnt
                         } + (e.sub?.let { " > $it" } ?: ""),
                     )
                     e.share?.let { add("나눠 냄 · 낸 돈 ${won(e.amount)}" + (e.people?.let { p -> " · ${p}명" } ?: "")) }
+                    e.fxText?.let { add(it + if (e.fxGuess) " (어림 환율)" else "") }
                     if (e.owe) add("보낼 돈")
                     e.installmentNo?.let { add("할부 $it") }
                     if (type != EntryType.TRANSFER) e.accountId?.let(accountNames::get)?.let(::add)
@@ -327,7 +328,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.calendarItems(
     val dayEvents = calendar.events[selected].orEmpty()
     // 캘린더 연동을 켰으면 일정 카드가 먼저 (그날 할 일 → 쓸 돈)
     if (calendar.on) item(key = "events$selected") {
-        DayEventsCard(selected, view.today, dayEvents, plans, true, calendar.canWrite, calendar.onBudget, { t, m, b -> calendar.onAdd(selected, t, m, b) }, calendar.onSpent, calendar.onConnect)
+        DayEventsCard(selected, view.today, dayEvents, plans, true, calendar.canWrite, calendar.onBudget, { t, m, b -> calendar.onAdd(selected, t, m, b) }, calendar.onSpent, calendar.onConnect, calendar.onUnlink)
         Spacer(Modifier.height(10.dp))
     }
     item {

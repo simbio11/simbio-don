@@ -25,6 +25,13 @@ data class Grass(
     val firstDay: DayOfWeek,
 ) {
     val days: List<GrassDay> get() = weeks.flatten().filterNotNull()
+
+    /** 앱을 쓰기 전이라 다 빈칸인 앞쪽 주를 뺀다 (적어도 [minWeeks]주는 남김) */
+    fun trimLeadingEmpty(minWeeks: Int): Grass {
+        val empty = weeks.takeWhile { w -> w.all { it == null || it.level == GrassLevel.EMPTY } }.size
+        val drop = minOf(empty, (weeks.size - minWeeks).coerceAtLeast(0))
+        return if (drop == 0) this else copy(weeks = weeks.drop(drop))
+    }
 }
 
 object Grasses {

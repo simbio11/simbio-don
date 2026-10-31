@@ -39,6 +39,7 @@ import com.simbio.don.app.ui.kit.IconBubble
 import com.simbio.don.app.ui.kit.MoreButton
 import com.simbio.don.app.ui.kit.SmallButton
 import com.simbio.don.app.ui.kit.SubButton
+import com.simbio.don.app.ui.kit.TextButton
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.kit.WarnLine
 import com.simbio.don.app.ui.kit.card
@@ -75,6 +76,17 @@ fun HomeScreen(
     report: com.simbio.don.budget.MonthReport? = null,
     onCanBuy: () -> Unit = {},
     calendar: CalendarHooks = CalendarHooks.Off,
+    /** 알림 잔액과 다른 자산 */
+    gaps: List<com.simbio.don.app.data.BalanceGapEntity> = emptyList(),
+    onFixGap: (com.simbio.don.app.data.BalanceGapEntity, com.simbio.don.app.data.DonRepository.BalanceFix) -> Unit = { _, _ -> },
+    onDismissGap: (com.simbio.don.app.data.BalanceGapEntity) -> Unit = {},
+    onBalanceFix: () -> Unit = {},
+    /** 계획과 맞을 것 같은 결제 */
+    hints: List<com.simbio.don.app.data.PlanHint> = emptyList(),
+    onConfirmHint: (com.simbio.don.app.data.PlanHint, Int?) -> Unit = { _, _ -> },
+    onRejectHint: (com.simbio.don.app.data.PlanHint) -> Unit = {},
+    /** 일정을 누르면 그날 캘린더 */
+    onEventDay: (java.time.LocalDate) -> Unit = onCalendarDay,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
@@ -99,6 +111,13 @@ fun HomeScreen(
             Banner("결제 알림 자동 기록이 꺼져 있어요", "알림 접근을 허용하면 결제할 때마다 자동으로 기록돼요.", "켜러 가기", onOpenListenerSettings)
         }
         home.salaryNotice?.let { n -> SalaryNoticeCard(n, home.plan.disposable, onSalary, onDismissSalary) }
+        // 알림 잔액이 앱과 다르면 (놓친 결제 알림 등) 바로 맞추기
+        gaps.forEach { g ->
+            val name = home.accounts.firstOrNull { it.account.id == g.accountId }?.account?.name ?: "통장"
+            BalanceGapCard(g, name, { how -> onFixGap(g, how) }, { onDismissGap(g) })
+        }
+        // 계획과 맞을 것 같은 결제 (두 번 세지 않게)
+        hints.take(2).forEach { h -> PlanHintCard(h, { people -> onConfirmHint(h, people) }, { onRejectHint(h) }) }
         if (home.assetCheckDue && home.salaryNotice == null) {
             Banner(
                 "월급날 자산 점검",
@@ -140,7 +159,7 @@ fun HomeScreen(
 
         HomeCards.layout.shown.forEach { card ->
             when (card) {
-                HomeCard.WEEK -> TodayWeekCard(home)
+                HomeCard.WEEK -> TodayWeekCard(home, onBalanceFix)
                 HomeCard.FORECAST -> home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay, calendar.events)
                 HomeCard.UPCOMING -> UpcomingCard(
@@ -148,7 +167,7 @@ fun HomeScreen(
                     events = remember(calendar.events, home.plans, home.today) {
                         (0L..7L).flatMap { calendar.events[home.today.plusDays(it)].orEmpty() }.filter { planOf(it, home.plans) == null }
                     },
-                    onEvent = onCalendarDay,
+                    onEvent = onEventDay,
                 )
                 HomeCard.SPLITS -> SplitHomeCard(splits, onSplits)
                 // 새 달 첫 두 주만
@@ -294,7 +313,7 @@ fun ListDivider() = Divider(Modifier.padding(vertical = 2.dp))
  * 이번 주: 큰 지출(경조사·쇼핑 같은 분류)과 이번 주 계획은 여기서 빠지고 남은 날의 오늘 몫으로 나뉜다.
  */
 @Composable
-fun TodayWeekCard(home: HomeState) {
+fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}) {
     val week = home.currentWeek
     val day = home.day
     RealCard("실제 내 돈 · 오늘과 이번 주") {
@@ -345,5 +364,7 @@ fun TodayWeekCard(home: HomeState) {
         if (week.overspent > 0) WarnLine("기본 예산보다 ${won(week.overspent)} 더 썼어요", fontSize = 12)
         if (week.carryIn != 0L) Text("지난주에서 넘어온 돈 ${won(week.carryIn)} 포함", fontSize = 12.sp, color = DonColors.InkMuted)
         Text("${shortDate(week.week.start)} ~ ${shortDate(week.week.end)} · ${week.week.days}일", fontSize = 12.sp, color = DonColors.InkMuted)
+        // 결제 알림을 놓쳐 통장 잔액과 안 맞을 때 바로 고치기
+        TextButton(onClick = onBalanceFix) { Text("통장 잔액이 실제와 다르면 · 잔액 맞추기", fontSize = 12.sp) }
     }
 }
