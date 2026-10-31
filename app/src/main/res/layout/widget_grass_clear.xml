@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 바탕을 투명하게 했을 때: 배경화면 위 흰 글자 + 옅은 그림자 (시스템 위젯처럼). 그 밖은 widget_grass.xml과 같다 -->
+<!-- 무지출 잔디 위젯: 깃허브 잔디처럼 최근 몇 달 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 바탕: 색과 투명도는 위젯 설정에 따라 코드에서 바꾼다 -->
+    <ImageView
+        android:id="@+id/widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_bg" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="14dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+                android:id="@+id/widget_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:text="@string/widget_grass_title"
+                android:textColor="#FF191F28"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <!-- 제목과 칩 사이 빈 자리 (위젯 레이아웃에는 View를 못 쓴다) -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+                android:id="@+id/widget_sub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/widget_chip_good"
+                android:maxLines="1"
+                android:paddingStart="8dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="2dp"
+                android:textColor="#FF14A06A"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/widget_image"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:contentDescription="@string/widget_grass_title"
+            android:scaleType="fitCenter"
+            android:src="@drawable/widget_grass_sample" />
+    </LinearLayout>
+</FrameLayout>

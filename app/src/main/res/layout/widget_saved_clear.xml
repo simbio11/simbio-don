@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 바탕을 투명하게 했을 때: 배경화면 위 흰 글자 + 옅은 그림자 (시스템 위젯처럼). 그 밖은 widget_saved.xml과 같다 -->
+<!-- 모은 돈 위젯: 지금까지 모은 돈과 목표까지 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 바탕: 색과 투명도는 위젯 설정에 따라 코드에서 바꾼다 -->
+    <ImageView
+        android:id="@+id/widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_bg" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:paddingStart="18dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="14dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginEnd="6dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_savings_fill"
+                android:tint="#FF14A06A" />
+
+            <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+                android:id="@+id/widget_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/widget_saved_label"
+                android:textColor="#FF8B95A1"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+            android:id="@+id/widget_amount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:maxLines="1"
+            android:text="—"
+            android:textColor="#FF191F28"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+            android:id="@+id/widget_sub"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:textColor="#FF14A06A"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/widget_goal_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+                android:id="@+id/widget_goal"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#FF4E5968"
+                android:textSize="11sp" />
+
+            <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+                android:id="@+id/widget_goal_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:textColor="#FF14A06A"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/widget_progress"
+            style="@android:style/Widget.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="5dp"
+            android:max="100"
+            android:progressDrawable="@drawable/widget_progress_good" />
+
+        <!-- 어둡게: 막대 바탕이 짙은 막대 (RemoteViews로는 막대 그림을 못 바꿔 둘 중 하나만 보인다) -->
+        <ProgressBar
+            android:id="@+id/widget_progress_dark"
+            style="@android:style/Widget.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="5dp"
+            android:max="100"
+            android:progressDrawable="@drawable/widget_progress_good_dark"
+            android:visibility="gone" />
+    </LinearLayout>
+</FrameLayout>

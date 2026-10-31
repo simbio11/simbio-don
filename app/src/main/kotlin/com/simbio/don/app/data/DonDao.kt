@@ -103,6 +103,9 @@ interface DonDao {
     @Query("SELECT * FROM entry ORDER BY epochDay, id")
     suspend fun allEntriesNow(): List<EntryEntity>
 
+    @Query("SELECT * FROM entry ORDER BY epochDay, id")
+    fun allEntries(): Flow<List<EntryEntity>>
+
     // 카테고리 규칙
     @Query("SELECT * FROM category_rule")
     fun categoryRules(): Flow<List<CategoryRuleEntity>>

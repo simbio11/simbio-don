@@ -348,15 +348,10 @@ object WidgetArt {
      * 글자 쓰기. 바탕이 비치면(배경화면 위) 글자 둘레에 반대 밝기 테두리를 둘러 어떤 그림 위에서도 읽히게 한다.
      */
     private fun drawLabel(c: Canvas, t: String, x: Float, y: Float, p: Paint, st: WidgetStyle, d: Float) {
+        // 비치는 바탕: 테두리 대신 옅은 그림자 (위젯 글자와 같게)
         if (st.clear) {
-            val stroke = Paint(p).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = 3f * d
-                strokeJoin = Paint.Join.ROUND
-                color = st.halo
-                isFakeBoldText = p.isFakeBoldText
-            }
-            c.drawText(t, x, y, stroke)
+            c.drawText(t, x, y, Paint(p).apply { setShadowLayer(3f * d, 0f, 1f * d, 0x99000000.toInt()) })
+            return
         }
         c.drawText(t, x, y, p)
     }

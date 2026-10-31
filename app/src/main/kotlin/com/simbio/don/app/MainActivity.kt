@@ -573,6 +573,8 @@ class MainActivity : ComponentActivity() {
                         onCheck = { screens.push(Overlay.AssetCheck) },
                         onAddPot = { screens.push(Overlay.EditAccount(null, com.simbio.don.app.data.AccountType.SAVINGS)) },
                         onBalanceFix = { screens.push(Overlay.BalanceFix) },
+                        unassigned = vm.unassigned.collectAsStateWithLifecycle().value,
+                        onAssign = { vm.assignUnassigned { n -> Toast.makeText(this@MainActivity, "${n}건을 생활비 통장 잔액에 넣었어요", Toast.LENGTH_SHORT).show() } },
                     )
                     Tab.Calendar -> {
                         val month by vm.calendarMonth.collectAsStateWithLifecycle()
@@ -893,11 +895,16 @@ class MainActivity : ComponentActivity() {
                         existing = o.existing,
                         accounts = home.accounts.map { it.account },
                         picks = picks,
-                        // 새로 적을 때 결제 수단은 마지막으로 직접 적은 기록과 같게
-                        initial = o.initial ?: if (o.existing == null) {
-                            home.entries.filter { it.source == com.simbio.don.budget.EntrySource.MANUAL.name && it.accountId != null && it.type != EntryType.TRANSFER.name }
+                        // 새로 적을 때 결제 수단은 마지막으로 직접 적은 기록과 같게, 없으면 생활비 통장 (자산 잔액에도 반영되게)
+                        initial = if (o.existing == null) {
+                            val shown = home.accounts.map { it.account }.filter { !it.hidden }.sortedBy { it.sortOrder }
+                            val main = (shown.firstOrNull { it.type == com.simbio.don.app.data.AccountType.BANK.name }
+                                ?: shown.firstOrNull { it.type == com.simbio.don.app.data.AccountType.CASH.name })?.id
+                            val last = home.entries.filter { it.source == com.simbio.don.budget.EntrySource.MANUAL.name && it.accountId != null && it.type != EntryType.TRANSFER.name }
                                 .maxByOrNull { it.id }?.accountId
-                                ?.let { EntryDraft(home.today, 0, "", EntryType.SPEND, Category.ETC, "", false, accountId = it) }
+                            val account = last ?: main
+                            val base = o.initial ?: EntryDraft(home.today, 0, "", EntryType.SPEND, Category.ETC, "", false)
+                            if (base.accountId == null && base.type != EntryType.TRANSFER && account != null) base.copy(accountId = account) else base
                         } else {
                             null
                         },

@@ -86,6 +86,9 @@ fun AssetsScreen(
     onAddPot: () -> Unit = {},
     /** 실제 잔액 맞추기 (결제 알림을 놓쳐 안 맞을 때) */
     onBalanceFix: () -> Unit = {},
+    /** 어느 자산인지 없이 적힌 수입·지출 (잔액에 안 들어간 것) */
+    unassigned: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
+    onAssign: () -> Unit = {},
 ) {
     val shown = balances.filter { !it.account.hidden }
     Column(
@@ -94,6 +97,19 @@ fun AssetsScreen(
     ) {
         ScreenTitle("자산", trailing = { SmallButton(onClick = onAdd) { Text("+ 자산 추가") } })
         NetWorthCard(balances, shown.size >= 2, onTransfer)
+        if (unassigned.isNotEmpty() && shown.any(::fixable)) {
+            val spent = unassigned.filter { it.type != com.simbio.don.budget.EntryType.INCOME.name && it.type != com.simbio.don.budget.EntryType.REFUND.name }.sumOf { it.amount }
+            val main = shown.filter { it.type == AccountType.BANK }.minByOrNull { it.account.sortOrder } ?: shown.firstOrNull { it.type == AccountType.CASH }
+            SectionCard("잔액에 안 들어간 기록 ${unassigned.size}건") {
+                Text(
+                    "어느 통장에서 나갔는지 없이 적힌 기록이라 자산 잔액에 빠져 있어요 (지출 ${won(spent)}). 생활비는 이미 들어가 있어요.",
+                    fontSize = 13.sp,
+                    color = DonColors.InkSoft,
+                )
+                Spacer(Modifier.height(8.dp))
+                main?.let { m -> Button(onClick = onAssign, modifier = Modifier.fillMaxWidth()) { Text("'${m.account.name}'에서 나간 걸로 넣기") } }
+            }
+        }
         if (shown.any(::fixable)) {
             SubButton(onClick = onBalanceFix, modifier = Modifier.fillMaxWidth(), containerColor = DonColors.Surface) { Text("실제 잔액과 다르면 · 잔액 맞추기") }
         }

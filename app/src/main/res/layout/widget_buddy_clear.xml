@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 바탕을 투명하게 했을 때: 배경화면 위 흰 글자 + 옅은 그림자 (시스템 위젯처럼). 그 밖은 widget_buddy.xml과 같다 -->
+<!-- 내 캐릭터 위젯: 이번 주 씀씀이에 따라 표정이 바뀐다 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_bg" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <ImageView
+            android:id="@+id/widget_image"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:contentDescription="@string/widget_buddy_label"
+            android:scaleType="fitCenter"
+            android:src="@drawable/widget_buddy_sample" />
+
+        <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+            android:id="@+id/widget_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:maxLines="1"
+            android:text="@string/widget_buddy_label"
+            android:textColor="#FF191F28"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+        android:shadowColor="#99000000"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+            android:id="@+id/widget_sub"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:textColor="#FF5A3FE0"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/widget_add"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:background="@drawable/widget_add_bg"
+        android:contentDescription="@string/widget_add"
+        android:padding="6dp"
+        android:src="@drawable/ic_add"
+        android:tint="#FFFFFFFF" />
+</FrameLayout>

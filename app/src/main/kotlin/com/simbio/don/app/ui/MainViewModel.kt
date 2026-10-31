@@ -377,6 +377,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 아니에요 (저절로 이었던 것이면 풀기) */
     fun rejectPlanMatch(planId: Long, entryId: Long) = viewModelScope.launch { repo.rejectPlanMatch(planId, entryId) }
 
+    /** 어느 자산인지 없이 적힌 수입·지출 (자산 잔액에 안 들어감) */
+    val unassigned = repo.unassignedEntries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun assignUnassigned(done: (Int) -> Unit = {}) = viewModelScope.launch {
+        val id = repo.mainAccount() ?: return@launch done(0)
+        done(repo.assignUnassigned(id))
+    }
+
     // ── 실제 잔액 맞추기 ──
     val balanceGaps = repo.balanceGaps.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

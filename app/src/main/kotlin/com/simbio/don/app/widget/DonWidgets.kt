@@ -91,14 +91,18 @@ object Widgets {
         val d = context.resources.displayMetrics.density
         ids.forEach { id ->
             if (st.clear) {
-                v.setInt(id, "setBackgroundResource", if (st.dark) R.drawable.widget_scrim_dark else R.drawable.widget_scrim_light)
-                v.setViewPadding(id, (8 * d).toInt(), (2 * d).toInt(), (8 * d).toInt(), (2 * d).toInt())
+                // 배경 없이 흰 글자 + 그림자 (그림자는 _clear 레이아웃에)
+                v.setInt(id, "setBackgroundResource", 0)
+                v.setViewPadding(id, 0, 0, 0, 0)
             } else {
                 v.setInt(id, "setBackgroundResource", 0)
                 v.setViewPadding(id, 0, 0, 0, 0)
             }
         }
     }
+
+    /** 바탕을 비치게 했으면 글자에 그림자가 있는 레이아웃 */
+    fun layout(st: WidgetStyle, normal: Int, clear: Int): Int = if (st.clear) clear else normal
 
     /** 글자색 여럿 (view id to 색) */
     fun colors(v: RemoteViews, vararg pairs: Pair<Int, Int>) = pairs.forEach { (id, c) -> v.setTextColor(id, c) }
@@ -150,11 +154,12 @@ class GrassWidget : DonWidget() {
 
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
-        val v = RemoteViews(context.packageName, R.layout.widget_grass)
         val st = WidgetStyle.of(context)
+        val v = RemoteViews(context.packageName, Widgets.layout(st, R.layout.widget_grass, R.layout.widget_grass_clear))
         Widgets.background(v, st)
         Widgets.colors(v, R.id.widget_title to st.ink, R.id.widget_sub to st.good)
-        v.setInt(R.id.widget_sub, "setBackgroundResource", if (st.dark) R.drawable.widget_chip_good_dark else R.drawable.widget_chip_good)
+        if (st.clear) Widgets.pills(context, v, st, R.id.widget_sub)
+        else v.setInt(R.id.widget_sub, "setBackgroundResource", if (st.dark) R.drawable.widget_chip_good_dark else R.drawable.widget_chip_good)
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, MainActivity.ACTION_CALENDAR, 10))
         if (home == null) {
             v.setTextViewText(R.id.widget_sub, "앱을 열어 처음 설정을 해 주세요")
@@ -210,8 +215,8 @@ class CalendarWidget : DonWidget() {
 
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
-        val v = RemoteViews(context.packageName, R.layout.widget_calendar)
         val st = WidgetStyle.of(context)
+        val v = RemoteViews(context.packageName, Widgets.layout(st, R.layout.widget_calendar, R.layout.widget_calendar_clear))
         Widgets.background(v, st)
         Widgets.colors(v, R.id.widget_title to st.ink, R.id.widget_sub to st.inkMuted)
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, MainActivity.ACTION_CALENDAR, 11))
@@ -268,8 +273,8 @@ class SavedWidget : DonWidget() {
 
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
-        val v = RemoteViews(context.packageName, R.layout.widget_saved)
         val st = WidgetStyle.of(context)
+        val v = RemoteViews(context.packageName, Widgets.layout(st, R.layout.widget_saved, R.layout.widget_saved_clear))
         Widgets.background(v, st)
         Widgets.colors(
             v,
@@ -331,8 +336,8 @@ class BuddyWidget : DonWidget() {
 
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
-        val v = RemoteViews(context.packageName, R.layout.widget_buddy)
         val st = WidgetStyle.of(context)
+        val v = RemoteViews(context.packageName, Widgets.layout(st, R.layout.widget_buddy, R.layout.widget_buddy_clear))
         Widgets.background(v, st, st.buddyBg)
         Widgets.colors(v, R.id.widget_title to st.ink, R.id.widget_sub to st.game)
         Widgets.pills(context, v, st, R.id.widget_title, R.id.widget_sub)

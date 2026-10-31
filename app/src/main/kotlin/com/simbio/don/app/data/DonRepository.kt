@@ -958,7 +958,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             packageName = p.packageName,
             postedAtEpochSecond = p.postedAt.epochSecond(),
             category = r.category,
-            accountId = accountFor(p.packageName) ?: r.accountId,
+            accountId = accountFor(p.packageName) ?: r.accountId ?: mainAccount(),
             minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
             incomeId = r.id,
         )
@@ -1541,7 +1541,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             packageName = p.packageName,
             postedAtEpochSecond = p.postedAt.epochSecond(),
             category = f.category,
-            accountId = accountFor(p.packageName) ?: f.accountId,
+            accountId = accountFor(p.packageName) ?: f.accountId ?: mainAccount(),
             minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
             fixedId = f.id,
         )
@@ -1552,6 +1552,32 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             dao.upsertFixedExpense(f.copy(lastDueEpochDay = due.toEpochDay()))
         }
         return true
+    }
+
+    /**
+     * 생활비가 나가는 기본 통장: 알림 앱을 자산에 안 이었거나 직접 적을 때 자산을 안 고르면 여기로
+     * (안 숨긴 통장 중 첫째, 없으면 현금). 이게 없으면 자산 탭 잔액에 생활비가 안 줄어든다.
+     */
+    suspend fun mainAccount(): Long? {
+        val shown = dao.accountsNow().filter { !it.hidden }.sortedBy { it.sortOrder }
+        return (shown.firstOrNull { it.type == AccountType.BANK.name } ?: shown.firstOrNull { it.type == AccountType.CASH.name })?.id
+    }
+
+    /** 이 앱의 결제를 적을 자산 (이은 자산 → 기본 통장) */
+    private suspend fun spendAccount(pkg: String?): Long? = accountFor(pkg) ?: mainAccount()
+
+    /** 어느 자산에서 나갔는지 없는 수입·지출 (자산 잔액에 안 들어간 것). 외화 지갑·보낼 돈·정산은 일부러 비워 둔 것이라 뺌 */
+    private fun unassigned(e: EntryEntity): Boolean =
+        e.accountId == null && !e.owe && e.settleFor == null && e.fxText == null &&
+            e.type != EntryType.TRANSFER.name
+
+    val unassignedEntries: Flow<List<EntryEntity>> = dao.allEntries().map { l -> l.filter(::unassigned) }
+
+    /** 자산 없이 적힌 기록을 기본 통장으로 (자산 탭 잔액에 생활비가 반영되게). 옮긴 수 */
+    suspend fun assignUnassigned(accountId: Long): Int = writeLock.withLock {
+        val list = dao.allEntriesNow().filter(::unassigned)
+        dao.updateEntries(list.map { it.copy(accountId = accountId) })
+        list.size
     }
 
     private suspend fun accountFor(pkg: String?): Long? =
@@ -2189,12 +2215,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val f = p.foreign
         val fromWallet = f != null && type == EntryType.SPEND && NotificationParser.extractAmount(p.rawText) == null &&
             boughtForeign(p.packageName, f.currency, p.postedAt.toLocalDate())
-        val account = if (fromWallet) null else accountFor(p.packageName)
+        val account = if (fromWallet) null else spendAccount(p.packageName)
         // 할부 결제 알림 ("3개월")이면 달마다 나눠 적는다
         val months = if (type == EntryType.SPEND) Installments.monthsIn(p.rawText) else null
         if (months != null && p.amount >= months) {
             addInstallmentLocked(
-                p.postedAt.toLocalDate(), p.amount, months, p.label, category, null, "", accountFor(p.packageName),
+                p.postedAt.toLocalDate(), p.amount, months, p.label, category, null, "", spendAccount(p.packageName),
                 p.postedAt.hour * 60 + p.postedAt.minute, p,
             )
             return category
@@ -2240,7 +2266,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 packageName = p.packageName,
                 postedAtEpochSecond = p.postedAt.epochSecond(),
                 category = f?.category ?: Category.BILLS.name,
-                accountId = accountFor(p.packageName) ?: f?.accountId,
+                accountId = accountFor(p.packageName) ?: f?.accountId ?: mainAccount(),
                 minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
                 fixedId = f?.id,
             ),

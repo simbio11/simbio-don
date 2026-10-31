@@ -364,6 +364,26 @@ fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}) {
         if (week.overspent > 0) WarnLine("기본 예산보다 ${won(week.overspent)} 더 썼어요", fontSize = 12)
         if (week.carryIn != 0L) Text("지난주에서 넘어온 돈 ${won(week.carryIn)} 포함", fontSize = 12.sp, color = DonColors.InkMuted)
         Text("${shortDate(week.week.start)} ~ ${shortDate(week.week.end)} · ${week.week.days}일", fontSize = 12.sp, color = DonColors.InkMuted)
+        Divider(Modifier.padding(vertical = 10.dp))
+        // 이번 달 (월급날 기준) 생활비: 남은 돈과 남은 날 하루에
+        val monthLeft = home.plan.disposable - home.monthLiving
+        val daysLeft = (java.time.temporal.ChronoUnit.DAYS.between(home.today, home.cycle.end) + 1).coerceAtLeast(1)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("이번 달 남은 생활비", fontSize = 13.sp, color = DonColors.InkMuted, modifier = Modifier.weight(1f))
+            Text(
+                won(monthLeft),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (monthLeft >= 0) DonColors.Ink else DonColors.Warn,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Meter(home.monthLiving, home.plan.disposable)
+        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+            Text("쓴 돈 ${won(home.monthLiving)} / 생활비 ${won(home.plan.disposable)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
+            Text("${shortDate(home.cycle.end)}까지 ${daysLeft}일", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
+        if (monthLeft < 0) WarnLine("이번 달 생활비를 ${won(-monthLeft)} 넘었어요", fontSize = 12)
         // 결제 알림을 놓쳐 통장 잔액과 안 맞을 때 바로 고치기
         TextButton(onClick = onBalanceFix) { Text("통장 잔액이 실제와 다르면 · 잔액 맞추기", fontSize = 12.sp) }
     }

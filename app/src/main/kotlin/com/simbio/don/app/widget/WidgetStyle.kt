@@ -26,13 +26,16 @@ data class WidgetStyle(val dark: Boolean, val opacity: Int = 100) {
     val scrim: Int get() = if (dark) 0xD9181B21.toInt() else 0xD9FFFFFF.toInt()
     val scrimFaint: Int get() = if (dark) 0x8C181B21.toInt() else 0x8CFFFFFF.toInt()
 
-    val ink: Int get() = if (dark) 0xFFECEEF1.toInt() else 0xFF191F28.toInt()
-    val inkSoft: Int get() = if (clear) ink else if (dark) 0xFFB9C0C9.toInt() else 0xFF4E5968.toInt()
-    val inkMuted: Int get() = if (clear) (if (dark) 0xFFD5DAE0.toInt() else 0xFF333B46.toInt()) else if (dark) 0xFF9AA3AD.toInt() else 0xFF8B95A1.toInt()
-    val inkFaint: Int get() = if (clear) (if (dark) 0xFFAEB6C0.toInt() else 0xFF5B6573.toInt()) else if (dark) 0xFF66707B.toInt() else 0xFFB0B8C1.toInt()
-    val real: Int get() = if (dark) 0xFF6E97FF.toInt() else 0xFF346AFF.toInt()
-    val expense: Int get() = if (dark) 0xFFFF6B74.toInt() else 0xFFE5484D.toInt()
-    val good: Int get() = if (dark) 0xFF34C98C.toInt() else 0xFF14A06A.toInt()
+    /** 비치는 바탕: 배경화면 위 흰 글자 + 그림자 (시스템 위젯처럼), 색은 밝은 쪽 */
+    private val light: Boolean get() = dark || clear
+
+    val ink: Int get() = if (clear) 0xFFFFFFFF.toInt() else if (dark) 0xFFECEEF1.toInt() else 0xFF191F28.toInt()
+    val inkSoft: Int get() = if (clear) 0xF2FFFFFF.toInt() else if (dark) 0xFFB9C0C9.toInt() else 0xFF4E5968.toInt()
+    val inkMuted: Int get() = if (clear) 0xE0FFFFFF.toInt() else if (dark) 0xFF9AA3AD.toInt() else 0xFF8B95A1.toInt()
+    val inkFaint: Int get() = if (clear) 0xA6FFFFFF.toInt() else if (dark) 0xFF66707B.toInt() else 0xFFB0B8C1.toInt()
+    val real: Int get() = if (clear) 0xFF9DB8FF.toInt() else if (dark) 0xFF6E97FF.toInt() else 0xFF346AFF.toInt()
+    val expense: Int get() = if (clear) 0xFFFF9198.toInt() else if (dark) 0xFFFF6B74.toInt() else 0xFFE5484D.toInt()
+    val good: Int get() = if (clear) 0xFF6FE3A6.toInt() else if (dark) 0xFF34C98C.toInt() else 0xFF14A06A.toInt()
     val goodSurface: Int get() = if (dark) 0xFF17352C.toInt() else 0xFFE8F7F0.toInt()
     val game: Int get() = if (dark) 0xFFBBAEFF.toInt() else 0xFF5A3FE0.toInt()
 
@@ -56,9 +59,10 @@ data class WidgetStyle(val dark: Boolean, val opacity: Int = 100) {
     }
 
     /** 깃허브 잔디 색: 무지출이 가장 진하다 (어둡게는 가장 밝다) */
-    fun grass(level: GrassLevel): Int = if (dark) {
+    fun grass(level: GrassLevel): Int = if (light) {
         when (level) {
-            GrassLevel.EMPTY -> 0xFF2A2F37.toInt()
+            // 비치는 바탕에서는 빈칸을 옅은 흰 유리처럼
+            GrassLevel.EMPTY -> if (clear) 0x40FFFFFF else 0xFF2A2F37.toInt()
             GrassLevel.OK -> 0xFF0E4429.toInt()
             GrassLevel.LOW -> 0xFF26A641.toInt()
             GrassLevel.NO_SPEND -> 0xFF39D353.toInt()

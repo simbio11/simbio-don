@@ -168,4 +168,17 @@ class ReconcileRepoTest {
         assertEquals(false, p.autoLinked)
         assertTrue(repo.planHints(LocalDate.of(2026, 10, 27)).first().isEmpty())
     }
+
+    @Test
+    fun `자산을 안 이은 앱 결제는 생활비 통장으로, 자산 없이 적힌 기록은 한 번에 넣는다`() = runTest {
+        repo.saveRule(AppRule("other.app", "다른 페이"))
+        repo.handleNotification(RawNotification("other.app", "결제", "GS25 4,000원 결제", at(27, 9)))
+        assertEquals(bank, entries().single().accountId)
+        // 자산 없이 직접 적은 지출은 잔액에 안 들어가 있다 → 생활비 통장으로
+        repo.addManual(LocalDate.of(2026, 10, 27), 10_000, "현금 아닌 지출", EntryType.SPEND, Category.FOOD)
+        assertEquals(1, repo.unassignedEntries.first().size)
+        assertEquals(1, repo.assignUnassigned(repo.mainAccount()!!))
+        assertTrue(repo.unassignedEntries.first().isEmpty())
+        assertEquals(1_000_000 - 14_000, balance(bank))
+    }
 }
