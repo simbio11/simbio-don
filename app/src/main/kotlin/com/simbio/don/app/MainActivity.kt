@@ -545,6 +545,18 @@ class MainActivity : ComponentActivity() {
                         onAssign = { vm.assignUnassigned { n -> Toast.makeText(this@MainActivity, "${n}건을 생활비 통장 잔액에 넣었어요", Toast.LENGTH_SHORT).show() } },
                         hints = vm.planHints.collectAsStateWithLifecycle().value,
                         onConfirmHint = { h, people -> vm.confirmPlanHint(h.plan.id, h.entry.id, people) },
+                        incomeQuestions = vm.incomeQuestions.collectAsStateWithLifecycle().value,
+                        ownerName = vm.settings.collectAsStateWithLifecycle().value?.ownerName,
+                        onExplainIncome = { e, kind, target ->
+                            vm.explainIncome(e, kind, target)
+                            val msg = when (kind) {
+                                com.simbio.don.app.data.DonRepository.IncomeKind.SELF -> "내 계좌 이체로 바꿨어요 (수입에서 빠짐)"
+                                com.simbio.don.app.data.DonRepository.IncomeKind.HELD -> "맡은 돈으로 바꿨어요 (수입에서 빠짐)"
+                                com.simbio.don.app.data.DonRepository.IncomeKind.SETTLE -> "정산으로 묶었어요"
+                                com.simbio.don.app.data.DonRepository.IncomeKind.INCOME -> "수입으로 둘게요"
+                            }
+                            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+                        },
                         onRejectHint = { h -> vm.rejectPlanMatch(h.plan.id, h.entry.id) },
                         onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
                         onEventDay = { d -> onCalDate(d); vm.showCalendarMonth(java.time.YearMonth.from(d)); onTab(Tab.Calendar) },

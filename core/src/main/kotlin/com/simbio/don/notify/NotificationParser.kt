@@ -37,7 +37,7 @@ object NotificationParser {
     private val AMOUNT = Regex("""(\d{1,3}(?:,\d{3})+|\d+)\s*원""")
 
     /** 이 단어가 금액 바로 앞에 있으면 결제 금액이 아니다 */
-    private val NON_PAYMENT_PREFIXES = listOf("잔액", "누적", "한도", "포인트", "적립", "잔여")
+    private val NON_PAYMENT_PREFIXES = listOf("잔액", "잔고", "누적", "한도", "포인트", "적립", "잔여", "가능금액", "가능 금액", "출금가능", "남은")
 
     /**
      * [rates]: 받아 둔 환율 (통화 → 1단위에 원). 외화만 적힌 알림은 이걸로 원화로 바꾸고, 없으면 [Currencies.FALLBACK] 어림.
@@ -73,19 +73,34 @@ object NotificationParser {
         return if (action == null) ParseResult.Unclassified(payment) else ParseResult.Payment(payment)
     }
 
-    private val BALANCE = Regex("""(?:잔액|잔고|통장잔액|계좌잔액)\s*[:：]?\s*(-?\d{1,3}(?:,\d{3})+|-?\d+)\s*원""")
+    private val BALANCE = Regex("""(?:잔액|잔고|통장잔액|계좌잔액)(?:\s*\([^)]*\))?\s*[:：]?\s*(-?\d{1,3}(?:,\d{3})+|-?\d+)\s*원?""")
 
     /** 거래 뒤 잔액 ("잔액 1,234,000원") */
     fun extractBalance(text: String): Long? =
         BALANCE.find(text)?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull()
 
-    fun extractAmount(text: String): Long? = AMOUNT.findAll(text)
-        .firstOrNull { m ->
-            val before = text.substring(maxOf(0, m.range.first - 6), m.range.first)
-            NON_PAYMENT_PREFIXES.none { it in before }
+    /** 입금·출금·결제 같은 말 바로 뒤 금액 ("입금 200,000원", "출금200,000") — 이게 있으면 먼저 */
+    private val ACTION_AMOUNT = Regex("""(?:입금|출금|결제|승인|송금|이체|사용|취소|환불|보냈|받았)\s*(?:금액)?\s*[:：]?\s*(\d{1,3}(?:,\d{3})+|\d+(?=\s*원))""")
+
+    /**
+     * 결제·입금 금액. 잔액·한도·포인트처럼 앞에 붙은 말로 금액이 아닌 것은 빼고, 거래 뒤 잔액과 같은 숫자도 뺀다
+     * (잔액이 금액으로 잡히면 "20만 원 입금"이 "200,995원"처럼 잘못 적힌다).
+     */
+    fun extractAmount(text: String): Long? {
+        val balance = extractBalance(text)
+        fun ok(m: MatchResult): Boolean {
+            val before = text.substring(maxOf(0, m.range.first - 10), m.range.first).substringAfterLast('\n')
+            val v = m.groupValues[1].replace(",", "").toLongOrNull() ?: return false
+            return v > 0 && NON_PAYMENT_PREFIXES.none { it in before } && v != balance
         }
-        ?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull()
-        ?.takeIf { it > 0 }
+        val v = ACTION_AMOUNT.findAll(text).firstOrNull(::ok) ?: AMOUNT.findAll(text).firstOrNull(::ok)
+        return v?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull()
+            // 잔액과 같은 숫자밖에 없으면 (잔액 없이 금액만 온 알림을 잘못 본 것) 그래도 그 숫자
+            ?: AMOUNT.findAll(text).firstOrNull { m ->
+                val before = text.substring(maxOf(0, m.range.first - 6), m.range.first)
+                NON_PAYMENT_PREFIXES.none { it in before }
+            }?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull()?.takeIf { it > 0 }
+    }
 
     /** 가게 이름을 못 찾았을 때: "결제" 한 마디 대신 어느 앱(카드)인지라도 */
     fun fallbackLabel(appName: String, action: RuleAction, foreign: Foreign? = null): String = when (action) {

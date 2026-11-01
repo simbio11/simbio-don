@@ -1,6 +1,7 @@
 package com.simbio.don.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -160,6 +161,65 @@ fun PeoplePicker(people: Int?, onPick: (Int) -> Unit) {
             TextButton(onClick = { onPick(people!! - 1) }) { Text("−") }
             TextButton(onClick = { onPick((people!! + 1).coerceAtMost(30)) }) { Text("+") }
         }
+    }
+}
+
+// ── 누구 돈이에요? ─────────────────────────────────────────
+
+/**
+ * 알림으로 들어온 돈이 정말 내 수입인지 묻는다: 정산 / 내 돈 옮김 / 친구가 맡긴 돈 / 수입 맞아요.
+ * 수입이 아닌 것은 수입 합계에서 빠지고 통장 잔액에만 들어간다.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun IncomeQuestionCard(
+    items: List<com.simbio.don.app.data.EntryEntity>,
+    receivables: List<com.simbio.don.app.data.Receivable>,
+    ownerName: String?,
+    onExplain: (com.simbio.don.app.data.EntryEntity, com.simbio.don.app.data.DonRepository.IncomeKind, Long?) -> Unit,
+) {
+    if (items.isEmpty()) return
+    RealCard("들어온 돈, 다 내 수입이에요?", icon = { Icon(UiIcon.FLAG, 18.dp, DonColors.Real) }) {
+        Text("친구한테 정산받은 돈, 내 다른 통장에서 옮긴 돈, 대신 내 달라고 맡긴 돈은 수입이 아니에요. 골라 주면 수입에서 빼고 잔액에만 넣어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        items.take(3).forEach { e ->
+            var settling by remember(e.id) { mutableStateOf(false) }
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(DonColors.SurfaceAlt).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(e.label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, modifier = Modifier.weight(1f), maxLines = 1)
+                    Text("+${won(e.amount)}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Income)
+                }
+                Text(shortDate(LocalDate.ofEpochDay(e.epochDay)), fontSize = 12.sp, color = DonColors.InkMuted)
+                val person = com.simbio.don.notify.SelfTransfer.PERSON.matches(e.label.removeSuffix("님")) && '*' !in e.label
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (receivables.isNotEmpty()) {
+                        SmallButton(onClick = { settling = !settling }) { Text("정산 받은 돈") }
+                    }
+                    SmallButton(onClick = { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.SELF, null) }, containerColor = DonColors.Ink) { Text("내 돈 옮김") }
+                    SmallButton(onClick = { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.HELD, null) }, containerColor = DonColors.Ink) { Text("친구가 맡긴 돈") }
+                    SubButton(onClick = { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.INCOME, null) }, containerColor = DonColors.Surface) { Text("수입 맞아요") }
+                }
+                if (person && ownerName.isNullOrBlank()) {
+                    Text("'${e.label.removeSuffix("님")}'이 나라면 '내 돈 옮김' — 다음부터 이 이름에서 온 돈은 저절로 내 계좌 이체로 적어요.", fontSize = 11.sp, color = DonColors.InkMuted)
+                }
+                if (settling) {
+                    Text("어느 걸 정산받았어요?", fontSize = 12.sp, color = DonColors.InkSoft)
+                    receivables.take(6).forEach { r ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(DonColors.Surface)
+                                .clickable { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.SETTLE, r.entry.id) }.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("${r.entry.label} · ${shortDate(LocalDate.ofEpochDay(r.entry.epochDay))}", fontSize = 13.sp, color = DonColors.Ink, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text("남은 ${won(r.left)}", fontSize = 12.sp, color = DonColors.Good)
+                        }
+                    }
+                }
+            }
+        }
+        if (items.size > 3) Text("그 밖에 ${items.size - 3}건 더", fontSize = 12.sp, color = DonColors.InkMuted)
     }
 }
 

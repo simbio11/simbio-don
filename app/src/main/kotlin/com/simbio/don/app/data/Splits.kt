@@ -110,6 +110,8 @@ object Splits {
 
 /** 저절로 이어도 될 만큼 확실한 짝인가: 금액이 한 사람 몫이나 남은 받을 돈 전부와 같거나, 보낼 돈과 같다 */
 fun SplitHint.isExact(): Boolean = when (this) {
-    is SplitHint.Received -> income.amount == target.perPerson || income.amount == target.left
+    is SplitHint.Received -> income.amount == target.perPerson || income.amount == target.left ||
+        // 몇 명인지 안 적었어도 남들 몫이 이 금액의 몇 배로 딱 나뉘면 (예: 남들 몫 76,000 = 19,000 × 4)
+        (target.entry.people == null && income.amount > 0 && target.others % income.amount == 0L && target.others / income.amount in 2..9)
     is SplitHint.Sent -> out.amount == target.amount
 }

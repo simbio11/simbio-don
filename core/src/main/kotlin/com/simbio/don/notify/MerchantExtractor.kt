@@ -32,6 +32,8 @@ object MerchantExtractor {
         // [Web발신]·[신한체크승인]·[KB국민카드] 같은 보낸 곳 표시 ([스타벅스] 같은 건 남김)
         Regex("""\[[^\]]*(발신|카드|은행|뱅크|승인|체크|광고|알림|페이|Pay|pay|증권|농협|국민|신한|우리|하나|현대|삼성|롯데|BC|비씨)[^\]]*]"""),
         Regex("""\(\s*\d{2,4}\s*\)"""), // (1234)
+        Regex("""[\d-]*\*{2,}[\d*-]*"""), // 240-******-88507 (가린 계좌번호)
+        Regex("""(잔액|잔고)\s*(\([^)]*\))?"""), // 잔액(출금가능)
         Regex("""\d{2,4}\*+\d*|\*+\d{2,4}"""), // 1234** / **12
         Regex("""[₩￦]\s*\d[\d,]*"""), // ₩5,000
         Regex("""(US\$|\$|€|£|¥|￥)\s*\d[\d,.]*"""), // $12.99
@@ -46,12 +48,12 @@ object MerchantExtractor {
     )
 
     /** 이 말 뒤가 가게 이름 ("가맹점: 스타벅스", "사용처 GS25") */
-    private val NAME_TAG = Regex("""(?:가맹점\s*명?|사용처|결제처|이용처|상호\s*명?)\s*[:：]?\s*([^\n|,·]+)""")
+    private val NAME_TAG = Regex("""(?:가맹점\s*명?|사용처|결제처|이용처|상호\s*명?|보낸\s*분|보낸\s*사람|입금자\s*명?|송금인|의뢰인|받는\s*분|받는\s*사람)\s*[:：]?\s*([^\n|,·]+)""")
 
     /** 낱말에서 떼어 낼 끝말 (긴 것부터) */
     private val SUFFIXES = listOf(
         "되었습니다", "되었어요", "하였습니다", "하셨습니다", "했습니다", "했어요", "됐어요", "됩니다",
-        "결제완료", "승인완료", "결제", "승인", "완료", "사용", "이용", "에서의", "에서", "님",
+        "결제완료", "승인완료", "결제", "승인", "완료", "사용", "이용", "에서의", "에서", "님으로부터", "님께서", "님에게", "님께", "님이", "님",
     )
 
     /** 이것만 남으면 가게가 아니다 */
@@ -62,6 +64,7 @@ object MerchantExtractor {
         "원", "적립", "포인트", "혜택", "결제가", "승인이", "결제는", "결제를", "완료되었습니다", "사용처", "결제처", "이용처",
         "상호", "상호명", "가맹점명", "일시", "금일", "오늘", "방금", "총", "합계", "결제금액", "승인금액", "이용금액", "사용금액",
         "KRW", "USD", "EUR", "JPY", "외화", "해외", "해외승인", "해외결제", "해외이용", "환전", "외화통장", "달러", "web발신", "Web발신", "본인", "확인", "바로가기", "자세히", "보기",
+        "출금가능", "이용가능", "가능", "잔고", "입출금", "보통예금", "저축예금", "입출금통장",
     )
 
     private fun isGeneric(w: String): Boolean {
@@ -120,7 +123,7 @@ object MerchantExtractor {
         } else {
             tokens(line).getOrNull(spot.word)?.let(::clean)
         } ?: return null
-        return value.takeIf { it.length >= 2 && !isGeneric(it) && it != appName && it.any { ch -> !ch.isDigit() } }?.take(40)
+        return value.takeIf { it.length >= 2 && !isGeneric(it) && it != appName && it.any { ch -> ch.isLetter() } }?.take(40)
     }
 
     /**
@@ -150,6 +153,6 @@ object MerchantExtractor {
             .filterNot { it.endsWith("카드") || it.endsWith("은행") || it.endsWith("뱅크") || it.endsWith("페이") || it.endsWith("Pay") || it.endsWith("pay") }
             .map { w -> SUFFIXES.fold(w) { acc, sw -> if (acc.endsWith(sw) && acc.length > sw.length) acc.removeSuffix(sw) else acc } }
             .map(::clean)
-            .filter { it.length >= 2 && !isGeneric(it) && it.any { ch -> !ch.isDigit() } }
+            .filter { it.length >= 2 && !isGeneric(it) && it.any { ch -> ch.isLetter() } }
             .filter { appName.isBlank() || it != appName }
 }

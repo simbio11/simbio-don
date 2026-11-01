@@ -65,7 +65,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshClock() {
         val now = LocalDateTime.now()
         clock.value = now
-        viewModelScope.launch { repo.dailyUpkeep(now) }
+        viewModelScope.launch {
+            repo.dailyUpkeep(now)
+            // 예전 알림 기록 정리 (잔액을 금액으로 적은 것·가린 계좌번호 이름) + 정산 짝 다시 보기
+            runCatching { repo.tidyUp(now.toLocalDate()) }
+        }
         refreshWeather()
         // 해외 결제가 있으면 오늘 환율 (켜 둔 때만)
         viewModelScope.launch { runCatching { com.simbio.don.app.fx.FxRates.refreshIfNeeded(getApplication()) } }
@@ -222,6 +226,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun settleWith(target: EntryEntity, income: EntryEntity) = viewModelScope.launch { repo.settleWith(target, income) }
     fun settleDirect(target: EntryEntity, amount: Long, accountId: Long?) = viewModelScope.launch { repo.settleDirect(target, amount, accountId, LocalDate.now()) }
+    val incomeQuestions = repo.incomeQuestions().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun explainIncome(e: EntryEntity, kind: DonRepository.IncomeKind, targetId: Long? = null) =
+        viewModelScope.launch { repo.explainIncome(e.id, kind, targetId) }
     fun confirmAutoLink(e: EntryEntity) = viewModelScope.launch { repo.confirmAutoLink(e.id) }
     fun forgiveSplit(target: EntryEntity) = viewModelScope.launch { repo.forgiveSplit(target) }
     fun unsettle(receipt: EntryEntity) = viewModelScope.launch { repo.unsettle(receipt) }

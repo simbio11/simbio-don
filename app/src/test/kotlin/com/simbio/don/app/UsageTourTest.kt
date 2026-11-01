@@ -104,7 +104,7 @@ class UsageTourTest {
         repo.addManual(start.plusMonths(1), 3_200_000, "월급", EntryType.INCOME, Category.SALARY, accountId = bank)
         // 더치페이: 내가 다 냄(4명) + 친구 한 명 입금, 남이 냄(보낼 돈)
         repo.addManual(today.minusDays(2), 96_000, "고깃집", EntryType.SPEND, Category.FOOD, accountId = card, share = Splits.myShare(96_000, 4), people = 4)
-        repo.addManual(today.minusDays(1), 24_000, "김철수", EntryType.INCOME, Category.OTHER_INCOME, accountId = bank)
+        repo.addManual(today.minusDays(1), 20_000, "김철수", EntryType.INCOME, Category.OTHER_INCOME, accountId = bank)
         repo.addManual(today.minusDays(1), 18_000, "회식 (팀장님이 냄)", EntryType.SPEND, Category.FOOD, owe = true)
         // 계획·목표
         repo.savePlan(PlanEntity(epochDay = today.plusDays(3).toEpochDay(), amount = 50_000, label = "엄마 생신", category = Category.EVENT.name))

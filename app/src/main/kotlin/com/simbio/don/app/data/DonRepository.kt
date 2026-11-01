@@ -2057,6 +2057,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         com.simbio.don.notify.MoveKind.SAVINGS_OUT -> "저축 찾기"
     }
 
+    private val MASKED = Regex("""\*{2,}""")
+
     // ── 정산 짝 저절로 잇기 ─────────────────────────────────────
 
     /** 정산 짝 다시 보기 (나눠 냈다고 고친 뒤 등) */
@@ -2098,6 +2100,107 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
         dao.updateEntry(e)
         dao.plansNow().filter { it.doneEntryId == e.id }.forEach { dao.savePlan(it.copy(doneAmount = e.share ?: e.amount)) }
+    }
+
+    // ── 누구 돈이에요? (들어온 돈이 정말 수입인지) ───────────────────
+
+    /** 들어온 돈의 정체 */
+    enum class IncomeKind {
+        /** 나눠 낸 것의 정산 */
+        SETTLE,
+
+        /** 내 다른 통장에서 옮긴 돈 */
+        SELF,
+
+        /** 친구가 맡긴 돈 (대신 내 줄 돈) — 내 수입이 아님 */
+        HELD,
+
+        /** 수입 맞아요 (다시 안 묻기) */
+        INCOME,
+    }
+
+    /** 최근 2주 알림으로 들어온 돈 중 아직 정체를 안 정한 것 (월급·반복 수입·정산·확인한 것은 빼고) */
+    fun incomeQuestions(today: LocalDate = LocalDate.now()): Flow<List<EntryEntity>> =
+        dao.entriesBetween(today.minusDays(14).toEpochDay(), today.plusDays(1).toEpochDay()).map { l ->
+            l.filter { e ->
+                e.type == EntryType.INCOME.name && e.source == EntrySource.NOTIFICATION.name && e.settleFor == null &&
+                    e.incomeId == null && e.linkState == 0 && e.category != Category.SALARY.name && e.amount >= 5_000
+            }.sortedByDescending { it.postedAtEpochSecond ?: it.epochDay }
+        }
+
+    /**
+     * 들어온 돈의 정체를 정한다. 내 돈 옮김이면 이체로 (보낸 사람이 사람 이름이고 내 이름을 아직 안 정했으면 그 이름을 내 이름으로 —
+     * 다음부터 그 이름에서 온 돈은 저절로 이체), 맡은 돈이면 수입이 아닌 이체로, 정산이면 [targetId]의 정산으로.
+     */
+    suspend fun explainIncome(entryId: Long, kind: IncomeKind, targetId: Long? = null) = locked {
+        val e = dao.entryNow(entryId) ?: return@locked
+        when (kind) {
+            IncomeKind.SETTLE -> {
+                val t = targetId?.let { dao.entryNow(it) } ?: return@locked
+                dao.updateEntry(e.copy(type = EntryType.TRANSFER.name, toAccountId = e.accountId, accountId = null, settleFor = t.id, sentOut = false, linkState = 0))
+            }
+            IncomeKind.SELF -> {
+                val who = e.label.trim().removeSuffix("님")
+                val s = dao.settingsNow()
+                if (s != null && s.ownerName.isNullOrBlank() && com.simbio.don.notify.SelfTransfer.PERSON.matches(who) && '*' !in who) {
+                    dao.saveSettings(s.copy(ownerName = who))
+                }
+                dao.updateEntry(
+                    e.copy(
+                        type = EntryType.TRANSFER.name, label = SELF_TRANSFER_LABEL, memo = listOf(e.label, e.memo).filter { it.isNotBlank() }.joinToString(" · "),
+                        category = Category.ETC.name, toAccountId = e.accountId, accountId = null, linkState = 0,
+                    ),
+                )
+            }
+            IncomeKind.HELD -> dao.updateEntry(
+                e.copy(
+                    type = EntryType.TRANSFER.name, label = HELD_LABEL, memo = listOf(e.label, e.memo).filter { it.isNotBlank() }.joinToString(" · "),
+                    category = Category.ETC.name, toAccountId = e.accountId, accountId = null, linkState = 0,
+                ),
+            )
+            IncomeKind.INCOME -> dao.updateEntry(e.copy(linkState = 2))
+        }
+    }
+
+    /**
+     * 앱을 열 때 최근 알림 기록 정리: 거래 뒤 잔액을 금액으로 잘못 적은 것 고치기(고친 뒤 다른 앱이 같은 돈을 적었으면 하나만),
+     * 가린 계좌번호("240-******-88507")를 이름으로 적은 것 다시 찾기, 정산 짝 다시 보기.
+     */
+    suspend fun tidyUp(today: LocalDate = LocalDate.now()) = locked {
+        val recent = dao.entriesBetweenNow(today.minusDays(60).toEpochDay(), today.plusDays(1).toEpochDay())
+        val rules = dao.appRulesNow().associateBy { it.packageName }
+        val fixed = mutableListOf<EntryEntity>()
+        recent.filter { it.source == EntrySource.NOTIFICATION.name && it.rawText != null }.forEach { e ->
+            val raw = e.rawText!!
+            var u = e
+            val body = raw.replace('\n', ' ')
+            val bal = NotificationParser.extractBalance(body)
+            val amt = NotificationParser.extractAmount(body)
+            if (bal != null && e.amount == bal && amt != null && amt != bal && e.fxText == null && e.installmentId == null && e.share == null) {
+                u = u.copy(amount = amt)
+            }
+            if (MASKED.containsMatchIn(e.label)) {
+                val r = rules[e.packageName]
+                val (t, x) = splitRaw(raw)
+                val name = com.simbio.don.notify.MerchantExtractor.extract(t, x, r?.displayName.orEmpty(), com.simbio.don.notify.MerchantSpot.decode(r?.merchantSpot))
+                val action = if (e.type == EntryType.INCOME.name) RuleAction.INCOME else RuleAction.SPEND
+                u = u.copy(label = name.ifBlank { NotificationParser.fallbackLabel(r?.displayName.orEmpty(), action) }.take(40), nameUnknown = name.isBlank())
+            }
+            if (u != e) {
+                dao.updateEntry(u)
+                if (u.amount != e.amount) fixed += u
+            }
+        }
+        // 금액을 고쳤더니 다른 앱이 이미 적은 같은 돈이면 (같은 종류·같은 금액·5분 안) 고친 쪽을 지운다
+        fixed.forEach { u ->
+            val at = u.postedAtEpochSecond ?: return@forEach
+            val twin = recent.any { o ->
+                o.id != u.id && o.packageName != u.packageName && o.type == u.type && o.amount == u.amount &&
+                    kotlin.math.abs((o.postedAtEpochSecond ?: Long.MIN_VALUE / 2) - at) <= 300
+            }
+            if (twin) dao.deleteEntry(u)
+        }
+        autoMatchLocked(today)
     }
 
     /** 저절로 이은 짝이 맞아요 */
@@ -2866,6 +2969,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
         /** 내 계좌끼리 옮긴 돈 기록 이름 */
         const val SELF_TRANSFER_LABEL = "내 계좌 이체"
+        const val HELD_LABEL = "맡은 돈 (친구 돈)"
 
         /** 환율이 어디서 왔는지 */
         const val FX_EXCHANGE = "EXCHANGE"

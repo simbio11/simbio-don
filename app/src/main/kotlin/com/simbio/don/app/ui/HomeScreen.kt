@@ -87,6 +87,9 @@ fun HomeScreen(
     /** 계획과 맞을 것 같은 결제 */
     hints: List<com.simbio.don.app.data.PlanHint> = emptyList(),
     onConfirmHint: (com.simbio.don.app.data.PlanHint, Int?) -> Unit = { _, _ -> },
+    incomeQuestions: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
+    ownerName: String? = null,
+    onExplainIncome: (com.simbio.don.app.data.EntryEntity, com.simbio.don.app.data.DonRepository.IncomeKind, Long?) -> Unit = { _, _, _ -> },
     onRejectHint: (com.simbio.don.app.data.PlanHint) -> Unit = {},
     /** 일정을 누르면 그날 캘린더 */
     onEventDay: (java.time.LocalDate) -> Unit = onCalendarDay,
@@ -121,6 +124,8 @@ fun HomeScreen(
         }
         // 계획과 맞을 것 같은 결제 (두 번 세지 않게)
         hints.take(2).forEach { h -> PlanHintCard(h, { people -> onConfirmHint(h, people) }, { onRejectHint(h) }) }
+        // 들어온 돈이 정말 수입인지 (정산·내 돈 옮김·맡은 돈)
+        IncomeQuestionCard(incomeQuestions, splits.receivables, ownerName, onExplainIncome)
         if (home.assetCheckDue && home.salaryNotice == null) {
             Banner(
                 "월급날 자산 점검",

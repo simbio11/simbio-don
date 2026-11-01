@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 
 class SelfTransferTest {
     private val at = LocalDateTime.of(2026, 10, 24, 9, 0)
-    private fun p(action: RuleAction, text: String, amount: Long = 300_000) = ParsedPayment("bank", action, amount, "은행", at, text)
+    private fun p(action: RuleAction, text: String, amount: Long = 300_000, label: String = "") = ParsedPayment("bank", action, amount, label, at, text)
 
     @Test
     fun `송금으로 나간 것과 카드 결제를 가린다`() {
@@ -25,6 +25,9 @@ class SelfTransferTest {
         assertFalse(SelfTransfer.looksSelf(p(RuleAction.SPEND, "홍길동님 카드 승인 300,000원"), "홍길동"))
         assertFalse(SelfTransfer.looksSelf(p(RuleAction.INCOME, "입금 300,000원 김철수"), "홍길동"))
         assertFalse(SelfTransfer.looksSelf(p(RuleAction.SPEND, "홍길동님께 보냈어요"), "홍"))
+        // 내 이름이 받는 사람으로만 있고 보낸 사람은 따로 있으면 내 돈이 아니다
+        assertFalse(SelfTransfer.looksSelf(p(RuleAction.INCOME, "홍길동님, 김민수님이 19,000원을 보냈어요", label = "김민수"), "홍길동"))
+        assertTrue(SelfTransfer.looksSelf(p(RuleAction.INCOME, "입금 200,000원 홍길동", label = "홍길동"), "홍길동"))
     }
 
     @Test
