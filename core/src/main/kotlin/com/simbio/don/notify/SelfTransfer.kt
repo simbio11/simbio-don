@@ -22,17 +22,23 @@ object SelfTransfer {
     /** 사람 이름처럼 보이는 것 (한글 2~4자, 가운데를 가린 "김*수") */
     val PERSON = Regex("""^[가-힣][가-힣*]{1,3}$""")
 
+    /** 저장한 내 이름(쉼표로 여러 개)을 나눈다 */
+    fun names(ownerName: String?): List<String> =
+        ownerName.orEmpty().split(',', '/', '·').map { it.trim() }.filter { it.length >= 2 }
+
     /** 한쪽만 봐도 내 계좌끼리인 것 같은지 */
     fun looksSelf(p: ParsedPayment, ownerName: String?): Boolean {
         if (p.action != RuleAction.SPEND && p.action != RuleAction.INCOME) return false
         if (SELF_WORDS.any { it in p.rawText }) return true
-        val name = ownerName?.trim()?.takeIf { it.length >= 2 } ?: return false
+        // 이름은 여러 개 (한글·영문 표기: "심비오, SIMBIO")
+        val names = names(ownerName)
+        if (names.isEmpty()) return false
         val moving = isSendOut(p) || p.action == RuleAction.INCOME
         if (!moving) return false
         // 보낸·받는 사람이 따로 잡혔으면 그 이름이 나여야 한다 ("심비오님, 김민수님이 보냈어요"처럼 내 이름이 받는 사람으로만 있으면 아님)
         val who = p.label.trim().removeSuffix("님")
-        if (PERSON.matches(who)) return who == name || who.startsWith(name)
-        return name in p.rawText
+        if (PERSON.matches(who)) return names.any { who == it || who.startsWith(it) }
+        return names.any { it in p.rawText }
     }
 
     /** 나간 것과 들어온 것이 같은 돈인지 (같은 금액, [WINDOW] 안) */

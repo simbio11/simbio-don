@@ -28,6 +28,8 @@ class SelfTransferTest {
         // 내 이름이 받는 사람으로만 있고 보낸 사람은 따로 있으면 내 돈이 아니다
         assertFalse(SelfTransfer.looksSelf(p(RuleAction.INCOME, "홍길동님, 김민수님이 19,000원을 보냈어요", label = "김민수"), "홍길동"))
         assertTrue(SelfTransfer.looksSelf(p(RuleAction.INCOME, "입금 200,000원 홍길동", label = "홍길동"), "홍길동"))
+        // 이름 여러 개 (영문 표기)
+        assertTrue(SelfTransfer.looksSelf(p(RuleAction.INCOME, "입금 200,000원 HONG GILDONG"), "홍길동, HONG GILDONG"))
     }
 
     @Test

@@ -260,6 +260,48 @@ fun AccountEditScreen(
                     AccountType.entries.forEach { t -> FilterChip(selected = t == type, onClick = { type = t }, label = { Text(t.label) }) }
                 }
             }
+            // 계좌번호 대신 은행·카드사 이름으로: 고르면 이름을 채우고 그 앱 알림과 잇는다
+            val kind = when (type) {
+                AccountType.BANK, AccountType.SAVINGS -> com.simbio.don.notify.InstitutionKind.BANK
+                AccountType.CARD -> com.simbio.don.notify.InstitutionKind.CARD
+                AccountType.ETC -> com.simbio.don.notify.InstitutionKind.PAY
+                else -> null
+            }
+            if (kind != null) {
+                var picked by remember(type) { mutableStateOf(com.simbio.don.notify.Institutions.of(kind).firstOrNull { it.name in name }?.name) }
+                FormCard(if (kind == com.simbio.don.notify.InstitutionKind.CARD) "카드사" else if (kind == com.simbio.don.notify.InstitutionKind.PAY) "페이" else "은행") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        com.simbio.don.notify.Institutions.of(kind).forEach { inst ->
+                            FilterChip(selected = picked == inst.name, onClick = {
+                                val before = picked
+                                picked = inst.name
+                                // 이름이 비었거나 앞서 고른 은행 이름이면 바꾼다
+                                if (name.isBlank() || (before != null && name.startsWith(before))) {
+                                    name = when (type) {
+                                        AccountType.CARD -> inst.name
+                                        AccountType.SAVINGS -> "${inst.name} 적금"
+                                        AccountType.ETC -> "${inst.name} 머니"
+                                        else -> "${inst.name} 통장"
+                                    }.take(20)
+                                }
+                                val watched = rules.filter { it.enabled }
+                                val match = watched.firstOrNull { it.packageName in inst.packages }
+                                    ?: watched.firstOrNull { r -> inst.labelWords.any { w -> w in r.displayName } }
+                                match?.let { pkg = it.packageName }
+                            }, label = { Text(inst.name) })
+                        }
+                    }
+                    picked?.let { n ->
+                        val linked = rules.firstOrNull { it.packageName == pkg }
+                        Text(
+                            if (linked != null) "'${linked.displayName}' 알림을 이 자산으로 적어요"
+                            else "$n 앱이 알림 읽을 앱에 없어요. 설정 › 알림 읽을 앱에서 켜면 이을 수 있어요",
+                            fontSize = 12.sp,
+                            color = if (linked != null) DonColors.Good else DonColors.InkMuted,
+                        )
+                    }
+                }
+            }
             FormCard {
                 OutlinedTextField(
                     value = name,

@@ -105,6 +105,12 @@ class AppFlowTest {
         shot("01_welcome")
         rule.onNodeWithText("시작하기").performClick()
 
+        // 내 이름 (예금주): 보낸 사람이 나면 내 통장끼리 옮긴 돈
+        waitText("내 이름")
+        rule.onNodeWithText("이름 (예: 홍길동)").performTextReplacement("심비오")
+        shot("01a_name")
+        rule.onNodeWithText("다음").performClick()
+
         waitText("내 캐릭터")
         rule.onNodeWithText("여자").performClick()
         shot("01b_character")
@@ -134,9 +140,13 @@ class AppFlowTest {
         shot("05_this_month")
         rule.onNodeWithText("다음").performClick()
 
-        waitText("자산 잔액 (선택)")
-        rule.onNodeWithText("주식·투자 지금 금액").performScrollTo().performTextReplacement("2000000")
+        // 통장·카드는 은행·카드사 이름으로
+        waitText("내 통장·카드")
+        rule.onAllNodesWithText("카카오뱅크").onFirst().performScrollTo().performClick()
+        rule.onAllNodesWithText("현대카드").onFirst().performScrollTo().performClick()
         shot("06_assets_setup")
+        rule.onNodeWithText("+ 주식·투자").performScrollTo().performClick()
+        rule.onNodeWithText("지금 금액").performScrollTo().performTextReplacement("2000000")
         rule.onNodeWithText("다음").performClick()
 
         // 알림을 읽을 앱: 폰 목록이 없으면 기본 결제 앱을 미리 골라 둔다
@@ -155,6 +165,12 @@ class AppFlowTest {
         assertEquals(com.simbio.don.game.Gender.FEMALE, readDb { houseNow() }?.look?.let { com.simbio.don.game.CharacterLook.decode(it).gender })
         assertEquals(false, readDb { appRulesNow() }.single { it.packageName == "com.kakao.bank" }.enabled)
         assertEquals(2_000_000L, readDb { accountsNow() }.single { it.type == "INVEST" }.opening)
+        val living = readDb { accountsNow() }.first { it.type == "BANK" }
+        assertEquals("카카오뱅크 생활비", living.name)
+        assertEquals("com.kakao.bank", living.packageName)
+        assertEquals("com.hyundaicard.appcard", readDb { accountsNow() }.single { it.type == "CARD" }.packageName)
+        assertEquals("현대카드", readDb { accountsNow() }.single { it.type == "CARD" }.name)
+        assertEquals("심비오", readDb { settingsNow() }?.ownerName)
         rule.onNodeWithText("결제 알림 자동 기록이 꺼져 있어요").assertExists()
         rule.onNodeWithText("지난주 결산이 준비됐어요").assertDoesNotExist()
 

@@ -1240,6 +1240,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         look: CharacterLook = CharacterLook.MALE,
         /** 결제 알림을 읽을 앱 (null이면 기본 앱 목록을 켜 둔다) */
         apps: List<AppRule>? = null,
+        /** 내 이름 (예금주, 쉼표로 여러 표기) — 보낸 사람이 나면 내 계좌끼리 옮긴 돈 */
+        ownerName: String? = null,
     ) = locked {
         saveLookLocked(look)
         val ids = accounts.mapIndexed { i, a ->
@@ -1247,7 +1249,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
         // 모으는 통장은 시작 금액을 첫 점검으로 남긴다 (다음 월급날부터 점검)
         accounts.forEachIndexed { i, a -> if (a.type.grows) dao.insertAssetCheck(AssetCheckEntity(accountId = ids[i], epochDay = today.toEpochDay(), value = a.opening)) }
-        dao.saveSettings(SettingsEntity(payDay = payDay, settlementDay = settlementDay.value, savings = savings))
+        dao.saveSettings(SettingsEntity(payDay = payDay, settlementDay = settlementDay.value, savings = savings, ownerName = ownerName?.trim()?.take(40)?.ifBlank { null }))
         // 고정 지출은 보통 통장에서 나간다
         val bankId = accounts.indexOfFirst { it.type == AccountType.BANK }.takeIf { it >= 0 }?.let { ids[it] }
         dao.replaceFixedExpenses(fixed.map { FixedExpenseEntity(name = it.name, amount = it.amount, day = it.day, accountId = bankId) })
@@ -2142,8 +2144,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             IncomeKind.SELF -> {
                 val who = e.label.trim().removeSuffix("님")
                 val s = dao.settingsNow()
-                if (s != null && s.ownerName.isNullOrBlank() && com.simbio.don.notify.SelfTransfer.PERSON.matches(who) && '*' !in who) {
-                    dao.saveSettings(s.copy(ownerName = who))
+                val names = com.simbio.don.notify.SelfTransfer.names(s?.ownerName)
+                if (s != null && who !in names && com.simbio.don.notify.SelfTransfer.PERSON.matches(who) && '*' !in who) {
+                    dao.saveSettings(s.copy(ownerName = (names + who).joinToString(", ")))
                 }
                 dao.updateEntry(
                     e.copy(
@@ -2465,7 +2468,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 내 이름 (예금주) 저장: 송금·입금 알림에 보이면 내 계좌끼리로 본다 */
     suspend fun saveOwnerName(name: String) = locked {
         val s = dao.settingsNow() ?: return@locked
-        dao.saveSettings(s.copy(ownerName = name.trim().take(20).ifBlank { null }))
+        dao.saveSettings(s.copy(ownerName = name.trim().take(40).ifBlank { null }))
     }
 
     /** 알림으로 기록. 고른 카테고리를 돌려준다 */

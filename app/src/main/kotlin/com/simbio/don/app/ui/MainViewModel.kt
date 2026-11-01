@@ -288,7 +288,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun completeOnboarding(setup: OnboardingResult) = viewModelScope.launch {
         repo.completeOnboarding(
             setup.salary, setup.payDay, setup.fixed, setup.savings, setup.settlementDay, LocalDate.now(),
-            setup.firstCycleBudget, setup.accounts, setup.look, setup.apps,
+            setup.firstCycleBudget, setup.accounts, setup.look, setup.apps, setup.ownerName,
         )
     }
 

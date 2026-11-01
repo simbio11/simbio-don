@@ -205,8 +205,8 @@ fun SettingsScreen(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = owner,
-                    onValueChange = { owner = it.take(20) },
-                    label = { Text("내 이름 (예금주)") },
+                    onValueChange = { owner = it.take(40) },
+                    label = { Text("내 이름 (예금주, 영문 표기는 쉼표로)") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )

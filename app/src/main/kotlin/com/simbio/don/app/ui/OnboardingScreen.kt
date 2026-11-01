@@ -123,7 +123,29 @@ data class OnboardingResult(
     val look: CharacterLook = CharacterLook.MALE,
     /** 결제 알림을 읽을 앱 (null이면 기본 앱 목록) */
     val apps: List<com.simbio.don.notify.AppRule>? = null,
+    /** 내 이름 (예금주, 쉼표로 여러 표기) */
+    val ownerName: String? = null,
 )
+
+/** 첫 설정에서 넣는 자산의 쓰임 */
+private enum class AccountRole(val title: String, val type: AccountType, val kind: com.simbio.don.notify.InstitutionKind?, val icon: UiIcon, val suffix: String) {
+    LIVING("생활비 통장", AccountType.BANK, com.simbio.don.notify.InstitutionKind.BANK, UiIcon.BANK, "생활비"),
+    BANK("다른 통장", AccountType.BANK, com.simbio.don.notify.InstitutionKind.BANK, UiIcon.BANK, "통장"),
+    CARD("카드", AccountType.CARD, com.simbio.don.notify.InstitutionKind.CARD, UiIcon.CARD_LINE, ""),
+    PAY("페이 머니", AccountType.ETC, com.simbio.don.notify.InstitutionKind.PAY, UiIcon.WALLET, "머니"),
+    SAVINGS("적금·예금", AccountType.SAVINGS, com.simbio.don.notify.InstitutionKind.BANK, UiIcon.SAVINGS, "적금"),
+    INVEST("주식·투자", AccountType.INVEST, null, UiIcon.CHART, ""),
+    CASH("현금", AccountType.CASH, null, UiIcon.CASH, ""),
+}
+
+/** 첫 설정 자산 한 줄: 은행·카드사 이름으로 고르고, 이름·잔액 */
+private data class AccountRow(val key: Int, val role: AccountRole, val inst: String? = null, val nick: String = "", val amount: String = "", val touched: Boolean = false) {
+    val institution get() = com.simbio.don.notify.Institutions.named(inst)
+    fun name(): String = nick.trim().ifBlank {
+        institution?.let { listOf(it.name, role.suffix).filter { s -> s.isNotBlank() }.joinToString(" ") }
+            ?: if (role == AccountRole.CARD) "신용카드" else role.title
+    }.take(20)
+}
 
 /** 폰에 설치된 앱 (실행 아이콘이 있는 것) */
 data class InstalledApp(val packageName: String, val label: String)
@@ -131,12 +153,13 @@ data class InstalledApp(val packageName: String, val label: String)
 /** 이번 달 남은 생활비를 정하는 방법 */
 private enum class StartMode(val label: String) { PRORATE("남은 날만큼"), BALANCE("통장 잔액으로"), DIRECT("직접 정하기") }
 
-private enum class Step { WELCOME, CHARACTER, SALARY, FIXED, SAVINGS, THIS_MONTH, ASSETS, APPS, FINISH }
+private enum class Step { WELCOME, NAME, CHARACTER, SALARY, FIXED, SAVINGS, THIS_MONTH, ASSETS, APPS, FINISH }
 
 /**
  * 처음 설정 (한 번만). 월급은 여기서만 묻고, 다음 달부터는 월급날·입금 알림으로 저절로 돌아간다.
  * 월급날이 이미 지난 채로 시작하는 게 보통이라, 이번 달은 남은 기간 생활비만 정해서 시작한다.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun OnboardingScreen(
     today: LocalDate,
@@ -155,14 +178,20 @@ fun OnboardingScreen(
     var balance by remember { mutableStateOf("") }
     var savedAlready by remember { mutableStateOf(false) }
     var direct by remember { mutableStateOf("") }
-    var cash by remember { mutableStateOf("") }
-    var bank by remember { mutableStateOf("") }
-    var bankTouched by remember { mutableStateOf(false) }
-    var useCard by remember { mutableStateOf(true) }
-    var cardDebt by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf(Gender.MALE) }
-    var savingsPot by remember { mutableStateOf("") }
-    var investPot by remember { mutableStateOf("") }
+    var ownerName by remember { mutableStateOf("") }
+    var ownerAlt by remember { mutableStateOf("") }
+    // 생활비 통장·현금은 기본, 나머지(카드·다른 통장·페이·저축)는 더해서
+    val rows = remember { mutableStateListOf(AccountRow(0, AccountRole.LIVING), AccountRow(1, AccountRole.CARD), AccountRow(2, AccountRole.CASH)) }
+    val installedMap = remember(installedApps) { installedApps.associate { it.packageName to it.label } }
+    // 자산마다 이을 앱 (같은 앱은 먼저 넣은 자산에만)
+    fun linkedApps(): List<Pair<Int, String>> {
+        val used = mutableSetOf<String>()
+        return rows.mapNotNull { r ->
+            val pkg = r.institution?.let { com.simbio.don.notify.Institutions.appFor(it, installedMap) } ?: return@mapNotNull null
+            if (used.add(pkg)) r.key to pkg else null
+        }
+    }
     // 알림을 읽을 앱: 폰에 있는 결제·은행 앱은 미리 골라 둔다 (폰 목록을 못 읽으면 기본 앱 목록)
     val appChoices = remember(installedApps) {
         installedApps.ifEmpty { com.simbio.don.notify.DefaultApps.presets.map { InstalledApp(it.packageName, it.displayName) } }
@@ -199,23 +228,26 @@ fun OnboardingScreen(
     val index = steps.indexOf(step)
 
     fun next() {
+        // 고른 은행·카드 앱은 알림 읽을 앱으로 미리 골라 둔다
+        if (step == Step.ASSETS) linkedApps().forEach { (_, pkg) -> pickedApps[pkg] = true }
         steps.getOrNull(index + 1)?.let { step = it }
     }
 
     fun finish() {
-        val accounts = buildList {
-            add(DonRepository.AccountDraft("현금", AccountType.CASH, cash.toLongOrNull() ?: 0))
-            add(DonRepository.AccountDraft("생활비 통장", AccountType.BANK, (if (bankTouched) bank else balance).toLongOrNull() ?: 0))
-            if (useCard) add(DonRepository.AccountDraft("신용카드", AccountType.CARD, -(cardDebt.toLongOrNull() ?: 0)))
-            savingsPot.toLongOrNull()?.takeIf { it > 0 }?.let { add(DonRepository.AccountDraft("적금·예금", AccountType.SAVINGS, it)) }
-            investPot.toLongOrNull()?.takeIf { it > 0 }?.let { add(DonRepository.AccountDraft("주식·투자", AccountType.INVEST, it)) }
+        val links = linkedApps().toMap()
+        val accounts = rows.map { r ->
+            val v = (if (r.role == AccountRole.LIVING && !r.touched) balance else r.amount).toLongOrNull() ?: 0
+            DonRepository.AccountDraft(r.name(), r.role.type, if (r.role == AccountRole.CARD) -v else v, links[r.key])
         }
-        val labels = appChoices.associate { it.packageName to it.label }
+        val labels = appChoices.associate { it.packageName to it.label } +
+            rows.mapNotNull { r -> links[r.key]?.let { it to (installedMap[it] ?: r.institution!!.name) } }
+        // 은행·카드를 고를 때 그 앱을 미리 골라 뒀고, 앱 고르기에서 끈 건 끈 대로
         val apps = pickedApps.filterValues { it }.keys.map { com.simbio.don.notify.AppRule(it, labels[it] ?: it) }
         onDone(
             OnboardingResult(
                 salaryValue, payDayValue!!, fixedList, savingsValue, settlementDay,
                 if (midCycle) firstBudget else null, accounts, CharacterLook.default(gender), apps,
+                listOf(ownerName, ownerAlt).map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ").ifBlank { null },
             ),
         )
     }
@@ -235,6 +267,29 @@ fun OnboardingScreen(
             ) {
                 when (s) {
                     Step.WELCOME -> Welcome()
+                    Step.NAME -> {
+                        StepTitle(
+                            "내 이름",
+                            "통장에 적힌 예금주 이름이에요. 입금·송금 알림에서 보낸 사람이 나면 내 통장끼리 옮긴 돈으로 알아보고, 수입이나 지출로 세지 않아요.",
+                        )
+                        FormCard {
+                            OutlinedTextField(
+                                value = ownerName,
+                                onValueChange = { ownerName = it.take(20) },
+                                label = { Text("이름 (예: 홍길동)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = ownerAlt,
+                                onValueChange = { ownerAlt = it.take(20) },
+                                label = { Text("다른 표기 (선택, 예: HONG GILDONG)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text("이 폰에만 저장되고, 알림을 읽을 때만 써요. 나중에 설정에서 바꿀 수 있어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                        }
+                    }
                     Step.CHARACTER -> {
                         StepTitle("내 캐릭터", "아낀 돈으로 꾸미는 방에 살 캐릭터예요. 얼굴·머리·옷은 나중에 집 탭의 꾸미기에서 마음대로 바꿀 수 있어요.")
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -335,31 +390,27 @@ fun OnboardingScreen(
                         }
                     }
                     Step.ASSETS -> {
-                        StepTitle("자산 잔액 (선택)", "현금·통장·카드를 넣어 두면 가계부를 적을 때 어디서 나갔는지 고르고, 잔액이 저절로 맞춰져요. 나중에 자산 탭에서 바꿀 수 있어요.")
-                        FormCard {
-                            AssetLine(UiIcon.CASH, AccountType.CASH, "현금")
-                            MoneyField("지갑 속 현금", cash, { cash = it })
-                        }
-                        FormCard {
-                            AssetLine(UiIcon.BANK, AccountType.BANK, "생활비 통장")
-                            MoneyField("통장 잔액", if (bankTouched) bank else balance, { bank = it; bankTouched = true })
-                        }
-                        FormCard {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.weight(1f)) { AssetLine(UiIcon.CARD_LINE, AccountType.CARD, "신용카드") }
-                                Switch(checked = useCard, onCheckedChange = { useCard = it })
-                            }
-                            if (useCard) MoneyField("다음 결제일에 낼 카드값 (모르면 비움)", cardDebt, { cardDebt = it })
-                        }
-                        FormCard("저축·투자 (선택)") {
-                            Text(
-                                "적금·예금이나 주식처럼 오래 모으는 돈이 있으면 지금 금액을 적어요. 홈 \"모은 돈\"의 저축에 들어가고, " +
-                                    "월급날마다 넣은 돈과 지금 금액을 적으면 얼마나 불었는지 보여요.",
-                                fontSize = 12.sp,
-                                color = DonColors.InkMuted,
+                        StepTitle(
+                            "내 통장·카드",
+                            "계좌번호 없이 은행·카드사 이름만 골라요. 고르면 그 앱의 알림을 이 통장·카드에 적고, 잔액이 저절로 맞춰져요. " +
+                                "생활비 통장은 생활비가 나가는 통장이에요. 나중에 자산 탭에서 바꿀 수 있어요.",
+                        )
+                        rows.forEachIndexed { i, r ->
+                            AccountRowCard(
+                                r,
+                                shownAmount = if (r.role == AccountRole.LIVING && !r.touched) balance else r.amount,
+                                app = r.institution?.let { com.simbio.don.notify.Institutions.appFor(it, installedMap) }?.let { installedMap[it] ?: r.institution!!.name },
+                                appsKnown = installedMap.isNotEmpty(),
+                                onChange = { rows[i] = it },
+                                onRemove = if (r.role == AccountRole.LIVING) null else ({ rows.removeAt(i) }),
                             )
-                            MoneyField("적금·예금 잔액", savingsPot, { savingsPot = it })
-                            MoneyField("주식·투자 지금 금액", investPot, { investPot = it })
+                        }
+                        FormCard("더 넣기") {
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(AccountRole.BANK, AccountRole.CARD, AccountRole.PAY, AccountRole.SAVINGS, AccountRole.INVEST).forEach { role ->
+                                    SubButton(onClick = { rows.add(AccountRow((rows.maxOfOrNull { it.key } ?: 0) + 1, role)) }) { Text("+ ${role.title}") }
+                                }
+                            }
                         }
                     }
                     Step.APPS -> AppsStep(appChoices, installedApps.isEmpty(), pickedApps)
@@ -485,6 +536,66 @@ private fun StepTitle(title: String, body: String) {
     Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
     Text(body, fontSize = 14.sp, color = DonColors.InkSoft)
     Spacer(Modifier.height(4.dp))
+}
+
+/** 자산 한 줄 카드: 은행·카드사 고르기, 이름, 잔액 */
+@Composable
+private fun AccountRowCard(r: AccountRow, shownAmount: String, app: String?, appsKnown: Boolean, onChange: (AccountRow) -> Unit, onRemove: (() -> Unit)?) {
+    FormCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { AssetLine(r.role.icon, r.role.type, if (r.inst != null || r.nick.isNotBlank()) "${r.role.title} · ${r.name()}" else r.role.title) }
+            if (onRemove != null) {
+                Box(
+                    Modifier.size(32.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = "${r.role.title} 빼기" },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(UiIcon.CLOSE, 18.dp, DonColors.InkMuted) }
+            }
+        }
+        r.role.kind?.let { kind ->
+            Text(
+                when (kind) {
+                    com.simbio.don.notify.InstitutionKind.BANK -> "어느 은행이에요?"
+                    com.simbio.don.notify.InstitutionKind.CARD -> "어느 카드사예요?"
+                    com.simbio.don.notify.InstitutionKind.PAY -> "어느 페이예요?"
+                },
+                fontSize = 13.sp,
+                color = DonColors.InkSoft,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                com.simbio.don.notify.Institutions.of(kind).forEach { inst ->
+                    FilterChip(selected = r.inst == inst.name, onClick = { onChange(r.copy(inst = if (r.inst == inst.name) null else inst.name)) }, label = { Text(inst.name) })
+                }
+            }
+            if (r.inst != null) {
+                Text(
+                    when {
+                        app != null && appsKnown -> "'$app' 앱 알림을 여기에 적어요"
+                        app != null -> "${r.inst} 앱 알림을 여기에 적어요 (앱이 있으면)"
+                        else -> "이 폰에서 ${r.inst} 앱을 못 찾았어요. 문자로 오는 알림은 '자동으로 적을 앱'에서 문자 앱을 골라요"
+                    },
+                    fontSize = 12.sp,
+                    color = if (app != null) DonColors.Good else DonColors.InkMuted,
+                )
+            }
+        }
+        OutlinedTextField(
+            value = r.nick,
+            onValueChange = { onChange(r.copy(nick = it.take(20))) },
+            label = { Text("이름 (선택, 비우면 '${r.copy(nick = "").name()}')") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        MoneyField(
+            when (r.role) {
+                AccountRole.CARD -> "다음 결제일에 낼 카드값 (모르면 비움)"
+                AccountRole.INVEST -> "지금 금액"
+                AccountRole.CASH -> "지갑 속 현금"
+                else -> "지금 잔액"
+            },
+            shownAmount,
+            { onChange(r.copy(amount = it, touched = true)) },
+        )
+    }
 }
 
 @Composable
