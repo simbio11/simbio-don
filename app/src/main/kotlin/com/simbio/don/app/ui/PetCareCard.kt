@@ -31,7 +31,7 @@ import java.time.LocalDate
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (PetCare.Action) -> Unit, onShop: () -> Unit, onChange: () -> Unit = {}) {
+fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (PetCare.Action) -> Unit, onShop: () -> Unit, onChange: () -> Unit = {}, mood: com.simbio.don.game.Mood = com.simbio.don.game.Mood.CALM) {
     val name = look.callName
     Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -41,6 +41,18 @@ fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (Pe
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = if (pet.hungry || pet.bored) DonColors.Warn else DonColors.Good,
+            )
+        }
+        // 배고프면 슬픈 얼굴, 심심하면 걱정 얼굴, 아니면 기분 얼굴
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            com.simbio.don.app.ui.kit.PetSprite(
+                look,
+                when {
+                    pet.hungry -> com.simbio.don.game.Mood.SAD
+                    pet.bored -> com.simbio.don.game.Mood.WORRIED
+                    else -> mood
+                },
+                96.dp,
             )
         }
         Meter("배부름", pet.full, if (pet.hungry) DonColors.Warn else DonColors.Good)

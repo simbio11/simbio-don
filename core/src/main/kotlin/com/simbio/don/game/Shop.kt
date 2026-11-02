@@ -55,14 +55,11 @@ object Shop {
         "shoes:boots" to 900,
         "hat:cap" to 500, "hat:beanie" to 500, "hat:ribbon" to 600, "hat:crown" to 5_000,
         "acc:glasses" to 400, "acc:sunglasses" to 700, "acc:earrings" to 800, "acc:necklace" to 1_000,
-        // 동물: 강아지·고양이는 처음부터, 특이한 동물은 마일을 모아서
-        "pet:hamster" to 2_000, "pet:rabbit" to 3_000, "pet:fox" to 6_000, "pet:penguin" to 8_000, "pet:panda" to 10_000,
-        "petacc:collar" to 300, "petacc:bandana" to 400, "petacc:ribbon" to 400, "petacc:glasses" to 500,
-        "petacc:scarf" to 600, "petacc:crown" to 5_000,
     )
 
     /** 옷장 물건 값 (마일). 키는 "top:knit"처럼 "종류:이름". 처음부터 가진 것은 0 */
-    fun wardrobeCost(key: String): Long = WARDROBE_PRICE[key] ?: 0
+    fun wardrobeCost(key: String): Long =
+        if (key.startsWith("pet:")) Species.of(key.removePrefix("pet:")).miles else WARDROBE_PRICE[key] ?: 0
 
     // ── 뷰티샵 (원, 모의 돈) ──
 
@@ -96,14 +93,14 @@ object Shop {
     /** 옷장에서 새로 사야 하는 것 (아직 없는 옷·모자·소품) */
     fun wardrobeNeeded(next: CharacterLook, owned: Set<String>): List<String> =
         (
-            if (next.isPet) listOfNotNull("pet:${next.species}", next.petAcc?.let { "petacc:$it" })
+            if (next.isPet) listOf("pet:${next.species}")
             else listOfNotNull("top:${next.top}", "bottom:${next.bottom}", "shoes:${next.shoes}", next.hat?.let { "hat:$it" }, next.acc?.let { "acc:$it" })
             )
             .filter { wardrobeCost(it) > 0 && it !in owned }
 
     /** 얼굴·머리는 그대로 두고 옷·모자·소품만 [dress]에서 가져온 모습 */
     fun withClothes(face: CharacterLook, dress: CharacterLook): CharacterLook = face.copy(
-        species = dress.species, fur = dress.fur, petAcc = dress.petAcc, petName = dress.petName,
+        species = dress.species, fur = dress.fur, petName = dress.petName,
         top = dress.top, topColor = dress.topColor, bottom = dress.bottom, bottomColor = dress.bottomColor,
         shoes = dress.shoes, shoesColor = dress.shoesColor, hat = dress.hat, hatColor = dress.hatColor, acc = dress.acc,
     )

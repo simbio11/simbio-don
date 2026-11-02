@@ -111,7 +111,7 @@ class AppFlowTest {
         shot("01a_name")
         rule.onNodeWithText("다음").performClick()
 
-        // 함께할 친구: 고양이 · 회색 · 이름 나비
+        // 함께할 친구: 고양이(치즈태비) · 회색 · 이름 나비
         waitText("함께할 친구")
         rule.onNodeWithText("고양이").performClick()
         rule.onNodeWithText("회색").performScrollTo().performClick()
@@ -166,7 +166,7 @@ class AppFlowTest {
 
         waitText("실제 내 돈 · 오늘과 이번 주")
         val look = com.simbio.don.game.CharacterLook.decode(readDb { houseNow() }?.look)
-        assertEquals("cat", look.species)
+        assertEquals("tabby_cat", look.species)
         assertEquals("회색", look.fur)
         assertEquals("나비", look.petName)
         assertEquals(false, readDb { appRulesNow() }.single { it.packageName == "com.kakao.bank" }.enabled)
@@ -364,7 +364,7 @@ class AppFlowTest {
         waitText("옷장 · 뷰티샵")
         rule.onNodeWithText("바뀐 게 없어요").assertExists()
         // 친구 탭: 동물을 고르면 사람 꾸미기 칸이 숨고, 특이한 동물은 마일 값
-        rule.onAllNodesWithText("강아지").onFirst().performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithText("코기", substring = true).performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         waitText("털색")
         rule.onNodeWithText("이름 (예: 콩이)").performScrollTo().performTextReplacement("콩이")
         shot("24_dress_pet")

@@ -58,7 +58,7 @@ class PetFlowTest {
                 val repo = DonRepository.get(appContext)
                 repo.completeOnboarding(
                     3_300_000, start.dayOfMonth, listOf(FixedExpense("월세", 700_000)), 500_000, DayOfWeek.MONDAY, start, null,
-                    look = com.simbio.don.game.CharacterLook.pet(com.simbio.don.game.Species.DOG, "누렁이", "콩이"),
+                    look = com.simbio.don.game.CharacterLook.pet(com.simbio.don.game.Species.CORGI, "탠", "콩이"),
                 )
             }
         }

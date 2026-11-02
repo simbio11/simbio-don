@@ -348,8 +348,12 @@ class BuddyWidget : DonWidget() {
             v.setTextViewText(R.id.widget_sub, "앱을 열어 처음 설정을 해 주세요")
             return v
         }
-        val px = CharacterRenderer.pixels(context, home.look, home.mood)
-        v.setImageViewBitmap(R.id.widget_image, WidgetArt.pixels(px, CharacterRenderer.W, CharacterRenderer.H, 8))
+        if (home.look.isPet) {
+            v.setImageViewBitmap(R.id.widget_image, com.simbio.don.app.ui.kit.PetRenderer.androidBitmap(context, home.look, home.mood))
+        } else {
+            val px = CharacterRenderer.pixels(context, home.look, home.mood)
+            v.setImageViewBitmap(R.id.widget_image, WidgetArt.pixels(px, CharacterRenderer.W, CharacterRenderer.H, 8))
+        }
         val (title, sub) = speech(home)
         v.setTextViewText(R.id.widget_title, title)
         v.setTextViewText(R.id.widget_sub, sub)

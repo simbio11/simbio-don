@@ -25,7 +25,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import com.simbio.don.app.R
 import com.simbio.don.app.ui.pixel.CharacterParts
-import com.simbio.don.app.ui.pixel.PetParts
 import com.simbio.don.game.CharacterLook
 import com.simbio.don.game.Mood
 
@@ -108,60 +107,8 @@ object CharacterRenderer {
         }
     }
 
-    // ── 동물 ──
-    private var petAtlas: IntArray? = null
-    private var petAtlasW = 0
-
-    private fun petAtlas(context: Context): IntArray {
-        petAtlas?.let { return it }
-        val bmp = BitmapFactory.decodeResource(
-            context.resources,
-            R.drawable.px_pet_atlas,
-            BitmapFactory.Options().apply { inScaled = false; inPreferredConfig = Bitmap.Config.ARGB_8888 },
-        )
-        val px = IntArray(bmp.width * bmp.height)
-        bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
-        petAtlasW = bmp.width
-        petAtlas = px
-        return px
-    }
-
-    /** 이 동물이 고를 수 있는 털색 (첫 번째가 기본) */
-    fun furColors(species: String): List<Pair<String, IntArray>> = PetParts.furColors[species].orEmpty()
-
-    /** 동물 그리기: 그 동물·표정·동작 칸을 털색으로 바꾸고, 소품을 모자 색으로 얹는다 */
-    private fun petPixels(context: Context, look: CharacterLook, mood: Mood, pose: Pose): IntArray {
-        val src = petAtlas(context)
-        val row = PetParts.species.indexOf(look.species).coerceAtLeast(0)
-        val col = PetParts.moods.indexOf(mood.name.lowercase()).coerceAtLeast(0) * PetParts.poses.size +
-            PetParts.poses.indexOf(pose.name.lowercase()).coerceAtLeast(0)
-        val furs = furColors(look.species)
-        val fur = (furs.firstOrNull { it.first == look.fur } ?: furs.firstOrNull())?.second
-        val map = HashMap<Int, Int>()
-        if (fur != null) PetParts.FUR.forEachIndexed { i, marker -> map[marker] = fur[i] }
-        val hat = ramp(CharacterParts.hatColors, look.hatColor)
-        CharacterParts.HAT.forEachIndexed { i, marker -> map[marker] = hat[i.coerceAtMost(hat.lastIndex)] }
-        val out = IntArray(W * H)
-        fun stamp(cx: Int, cy: Int) {
-            val ox = cx * PetParts.W
-            val oy = cy * PetParts.H
-            for (y in 0 until H) {
-                val r = (oy + y) * petAtlasW + ox
-                for (x in 0 until W) {
-                    val c = src[r + x]
-                    if (c ushr 24 == 0) continue
-                    out[y * W + x] = map[c] ?: c
-                }
-            }
-        }
-        stamp(col, row)
-        PetParts.accs.indexOf(look.petAcc).takeIf { it >= 0 }?.let { stamp(it, PetParts.species.size) }
-        return out
-    }
-
     /** 픽셀 배열 (W×H, ARGB) */
     fun pixels(context: Context, look: CharacterLook, mood: Mood, pose: Pose = Pose.STAND): IntArray {
-        if (look.isPet) return petPixels(context, look, mood, pose)
         val src = atlas(context)
         val map = colorMap(look)
         val out = IntArray(W * H)
@@ -204,6 +151,10 @@ object CharacterRenderer {
 /** 캐릭터 한 명 (24×36 그림). 높이에 가장 가까운 정수배로 그리고, 숨쉬듯 깜빡인다. */
 @Composable
 fun CharacterSprite(mood: Mood, height: Dp, modifier: Modifier = Modifier, look: CharacterLook = LocalCharacterLook.current, animate: Boolean = true) {
+    if (look.isPet) {
+        PetSprite(look, mood, height, modifier, animate)
+        return
+    }
     val context = LocalContext.current
     val f = if (animate) rememberIdleFrame() else IdleFrame(false, 0)
     val scale = pixelScale(CharacterRenderer.H, height)
@@ -224,6 +175,12 @@ fun CharacterSprite(mood: Mood, height: Dp, modifier: Modifier = Modifier, look:
 @Composable
 fun CharacterThumb(look: CharacterLook, size: Dp, head: Boolean, modifier: Modifier = Modifier, mood: Mood = Mood.CALM, label: String? = null) {
     val context = LocalContext.current
+    if (look.isPet) {
+        // 동물은 얼굴만 따로 없이 전신 그림을 칸에 맞춰
+        val img = remember(look, mood) { PetRenderer.bitmap(context, look, mood) }
+        Image(img, label ?: look.callName, modifier.size(size * (if (head) 1.2f else 1.4f)), filterQuality = FilterQuality.Medium)
+        return
+    }
     val bmp = remember(look, mood) { CharacterRenderer.bitmap(context, look, mood) }
     val rows = if (head) CharacterRenderer.W else CharacterRenderer.H
     val scale = pixelScale(rows, size)

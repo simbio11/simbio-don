@@ -179,7 +179,7 @@ fun OnboardingScreen(
     var savedAlready by remember { mutableStateOf(false) }
     var direct by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf(Gender.MALE) }
-    var species by remember { mutableStateOf(com.simbio.don.game.Species.DOG) }
+    var species by remember { mutableStateOf(com.simbio.don.game.Species.SHIBA_MIX) }
     var fur by remember { mutableStateOf("") }
     var petName by remember { mutableStateOf("") }
     var ownerName by remember { mutableStateOf("") }
@@ -298,9 +298,9 @@ fun OnboardingScreen(
                         StepTitle(
                             "함께할 친구",
                             "아낀 돈으로 꾸미는 방에서 같이 사는 친구예요. 돈을 잘 지키면 신나 하고, 너무 쓰면 시무룩해져요. " +
-                                "토끼·햄스터·여우·펭귄·판다는 마일을 모아 데려올 수 있어요.",
+                                "시바·푸들·코기·포메·비글·불독 같은 다른 품종은 마일을 모아 데려올 수 있어요.",
                         )
-                        val options = listOf(com.simbio.don.game.Species.DOG, com.simbio.don.game.Species.CAT, com.simbio.don.game.Species.HUMAN)
+                        val options = com.simbio.don.game.Species.starters + com.simbio.don.game.Species.HUMAN
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             options.forEach { sp ->
                                 val selected = species == sp
@@ -312,14 +312,17 @@ fun OnboardingScreen(
                                 ) {
                                     CharacterSprite(Mood.HAPPY, 84.dp, look = look, animate = selected)
                                     Spacer(Modifier.height(6.dp))
-                                    Text(sp.label, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (selected) DonColors.Real else DonColors.Ink)
+                                    Text(
+                                        when (sp) { com.simbio.don.game.Species.SHIBA_MIX -> "강아지"; com.simbio.don.game.Species.TABBY_CAT -> "고양이"; else -> sp.label },
+                                        fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (selected) DonColors.Real else DonColors.Ink,
+                                    )
                                 }
                             }
                         }
                         if (species.isPet) {
                             FormCard("털색") {
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                                    com.simbio.don.app.ui.kit.CharacterRenderer.furColors(species.id).forEachIndexed { i, (name, _) ->
+                                    species.furs.forEachIndexed { i, name ->
                                         FilterChip(selected = fur == name || (fur.isBlank() && i == 0), onClick = { fur = name }, label = { Text(name) })
                                     }
                                 }

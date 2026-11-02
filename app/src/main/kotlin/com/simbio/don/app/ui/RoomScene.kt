@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.simbio.don.app.weather.Weather
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.withTransform
+import com.simbio.don.app.ui.kit.PetRenderer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -187,7 +189,16 @@ fun PixelRoom(
     val context = LocalContext.current
     val look = LocalCharacterLook.current
     val frames = remember(look, mood) {
-        listOf(Pose.STAND, Pose.BLINK, Pose.WALK_LEFT, Pose.WALK_RIGHT).map { CharacterRenderer.bitmap(context, look, mood, it) }
+        if (look.isPet) emptyList()
+        else listOf(Pose.STAND, Pose.BLINK, Pose.WALK_LEFT, Pose.WALK_RIGHT).map { CharacterRenderer.bitmap(context, look, mood, it) }
+    }
+    // 동물: 서 있을 땐 기분 표정(밤엔 잠), 걸을 땐 웃는 얼굴
+    val petStand = remember(look, mood, phase) { if (look.isPet) PetRenderer.bitmap(context, look, mood, sleeping = phase == DayPhase.NIGHT) else null }
+    val petWalk = remember(look) { if (look.isPet) PetRenderer.bitmap(context, look, "smile") else null }
+    val petShade = when (phase) {
+        DayPhase.NIGHT -> Color(0x66202850)
+        DayPhase.SUNSET -> Color(0x22FF8C50)
+        else -> null
     }
 
     // 도트 그림이라 1초에 12장이면 충분하다 (매 프레임 다시 그리면 폰이 버벅인다)
@@ -229,6 +240,7 @@ fun PixelRoom(
             val ms = (now % WALK_CYCLE).toFloat()
             val skyOffset = (now % skyCycle).toFloat() / skyCycle * RoomLayout.SKY_W
             val pose = poseAt(ms.toInt())
+            val cy0 = RoomLayout.character.y
             bufferScope.draw(density, layoutDirection, androidx.compose.ui.graphics.Canvas(buffer), Size(RoomLayout.WIDTH.toFloat(), RoomLayout.HEIGHT.toFloat())) {
                 fun put(img: ImageBitmap, x: Int, y: Int) = drawImage(img, Offset(x.toFloat(), y.toFloat()))
                 drawRect(Color.Black)
@@ -255,8 +267,10 @@ fun PixelRoom(
                 house.trash.zip(RoomLayout.trash).forEach { (item, p) -> put(trash.getValue(item.kind), p.x, p.y) }
 
                 val cy = RoomLayout.character.y
-                put(shadow, pose.x + 4, cy + RoomLayout.CHAR_H - 3)
-                put(frames[pose.frame], pose.x, cy + pose.bob)
+                if (!look.isPet) {
+                    put(shadow, pose.x + 4, cy + RoomLayout.CHAR_H - 3)
+                    put(frames[pose.frame], pose.x, cy + pose.bob)
+                }
 
                 house.floor.zip(RoomLayout.floorPile).sortedBy { it.second.y }.forEach { (item, p) ->
                     put(items.getValue(item.kind), p.x, p.y)
@@ -276,6 +290,36 @@ fun PixelRoom(
                 dstSize = IntSize(size.width.toInt(), size.height.toInt()),
                 filterQuality = FilterQuality.None,
             )
+            // 동물은 도트 칸에 맞추지 않고 원래 해상도로: 숨 쉬고, 걸을 땐 통통 튀며 가는 쪽을 본다
+            if (petStand != null && petWalk != null) {
+                val k = size.width / RoomLayout.WIDTH
+                val walking = pose.frame >= 2
+                val img = if (walking) petWalk else petStand
+                val h = 34f * k
+                val w = h * img.width / img.height
+                val cx = (pose.x + RoomLayout.CHAR_W / 2f) * k
+                val floor = (cy0 + RoomLayout.CHAR_H - 2f) * k
+                val t = now / 1000f
+                val breathe = 0.5f + 0.5f * kotlin.math.sin(t * 2.4f)
+                val hop = if (walking) kotlin.math.abs(kotlin.math.sin(t * 11f)) * 2.6f * k else 0f
+                val sy = 1f + (if (petStand === img && phase == DayPhase.NIGHT) 0.03f else 0.022f) * breathe
+                val goingLeft = walking && poseAt(((ms.toInt() - 160) + WALK_CYCLE) % WALK_CYCLE).x > pose.x
+                drawOval(Color(0x33202040), Offset(cx - w * 0.36f, floor - 1.5f * k), Size(w * 0.72f, 3f * k))
+                withTransform({
+                    translate(0f, -hop)
+                    scale(if (goingLeft) -1f else 1f, sy, pivot = Offset(cx, floor))
+                }) {
+                    drawImage(
+                        img,
+                        srcOffset = IntOffset.Zero,
+                        srcSize = IntSize(img.width, img.height),
+                        dstOffset = IntOffset((cx - w / 2f).toInt(), (floor - h).toInt()),
+                        dstSize = IntSize(w.toInt(), h.toInt()),
+                        filterQuality = FilterQuality.Medium,
+                        colorFilter = petShade?.let { androidx.compose.ui.graphics.ColorFilter.tint(it, androidx.compose.ui.graphics.BlendMode.SrcAtop) },
+                    )
+                }
+            }
         }
     }
 }

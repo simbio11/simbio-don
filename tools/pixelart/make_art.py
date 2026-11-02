@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from palette import MARKERS, PALETTE, THEMES  # noqa: E402
 import room  # noqa: E402
 import sprites  # noqa: E402
-from v3 import char3, export3, items16, lib as lib3, pets, products16  # noqa: E402
+from v3 import char3, export3, items16, lib as lib3, products16  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "app/src/main/res/drawable-nodpi")
@@ -48,8 +48,6 @@ def build():
     outputs = {}
     # 캐릭터 v3: 부위 아틀라스 (앱이 색을 바꿔 겹쳐 그린다)
     outputs["px_char_atlas"] = export3.atlas(export3.parts())
-    # 동물 캐릭터: 동물 × 표정 × 동작 + 소품 줄 (털은 표식 색 — 앱이 바꾼다)
-    outputs["px_pet_atlas"] = pets.atlas()
     for name, rows in sprites.ITEMS.items():
         outputs[f"px_item_{name}"] = grid_image(rows, f"item {name}")
 
@@ -270,8 +268,6 @@ def main():
     write_products_kt()
     with open(PARTS_KT, "w") as f:
         f.write(export3.kotlin(export3.parts()))
-    with open(os.path.join(os.path.dirname(PARTS_KT), "PetParts.kt"), "w") as f:
-        f.write(pets.kotlin())
     icon = write_launcher_icon()
     print(f"{len(outputs)}개 그림 → {OUT}, 런처 아이콘")
 

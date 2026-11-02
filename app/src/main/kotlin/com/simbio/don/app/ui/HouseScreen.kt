@@ -126,7 +126,7 @@ fun HouseScreen(
         }
 
         if (home.look.isPet && pet != null) {
-            PetCareCard(home.look, pet, home.today, onPetAct, onShop, onChange = onDress)
+            PetCareCard(home.look, pet, home.today, onPetAct, onShop, onChange = onDress, mood = home.mood)
         }
 
         MilesCard(

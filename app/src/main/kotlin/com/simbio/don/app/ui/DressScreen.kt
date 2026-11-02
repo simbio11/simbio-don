@@ -49,6 +49,8 @@ import com.simbio.don.app.ui.pixel.CharacterParts
 import com.simbio.don.game.CharacterLook
 import com.simbio.don.game.Gender
 import com.simbio.don.game.Mood
+import com.simbio.don.game.PetFur
+import com.simbio.don.game.Species
 
 private enum class DressTab(val label: String) {
     FRIEND("친구"),
@@ -112,26 +114,17 @@ fun DressScreen(
             when (if (tab in tabs) tab else DressTab.FRIEND) {
                 DressTab.FRIEND -> {
                     Section("누구랑 살까요") {
-                        val friends = com.simbio.don.game.Species.pets.map { sp ->
-                            Choice(
-                                sp.label,
-                                draft.copy(species = sp.id, fur = if (draft.species == sp.id) draft.fur else ""),
-                                cost("pet:${sp.id}"),
-                            )
-                        } + Choice("사람", draft.copy(species = com.simbio.don.game.Species.HUMAN.id))
-                        Choices(friends, draft, head = false) { draft = it }
-                        Text("토끼·햄스터·여우·펭귄·판다는 마일로 한 번 데려오면 계속 함께해요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                        BreedChoices(draft, owned) { sp ->
+                            // 같은 품종이면 그대로, 다른 품종이면 그 품종의 기본 털색으로
+                            draft = if (sp == Species.HUMAN) draft.copy(species = sp.id) else draft.copy(species = sp.id, fur = "")
+                        }
+                        Text("처음 두 친구 말고는 마일로 한 번 데려오면 계속 함께해요. 사람 모습도 그대로 남아 있어요.", fontSize = 12.sp, color = DonColors.InkMuted)
                     }
                     if (draft.isPet) {
-                        val furs = com.simbio.don.app.ui.kit.CharacterRenderer.furColors(draft.species)
-                        if (furs.size > 1) Section("털색") { Swatches(furs, draft.fur.ifBlank { furs.first().first }) { draft = draft.copy(fur = it) } }
-                        Section("소품") {
-                            val accs = listOf(Choice("없음", draft.copy(petAcc = null))) +
-                                com.simbio.don.game.PetAcc.entries.map { a -> Choice(a.label, draft.copy(petAcc = a.id), cost("petacc:${a.id}")) }
-                            Choices(accs, draft, head = false) { draft = it }
-                        }
-                        if (draft.petAcc != null && draft.petAcc != com.simbio.don.game.PetAcc.CROWN.id) {
-                            Section("소품 색") { Swatches(CharacterParts.hatColors, draft.hatColor) { draft = draft.copy(hatColor = it) } }
+                        Section("털색") {
+                            val furs = draft.kind.furs
+                            Swatches(furs.map { it to intArrayOf(PetFur.swatch(it)) }, draft.furName, pick = 0) { draft = draft.copy(fur = it) }
+                            Text("품종마다 어울리는 색이 먼저 보여요. 색은 언제든 공짜로 바꿀 수 있어요.", fontSize = 12.sp, color = DonColors.InkMuted)
                         }
                         Section("이름") {
                             androidx.compose.material3.OutlinedTextField(
@@ -252,6 +245,48 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
         content()
+    }
+}
+
+/** 품종 고르기: 사진 칸에 이름, 마일로 사야 하면 값(가진 건 "내 친구"), 지금 고른 품종에 표시 */
+@Composable
+private fun BreedChoices(draft: CharacterLook, owned: Set<String>, onPick: (Species) -> Unit) {
+    val all = Species.pets + Species.HUMAN
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        all.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { sp ->
+                    val selected = draft.kind == sp
+                    val have = sp.miles == 0L || "pet:${sp.id}" in owned
+                    val shape = RoundedCornerShape(12.dp)
+                    val look = if (sp.isPet) CharacterLook.pet(sp) else CharacterLook.default(draft.gender)
+                    Column(
+                        Modifier.weight(1f).clip(shape)
+                            .background(if (selected) DonColors.GameSurface else DonColors.SurfaceAlt)
+                            .border(2.dp, if (selected) DonColors.Game else Color.Transparent, shape)
+                            .selectable(selected = selected, role = Role.RadioButton, onClick = { onPick(sp) })
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(Modifier.height(78.dp), contentAlignment = Alignment.Center) { CharacterThumb(look, 56.dp, head = false) }
+                        Text(
+                            sp.label,
+                            fontSize = 12.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selected) DonColors.GameDeep else DonColors.InkSoft,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                        )
+                        when {
+                            !sp.isPet -> Unit
+                            have && sp.miles > 0 -> Text("내 친구", fontSize = 10.sp, color = DonColors.Good, fontWeight = FontWeight.SemiBold)
+                            !have -> Text("%,d마일".format(sp.miles), fontSize = 10.sp, color = DonColors.Game, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 
