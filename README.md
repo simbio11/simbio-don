@@ -17,3 +17,9 @@
 
 - [docs/idea.md](docs/idea.md) — 원안·실존 확인·채택안 (2026-10-07)
 - [docs/decisions.md](docs/decisions.md) — 확정 결정과 미결 사항
+
+## 에셋
+
+- `assets/pets/` — 반려동물 표정 도트 세트 11종. 캐릭터마다 2×4 표정 시트(`sheet.*`)와
+  마젠타 배경을 투명으로 바꾼 스프라이트 8장(`sprites/01_joy.png`~`08_sleep.png`)이 들어 있습니다.
+  목록·표정 순서는 [assets/pets/README.md](assets/pets/README.md) 참고.
