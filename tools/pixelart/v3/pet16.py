@@ -197,12 +197,7 @@ PRODUCTS = {
 }
 
 # 같은 그림을 쓰는 상품
-REUSE = {
-    "pf5": "pf1",   # 강아지 캔 간식
-    "pt3": "pt1",   # 터그 로프
-    "pg4": "pg3",   # 스크래쳐
-    "pg5": "pf1",   # 자동 급식기
-}
+REUSE = {}
 
 # 물건 종류 그림 (반려동물 용품): 발자국
 KIND = [
@@ -242,6 +237,8 @@ ROOM = [
 
 
 def all_rows():
+    from . import pet16b
     out = {k: PRODUCTS[v] for k, v in REUSE.items()}
     out.update(PRODUCTS)
+    out.update(pet16b.PRODUCTS)
     return out

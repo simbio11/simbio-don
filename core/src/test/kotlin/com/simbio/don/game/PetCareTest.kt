@@ -60,4 +60,26 @@ class PetCareTest {
         // 예전 저장(동물 칸 없음)은 사람
         assertTrue(!CharacterLook.decode("gender=FEMALE;hair=long").isPet)
     }
+
+    @Test
+    fun 새_용품_밥그릇_빗_화장실_꾸밈_효과() {
+        val base = PetState(full = 20, joy = 20, food = 5, day = d0.toEpochDay())
+        // 밥그릇이 있으면 밥이 더 든든
+        val bowl = PetCare.bought(base, "pg9")
+        assertEquals(base.full + PetCare.FEED + PetCare.BOWL_BONUS, PetCare.act(bowl, PetCare.Action.FEED, d0).full)
+        // 빗: 하루 한 번
+        assertEquals("빗이 없어요", PetCare.blocked(base, PetCare.Action.GROOM, d0))
+        var s = PetCare.bought(base, "pc1")
+        s = PetCare.act(s, PetCare.Action.GROOM, d0)
+        assertEquals(20 + PetCare.GROOM, s.joy)
+        assertEquals("오늘 빗었어요", PetCare.blocked(s, PetCare.Action.GROOM, d0))
+        // 화장실이 있으면 덜 심심해함, 꾸밈 용품은 쓰다듬기가 더 좋음
+        assertEquals(PetCare.passDays(base, d0.plusDays(1)).joy + 3, PetCare.passDays(PetCare.bought(base, "pg8"), d0.plusDays(1)).joy)
+        assertEquals(20 + PetCare.PET + PetCare.DECOR_BONUS, PetCare.act(PetCare.bought(base, "pa5"), PetCare.Action.PET, d0).joy)
+        // 프리미엄 사료는 25번분, 덴탈 스틱은 간식 8개
+        assertEquals(30, PetCare.bought(base, "pf8").food)
+        assertEquals(8, PetCare.bought(base, "pf7").treats - base.treats)
+        // 카탈로그의 모든 반려동물 용품이 하는 일이 정해져 있다
+        Catalog.products.filter { it.kind == ItemKind.PET }.forEach { assertNotNull(PetCare.effects[it.id], it.id) }
+    }
 }

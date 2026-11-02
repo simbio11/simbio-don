@@ -637,8 +637,8 @@ class AppFlowTest {
         shot("51_house_play")
 
         // 도감 → 세트·칭호 (기록이 화면에 다 들어올 때까지 기다린다)
-        waitText("도감 7/90")
-        rule.onNodeWithText("도감 7/90").performScrollTo().performClick()
+        waitText("도감 7/110")
+        rule.onNodeWithText("도감 7/110").performScrollTo().performClick()
         waitText("모은 칸")
         shot("52_dex")
         rule.onNodeWithText("세트·칭호").performClick()

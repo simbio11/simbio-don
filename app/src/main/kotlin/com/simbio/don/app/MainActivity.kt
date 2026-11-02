@@ -591,6 +591,7 @@ class MainActivity : ComponentActivity() {
                                         com.simbio.don.game.PetCare.Action.TREAT -> "$name 간식에 신났어요"
                                         com.simbio.don.game.PetCare.Action.PLAY -> "$name 신나게 놀았어요"
                                         com.simbio.don.game.PetCare.Action.WALK -> "$name 산책 다녀왔어요"
+                                        com.simbio.don.game.PetCare.Action.GROOM -> "$name 보송보송해졌어요"
                                         com.simbio.don.game.PetCare.Action.PET -> "$name 기분 좋아해요"
                                     },
                                     Toast.LENGTH_SHORT,
