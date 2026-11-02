@@ -31,7 +31,7 @@ import java.time.LocalDate
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (PetCare.Action) -> Unit, onShop: () -> Unit) {
+fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (PetCare.Action) -> Unit, onShop: () -> Unit, onChange: () -> Unit = {}) {
     val name = look.callName
     Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -70,6 +70,7 @@ fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (Pe
         if (pet.food == 0 || pet.treats == 0 || CareKind.TOY !in pet.gear) {
             SubButton(onClick = onShop, modifier = Modifier.fillMaxWidth()) { Text("반려동물 용품 사러 가기") }
         }
+        SubButton(onClick = onChange, modifier = Modifier.fillMaxWidth(), containerColor = DonColors.SurfaceAlt) { Text("친구 바꾸기 · 털색·소품·이름") }
         Text(
             "날마다 배고파지고 심심해져요. 용품은 모의 지갑(아낀 돈)으로 사요 — 진짜 돈은 안 나가요.",
             fontSize = 11.sp,

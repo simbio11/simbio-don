@@ -126,7 +126,7 @@ fun HouseScreen(
         }
 
         if (home.look.isPet && pet != null) {
-            PetCareCard(home.look, pet, home.today, onPetAct, onShop)
+            PetCareCard(home.look, pet, home.today, onPetAct, onShop, onChange = onDress)
         }
 
         MilesCard(
@@ -136,6 +136,7 @@ fun HouseScreen(
             onFurniture = onFurniture,
             onCards = onCards,
             onDress = onDress,
+            pet = home.look.isPet,
         )
 
         PlayCard(home.mockItems, home.game.left, home.game.cap, onDex = onDex, onGame = onGame)

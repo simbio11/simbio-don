@@ -247,7 +247,7 @@ fun CardsScreen(items: List<MockItem>, salary: Long, onBack: () -> Unit) {
 
 /** 집 탭의 마일 카드: 지갑·키우기 + 마일로 하는 것들 */
 @Composable
-fun MilesCard(state: MileState, cardCount: Int, onMiles: () -> Unit, onFurniture: () -> Unit, onCards: () -> Unit, onDress: () -> Unit) {
+fun MilesCard(state: MileState, cardCount: Int, onMiles: () -> Unit, onFurniture: () -> Unit, onCards: () -> Unit, onDress: () -> Unit, pet: Boolean = false) {
     GameCard("마일", trailing = { com.simbio.don.app.ui.kit.MoreButton("기록", onMiles) }) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(miles(state.wallet), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
@@ -260,7 +260,7 @@ fun MilesCard(state: MileState, cardCount: Int, onMiles: () -> Unit, onFurniture
             MenuTile("마일 키우기", com.simbio.don.app.R.drawable.px16_grow, Modifier.weight(1f), onMiles)
             MenuTile("가구점·이사", com.simbio.don.app.R.drawable.px16_move, Modifier.weight(1f), onFurniture)
             MenuTile("카드 $cardCount", com.simbio.don.app.R.drawable.px16_card, Modifier.weight(1f), onCards)
-            MenuTile("옷장·뷰티샵", com.simbio.don.app.R.drawable.px16_closet, Modifier.weight(1f), onDress)
+            MenuTile(if (pet) "친구 바꾸기" else "옷장·뷰티샵", com.simbio.don.app.R.drawable.px16_closet, Modifier.weight(1f), onDress)
         }
     }
 }
