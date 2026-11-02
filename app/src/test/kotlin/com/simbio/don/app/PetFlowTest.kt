@@ -108,9 +108,18 @@ class PetFlowTest {
         rule.onNodeWithText("쓰다듬기").performScrollTo().performClick()
         rule.waitUntil(5_000) { petNow().petted != null }
         // 몰에서 사료를 사면 바로 쌓인다
-        bg { repo.buyMock("강아지 사료 2kg", 29_000, com.simbio.don.game.ItemKind.PET, "돈't 몰", LocalDate.now(), LocalDateTime.now()) }
+        bg { repo.buyMock("[멍멍배송] 로얄캔딘 독 어덜트 2kg", 29_000, com.simbio.don.game.ItemKind.PET, "돈't 몰", LocalDate.now(), LocalDateTime.now()) }
         rule.waitUntil(5_000) { petNow().food == before - 1 + 10 }
         waitText("사료 ${before + 9}번", substring = true)
         shot("p2_house_pet_fed")
+
+        // 몰의 반려동물 용품: 분류 칩과 패러디 상품명
+        rule.onNodeWithText("반려동물 용품 사러 가기").performScrollTo().performClick()
+        waitText("돈't 몰")
+        rule.onAllNodesWithText("반려동물 용품").onFirst().performClick()
+        waitText("사료 6")
+        rule.onNodeWithText("산책·패션", substring = true).performClick()
+        waitText("LED 야광 목걸이 (야간 산책)")
+        shot("p3_mall_pet")
     }
 }

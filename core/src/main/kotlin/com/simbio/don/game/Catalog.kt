@@ -14,6 +14,8 @@ data class Product(
     val options: List<String> = emptyList(),
     /** 많이 담는 물건 (첫 화면에 먼저) */
     val popular: Boolean = false,
+    /** 몰 안 분류 (반려동물 용품: 사료·간식·장난감 …), 없으면 null */
+    val group: String? = null,
 )
 
 /** 장바구니 한 줄 */
@@ -26,12 +28,15 @@ object Catalog {
     private val COLORS = listOf("블랙", "화이트", "그레이", "네이비", "베이지")
     private val SHOE_SIZE = (230..280 step 5).map { it.toString() }
 
-    private fun p(id: String, name: String, price: Long, kind: ItemKind, popular: Boolean = false): Product = when (kind) {
+    private fun p(id: String, name: String, price: Long, kind: ItemKind, popular: Boolean = false, group: String? = null): Product = when (kind) {
         ItemKind.CLOTHES -> Product(id, name, price, kind, "사이즈", CLOTHES_SIZE, popular)
         ItemKind.SHOES -> Product(id, name, price, kind, "사이즈", SHOE_SIZE, popular)
         ItemKind.BAG, ItemKind.ELECTRONICS -> Product(id, name, price, kind, "색상", COLORS, popular)
-        else -> Product(id, name, price, kind, popular = popular)
+        else -> Product(id, name, price, kind, popular = popular, group = group)
     }
+
+    /** 반려동물 용품 분류 (몰의 둘째 줄 칩 순서) */
+    val PET_GROUPS = listOf("사료", "간식", "장난감", "하우스", "미용·위생", "산책·패션", "건강")
 
     val products: List<Product> = listOf(
         p("c1", "오버핏 맨투맨", 39_000, ItemKind.CLOTHES, true),
@@ -105,41 +110,77 @@ object Catalog {
         p("d4", "생과일 주스", 7_500, ItemKind.DRINK),
         p("d5", "와인 한 병", 39_000, ItemKind.DRINK),
         p("d6", "수제 맥주 4캔", 16_000, ItemKind.DRINK),
-        // 반려동물 용품 — 사면 집 친구를 돌볼 수 있다 (PetCare)
-        p("pf1", "강아지 사료 2kg", 29_000, ItemKind.PET, true),
-        p("pf2", "고양이 사료 2kg", 32_000, ItemKind.PET),
-        p("pf3", "수제 개껌", 7_900, ItemKind.PET),
-        p("pf4", "츄르 20개입", 12_000, ItemKind.PET, true),
-        p("pf5", "강아지 캔 간식", 6_500, ItemKind.PET),
-        p("pt1", "삑삑이 공", 6_900, ItemKind.PET),
-        p("pt2", "깃털 낚싯대", 8_900, ItemKind.PET),
-        p("pt3", "터그 로프", 7_900, ItemKind.PET),
-        p("pg1", "푹신 방석", 35_000, ItemKind.PET),
-        p("pg2", "원목 강아지 집", 69_000, ItemKind.PET),
-        p("pg3", "캣타워", 129_000, ItemKind.PET),
-        p("pg4", "스크래쳐", 15_000, ItemKind.PET),
-        p("pg5", "자동 급식기", 89_000, ItemKind.PET),
-        p("pa1", "산책 하네스", 25_000, ItemKind.PET),
-        p("pf6", "연어 습식 파우치", 3_500, ItemKind.PET),
-        p("pf7", "덴탈 스틱 30개입", 9_900, ItemKind.PET),
-        p("pf8", "프리미엄 사료 5kg", 69_000, ItemKind.PET, true),
-        p("ph1", "반려동물 종합 영양제", 28_000, ItemKind.PET),
-        p("pt4", "오리 삑삑이 인형", 9_500, ItemKind.PET),
-        p("pt5", "고양이 터널", 14_900, ItemKind.PET),
-        p("pt6", "비행 원반", 8_900, ItemKind.PET),
-        p("pt7", "노즈워크 매트", 19_000, ItemKind.PET),
-        p("pg6", "숨숨집 텐트", 39_000, ItemKind.PET),
-        p("pg7", "여름 쿨매트", 22_000, ItemKind.PET),
-        p("pg8", "고양이 화장실", 45_000, ItemKind.PET),
-        p("pg9", "스테인리스 밥그릇 세트", 15_000, ItemKind.PET),
-        p("pc1", "빗질 브러시", 12_000, ItemKind.PET),
-        p("pc2", "저자극 샴푸", 14_000, ItemKind.PET),
-        p("pc3", "발톱깎이", 8_000, ItemKind.PET),
-        p("pa2", "튼튼 리드줄", 18_000, ItemKind.PET),
-        p("pa3", "배변봉투 롤", 4_500, ItemKind.PET),
-        p("pa4", "이름표 목걸이", 12_000, ItemKind.PET),
-        p("pa5", "노란 우비", 21_000, ItemKind.PET),
-        p("pa6", "줄무늬 스웨터", 24_000, ItemKind.PET),
+        // 반려동물 용품 — 쿠팡·네이버쇼핑에 흔한 것들을 살짝 비튼 이름으로. 사면 집 친구를 돌볼 수 있다 (PetCare)
+        // 사료
+        p("pf1", "[멍멍배송] 로얄캔딘 독 어덜트 2kg", 29_000, ItemKind.PET, true, "사료"),
+        p("pf2", "[로캣배송] 로얄캔딘 캣 인도어 2kg", 32_000, ItemKind.PET, false, "사료"),
+        p("pf8", "오리진짜 프리미엄 사료 5kg", 69_000, ItemKind.PET, true, "사료"),
+        p("pf9", "아가나 그레인프리 연어 2kg", 54_000, ItemKind.PET, false, "사료"),
+        p("pf10", "로얄캔딘 키튼 퍼스트 2kg", 33_000, ItemKind.PET, false, "사료"),
+        p("pf11", "하리미 소프트 사료 1.2kg", 17_000, ItemKind.PET, false, "사료"),
+        // 간식
+        p("pf3", "수제 개껌 뼈다귀 대", 7_900, ItemKind.PET, false, "간식"),
+        p("pf4", "챠오츄륵 냥이 간식 20입", 12_000, ItemKind.PET, true, "간식"),
+        p("pf5", "멍멍 캔 간식 닭가슴살", 6_500, ItemKind.PET, false, "간식"),
+        p("pf6", "냥냥 연어 파우치 (1개)", 3_500, ItemKind.PET, false, "간식"),
+        p("pf7", "닥터덴탈 칫솔껌 30개입", 9_900, ItemKind.PET, false, "간식"),
+        p("pf12", "닭가슴살 육포 300g", 15_900, ItemKind.PET, false, "간식"),
+        p("pf13", "고양이 참치캔 24개입", 21_000, ItemKind.PET, false, "간식"),
+        p("pf14", "동결건조 북어 트릿", 11_900, ItemKind.PET, false, "간식"),
+        p("pf15", "반려동물 전용 우유 250ml", 3_900, ItemKind.PET, false, "간식"),
+        // 장난감
+        p("pt1", "삑삑이 고무공 레드", 6_900, ItemKind.PET, false, "장난감"),
+        p("pt2", "깃털 낚싯대 (고양이 환장)", 8_900, ItemKind.PET, false, "장난감"),
+        p("pt3", "튼튼 터그 로프 매듭", 7_900, ItemKind.PET, false, "장난감"),
+        p("pt4", "오리 삑삑이 인형", 9_500, ItemKind.PET, false, "장난감"),
+        p("pt5", "냥냥 와글 터널 3구", 14_900, ItemKind.PET, false, "장난감"),
+        p("pt6", "원반 던지기 프리스비", 8_900, ItemKind.PET, false, "장난감"),
+        p("pt7", "스너플 노즈워크 매트", 19_000, ItemKind.PET, false, "장난감"),
+        p("pt8", "레이저 포인터 (집사 팔 아픔)", 6_900, ItemKind.PET, false, "장난감"),
+        p("pt9", "캣닢 물고기 쿠션 인형", 5_900, ItemKind.PET, false, "장난감"),
+        p("pt10", "자동 굴러가는 스마트 공", 18_900, ItemKind.PET, false, "장난감"),
+        // 하우스·가구
+        p("pg1", "구름 푹신 방석 (M)", 35_000, ItemKind.PET, false, "하우스"),
+        p("pg2", "원목 강아지 하우스 실내용", 69_000, ItemKind.PET, false, "하우스"),
+        p("pg3", "5단 캣타워 (집사 필수)", 129_000, ItemKind.PET, true, "하우스"),
+        p("pg4", "골판지 스크래쳐 (L)", 15_000, ItemKind.PET, false, "하우스"),
+        p("pg5", "스마트 자동급식기 4L", 89_000, ItemKind.PET, false, "하우스"),
+        p("pg6", "숨숨집 텐트 (낯가림 방지)", 39_000, ItemKind.PET, false, "하우스"),
+        p("pg7", "여름 쿨매트 (냉감)", 22_000, ItemKind.PET, false, "하우스"),
+        p("pg8", "후드형 고양이 화장실", 45_000, ItemKind.PET, false, "하우스"),
+        p("pg9", "스텐 밥그릇 2종 세트", 15_000, ItemKind.PET, false, "하우스"),
+        p("pg10", "소파 오르기 계단 (슬개골)", 29_000, ItemKind.PET, false, "하우스"),
+        p("pg11", "창문 부착 고양이 해먹", 15_900, ItemKind.PET, false, "하우스"),
+        p("pg12", "안전 펜스 문 120cm", 39_000, ItemKind.PET, false, "하우스"),
+        p("pg13", "[로캣배송] 하드 이동장", 36_000, ItemKind.PET, false, "하우스"),
+        p("pg14", "자동 물 분수대 2L", 32_000, ItemKind.PET, false, "하우스"),
+        p("pg15", "배변패드 100매 (대용량)", 15_000, ItemKind.PET, false, "하우스"),
+        p("pg16", "두부 고양이 모래 7L", 14_900, ItemKind.PET, false, "하우스"),
+        // 미용·위생
+        p("pc1", "털 쏙쏙 빗질 브러시", 12_000, ItemKind.PET, false, "미용·위생"),
+        p("pc2", "저자극 반려동물 샴푸 500ml", 14_000, ItemKind.PET, false, "미용·위생"),
+        p("pc3", "무소음 발톱깎이", 8_000, ItemKind.PET, false, "미용·위생"),
+        p("pc4", "집에서 하는 전동 이발기", 38_000, ItemKind.PET, false, "미용·위생"),
+        p("pc5", "귀 세정제 100ml", 9_900, ItemKind.PET, false, "미용·위생"),
+        p("pc6", "눈물 자국 클리닝 티슈", 6_900, ItemKind.PET, false, "미용·위생"),
+        p("pc7", "치약 칫솔 세트 (닭맛)", 8_900, ItemKind.PET, false, "미용·위생"),
+        p("pc8", "꼬순내 지우개 탈취 스프레이", 9_900, ItemKind.PET, false, "미용·위생"),
+        // 산책·패션
+        p("pa1", "[멍멍배송] 편한 H형 하네스", 25_000, ItemKind.PET, false, "산책·패션"),
+        p("pa2", "튼튼 리드줄 1.5m", 18_000, ItemKind.PET, false, "산책·패션"),
+        p("pa3", "배변봉투 롤 300매", 4_500, ItemKind.PET, false, "산책·패션"),
+        p("pa4", "각인 이름표 (뼈다귀형)", 12_000, ItemKind.PET, false, "산책·패션"),
+        p("pa5", "노란 우비 (비 오는 날 산책)", 21_000, ItemKind.PET, false, "산책·패션"),
+        p("pa6", "줄무늬 니트 스웨터", 24_000, ItemKind.PET, false, "산책·패션"),
+        p("pa7", "휴대용 물병 겸 물그릇", 12_900, ItemKind.PET, false, "산책·패션"),
+        p("pa8", "LED 야광 목걸이 (야간 산책)", 9_900, ItemKind.PET, false, "산책·패션"),
+        p("pa9", "미끄럼 방지 멍멍 부츠 4P", 14_900, ItemKind.PET, false, "산책·패션"),
+        p("pa10", "리플렉터 안전 조끼", 17_000, ItemKind.PET, false, "산책·패션"),
+        p("pa11", "핼러윈 호박 코스튬", 16_000, ItemKind.PET, false, "산책·패션"),
+        // 건강
+        p("ph1", "닥터멍 멀티비타 60정", 28_000, ItemKind.PET, false, "건강"),
+        p("ph2", "넥카라 (수술 후 케어)", 9_900, ItemKind.PET, false, "건강"),
+        p("ph3", "펫 전용 체중계", 35_000, ItemKind.PET, false, "건강"),
         p("x1", "꽃다발", 39_000, ItemKind.ETC),
         p("x2", "콘서트 티켓", 154_000, ItemKind.ETC, true),
         p("x3", "놀이공원 자유이용권", 62_000, ItemKind.ETC),
@@ -148,6 +189,17 @@ object Catalog {
     )
 
     fun byId(id: String): Product? = products.firstOrNull { it.id == id }
+
+    /** 이름이 바뀐 상품의 예전 이름 → id (예전에 산 물건이 도감에서 빠지지 않게) */
+    val LEGACY_NAMES: Map<String, String> = mapOf(
+        "강아지 사료 2kg" to "pf1", "고양이 사료 2kg" to "pf2", "수제 개껌" to "pf3", "츄르 20개입" to "pf4", "강아지 캔 간식" to "pf5",
+        "연어 습식 파우치" to "pf6", "덴탈 스틱 30개입" to "pf7", "프리미엄 사료 5kg" to "pf8", "삑삑이 공" to "pt1", "깃털 낚싯대" to "pt2",
+        "터그 로프" to "pt3", "고양이 터널" to "pt5", "비행 원반" to "pt6", "노즈워크 매트" to "pt7", "푹신 방석" to "pg1",
+        "원목 강아지 집" to "pg2", "캣타워" to "pg3", "스크래쳐" to "pg4", "자동 급식기" to "pg5", "숨숨집 텐트" to "pg6", "여름 쿨매트" to "pg7",
+        "고양이 화장실" to "pg8", "스테인리스 밥그릇 세트" to "pg9", "빗질 브러시" to "pc1", "저자극 샴푸" to "pc2", "발톱깎이" to "pc3",
+        "산책 하네스" to "pa1", "튼튼 리드줄" to "pa2", "배변봉투 롤" to "pa3", "이름표 목걸이" to "pa4", "노란 우비" to "pa5",
+        "줄무늬 스웨터" to "pa6", "반려동물 종합 영양제" to "ph1",
+    )
 
     /** 이름에 검색어가 들어간 상품 (띄어쓰기 무시) */
     fun search(query: String): List<Product> {

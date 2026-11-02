@@ -219,7 +219,9 @@ private fun MallHome(
     onOpen: (Product, String) -> Unit,
     onManual: () -> Unit,
 ) {
-    val found = Catalog.search(query).filter { kind == null || it.kind == kind }
+    // 반려동물 용품은 사료·간식·장난감 … 분류로 한 번 더
+    var group by remember(kind) { mutableStateOf<String?>(null) }
+    val found = Catalog.search(query).filter { (kind == null || it.kind == kind) && (kind != ItemKind.PET || group == null || it.group == group) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -229,6 +231,14 @@ private fun MallHome(
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
             FilterChip(selected = kind == null, onClick = { onKind(null) }, label = { Text("전체") })
             (listOf(ItemKind.PET) + ItemKind.entries.filter { it != ItemKind.PET }).forEach { k -> FilterChip(selected = kind == k, onClick = { onKind(k) }, label = { Text(k.label) }) }
+        }
+        if (kind == ItemKind.PET) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                FilterChip(selected = group == null, onClick = { group = null }, label = { Text("전체 ${Catalog.products.count { it.kind == ItemKind.PET }}") })
+                Catalog.PET_GROUPS.forEach { g ->
+                    FilterChip(selected = group == g, onClick = { group = g }, label = { Text("$g ${Catalog.products.count { it.group == g }}") })
+                }
+            }
         }
         if (query.isBlank() && kind == null) {
             Text("많이 담는 물건", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)

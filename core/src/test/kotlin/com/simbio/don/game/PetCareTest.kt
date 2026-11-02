@@ -128,4 +128,20 @@ class PetCareTest {
         // 카탈로그의 모든 반려동물 용품이 하는 일이 정해져 있다
         Catalog.products.filter { it.kind == ItemKind.PET }.forEach { assertNotNull(PetCare.effects[it.id], it.id) }
     }
+
+    @Test
+    fun 몰의_반려동물_용품은_모두_분류와_그림과_효과가_있고_예전_이름도_찾는다() {
+        val pets = Catalog.products.filter { it.kind == ItemKind.PET }
+        assertTrue(pets.size >= 60, "${pets.size}")
+        pets.forEach { assertTrue(it.group in Catalog.PET_GROUPS, it.id) }
+        assertEquals(Catalog.PET_GROUPS.toSet(), pets.map { it.group }.toSet())
+        assertEquals(pets.size, pets.map { it.id }.toSet().size)
+        assertEquals(pets.size, pets.map { it.name }.toSet().size)
+        pets.forEach { assertTrue(it.name.length <= 28, "${it.id} ${it.name}") }
+        // 예전 이름으로 산 물건도 같은 상품으로
+        assertEquals("pf1", Dex.productOf("강아지 사료 2kg")?.id)
+        assertEquals("pg3", Dex.productOf("캣타워")?.id)
+        assertEquals("pg9", Dex.productOf("스테인리스 밥그릇 세트")?.id)
+        Catalog.LEGACY_NAMES.values.forEach { assertNotNull(Catalog.byId(it), it) }
+    }
 }

@@ -91,6 +91,15 @@ object PetCare {
         "pg6" to (CareKind.BED to 0), "pg7" to (CareKind.BED to 0), "pg8" to (CareKind.LITTER to 0), "pg9" to (CareKind.BOWL to 0),
         "pc1" to (CareKind.GROOM to 0), "pc2" to (CareKind.GROOM to 0), "pc3" to (CareKind.GROOM to 0),
         "pa3" to (CareKind.DECOR to 0), "pa4" to (CareKind.DECOR to 0), "pa5" to (CareKind.DECOR to 0), "pa6" to (CareKind.DECOR to 0),
+        // 쿠팡·네이버 느낌으로 더 늘린 것들
+        "pf9" to (CareKind.FOOD to 15), "pf10" to (CareKind.FOOD to 10), "pf11" to (CareKind.FOOD to 8),
+        "pf12" to (CareKind.TREAT to 6), "pf13" to (CareKind.TREAT to 10), "pf14" to (CareKind.TREAT to 5), "pf15" to (CareKind.TREAT to 2),
+        "pt8" to (CareKind.TOY to 0), "pt9" to (CareKind.TOY to 0), "pt10" to (CareKind.TOY to 0),
+        "pg10" to (CareKind.DECOR to 0), "pg11" to (CareKind.BED to 0), "pg12" to (CareKind.DECOR to 0), "pg13" to (CareKind.DECOR to 0),
+        "pg14" to (CareKind.BOWL to 0), "pg15" to (CareKind.LITTER to 0), "pg16" to (CareKind.LITTER to 0),
+        "pc4" to (CareKind.GROOM to 0), "pc5" to (CareKind.GROOM to 0), "pc6" to (CareKind.GROOM to 0), "pc7" to (CareKind.GROOM to 0), "pc8" to (CareKind.GROOM to 0),
+        "pa7" to (CareKind.DECOR to 0), "pa8" to (CareKind.DECOR to 0), "pa9" to (CareKind.DECOR to 0), "pa10" to (CareKind.DECOR to 0), "pa11" to (CareKind.DECOR to 0),
+        "ph2" to (CareKind.DECOR to 0), "ph3" to (CareKind.DECOR to 0),
     )
 
     const val FEED = 35

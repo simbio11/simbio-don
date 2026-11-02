@@ -237,8 +237,9 @@ ROOM = [
 
 
 def all_rows():
-    from . import pet16b
+    from . import pet16b, pet16c
     out = {k: PRODUCTS[v] for k, v in REUSE.items()}
     out.update(PRODUCTS)
     out.update(pet16b.PRODUCTS)
+    out.update(pet16c.PRODUCTS)
     return out

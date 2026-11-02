@@ -24,7 +24,7 @@ object Dex {
     /** 몰에서 산 이름("오버핏 맨투맨 (M)")에서 상품 찾기 — 옵션 괄호는 뗀다 */
     fun productOf(name: String): Product? {
         val base = name.trim().replace(Regex("""\s*\([^()]*\)$"""), "").trim()
-        return Catalog.products.firstOrNull { it.name == base }
+        return Catalog.products.firstOrNull { it.name == base } ?: Catalog.LEGACY_NAMES[base]?.let { Catalog.byId(it) }
     }
 
     fun entries(items: List<MockItem>): List<DexEntry> {
