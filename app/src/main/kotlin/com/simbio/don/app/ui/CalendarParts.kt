@@ -196,11 +196,11 @@ private fun BudgetPanel(title: String, current: Long?, onSave: (Long) -> Unit, o
         Text("정해 두면 이번 주 남은 날 오늘 몫에서 미리 빼 두고, 쓴 뒤에 지켰는지 보여 줘요.", fontSize = 12.sp, color = DonColors.InkMuted)
         MoneyField("예산", amount, { amount = it })
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            listOf(10_000L, 30_000L, 50_000L, 100_000L).forEach { n -> FilterChip(false, { amount = n.toString() }, { Text(compactWon(n)) }) }
+            listOf(0L, 10_000L, 30_000L, 50_000L, 100_000L).forEach { n -> FilterChip(false, { amount = n.toString() }, { Text(if (n == 0L) "0원" else compactWon(n)) }) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SubButton(onClick = onClose, modifier = Modifier.weight(1f), containerColor = DonColors.Surface) { Text("닫기") }
-            Button(onClick = { onSave(v) }, enabled = v > 0, modifier = Modifier.weight(2f)) { Text("예산 정하기") }
+            Button(onClick = { onSave(v) }, enabled = amount.isNotBlank(), modifier = Modifier.weight(2f)) { Text(if (amount.isNotBlank() && v == 0L) "0원 (돈 안 써요)" else "예산 정하기") }
         }
     }
 }

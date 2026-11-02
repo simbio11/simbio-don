@@ -369,7 +369,7 @@ fun SettingsScreen(
                 }
             }
             WidgetPreview(widgetTheme, widgetOpacity)
-            Text("달력 + 잔디 위젯: 잔디 기간", fontSize = 15.sp, color = DonColors.Ink)
+            Text("달력 + 절약 잔디 위젯: 잔디 기간", fontSize = 15.sp, color = DonColors.Ink)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 com.simbio.don.app.UiPrefs.GRASS_PERIODS.forEach { w ->
                     FilterChip(selected = grassWeeks == w, onClick = { onGrassWeeks(w) }, label = { Text(com.simbio.don.app.UiPrefs.grassPeriodLabel(w)) })

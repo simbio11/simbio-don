@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,6 +73,7 @@ fun budgetLine(p: PlanEntity): Pair<String, Color> = when {
         if (actual <= p.amount) "실제 ${compactWon(actual)} · 지킴" to DonColors.Good
         else "실제 ${compactWon(actual)} · ${compactWon(actual - p.amount)} 넘음" to DonColors.Warn
     }
+    p.amount == 0L -> "돈 안 써요" to DonColors.InkMuted
     else -> "예산 ${compactWon(p.amount)}" to DonColors.Real
 }
 
@@ -106,13 +110,20 @@ fun CalendarScreen(
         item {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 RoundIconButton(UiIcon.CHEVRON_LEFT, "지난달", true) { onMonth(month.minusMonths(1)) }
-                Text(
-                    "${month.year}년 ${month.monthValue}월",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = DonColors.Ink,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
+                // 달 이름도 넘기는 쪽으로 살짝 밀려 바뀐다
+                androidx.compose.animation.AnimatedContent(
+                    targetState = month,
+                    transitionSpec = { monthSlide(targetState > initialState, fraction = 2) },
+                    label = "monthTitle",
+                ) { m ->
+                    Text(
+                        "${m.year}년 ${m.monthValue}월",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DonColors.Ink,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                }
                 RoundIconButton(UiIcon.CHEVRON_RIGHT, "다음 달", true) { onMonth(month.plusMonths(1)) }
                 Spacer(Modifier.weight(1f))
                 if (YearMonth.from(today) != month || selected != today) {
@@ -182,20 +193,26 @@ private fun MonthGrid(
     onSelect: (LocalDate) -> Unit,
     onMonth: (YearMonth) -> Unit,
 ) {
-    val first = month.atDay(1)
-    val start = first.minusDays((first.dayOfWeek.value % 7).toLong())
-    val rows = (first.dayOfWeek.value % 7 + month.lengthOfMonth() + 6) / 7
+    // 손가락을 따라 살짝 밀리다가, 충분히 밀면 그 쪽 달이 미끄러져 들어온다
+    val drag = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column(
         Modifier.fillMaxWidth().card().padding(horizontal = 4.dp, vertical = 10.dp)
-            // 좌우로 밀어 달 넘기기
             .pointerInput(month) {
-                var drag = 0f
                 detectHorizontalDragGestures(
-                    onDragStart = { drag = 0f },
                     onDragEnd = {
-                        if (drag > 120) onMonth(month.minusMonths(1)) else if (drag < -120) onMonth(month.plusMonths(1))
+                        val d = drag.value
+                        when {
+                            d > 120 -> onMonth(month.minusMonths(1))
+                            d < -120 -> onMonth(month.plusMonths(1))
+                        }
+                        scope.launch { drag.animateTo(0f, androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow)) }
                     },
-                    onHorizontalDrag = { _, d -> drag += d },
+                    onDragCancel = { scope.launch { drag.animateTo(0f) } },
+                    onHorizontalDrag = { change, d ->
+                        change.consume()
+                        scope.launch { drag.snapTo(drag.value + d) }
+                    },
                 )
             },
     ) {
@@ -207,15 +224,42 @@ private fun MonthGrid(
                 )
             }
         }
-        (0 until rows).forEach { r ->
-            Row(Modifier.fillMaxWidth()) {
-                (0 until 7).forEach { c ->
-                    val d = start.plusDays((r * 7 + c).toLong())
-                    DayCell(d, month, d == selected, d == today, events[d].orEmpty(), spent[d], income[d], Modifier.weight(1f)) { onSelect(d) }
+        androidx.compose.animation.AnimatedContent(
+            targetState = month,
+            transitionSpec = { monthSlide(targetState > initialState) },
+            modifier = Modifier.graphicsLayer {
+                translationX = drag.value * 0.35f
+                alpha = 1f - (kotlin.math.abs(drag.value) / 1600f).coerceAtMost(0.3f)
+            },
+            label = "monthGrid",
+        ) { m ->
+            val first = m.atDay(1)
+            val start = first.minusDays((first.dayOfWeek.value % 7).toLong())
+            val rows = (first.dayOfWeek.value % 7 + m.lengthOfMonth() + 6) / 7
+            Column {
+                (0 until rows).forEach { r ->
+                    Row(Modifier.fillMaxWidth()) {
+                        (0 until 7).forEach { c ->
+                            val d = start.plusDays((r * 7 + c).toLong())
+                            DayCell(d, m, d == selected, d == today, events[d].orEmpty(), spent[d], income[d], Modifier.weight(1f)) { onSelect(d) }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+/** 달 넘기기: 다음 달은 오른쪽에서, 지난달은 왼쪽에서 밀려 들어오며 흐려졌다 또렷해진다. 줄 수가 달라지면 높이도 부드럽게 */
+private fun monthSlide(forward: Boolean, fraction: Int = 4): androidx.compose.animation.ContentTransform {
+    val dir = if (forward) 1 else -1
+    val t = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(320, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+    val f = androidx.compose.animation.core.tween<Float>(260)
+    return androidx.compose.animation.ContentTransform(
+        androidx.compose.animation.slideInHorizontally(t) { w -> dir * w / fraction } + androidx.compose.animation.fadeIn(f),
+        androidx.compose.animation.slideOutHorizontally(t) { w -> -dir * w / fraction } + androidx.compose.animation.fadeOut(f),
+        sizeTransform = androidx.compose.animation.SizeTransform(clip = true) { _, _ -> androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing) },
+    )
 }
 
 @Composable

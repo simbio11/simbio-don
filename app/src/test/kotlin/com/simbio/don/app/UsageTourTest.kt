@@ -179,7 +179,7 @@ class UsageTourTest {
         waitText("AI 도우미 (선택)")
         rule.onNodeWithText("AI 도우미 (선택)").performScrollTo()
         shot("33_settings_ai")
-        rule.onAllNodesWithText("달력 + 잔디 위젯", substring = true).onFirst().performScrollTo()
+        rule.onAllNodesWithText("잔디 기간", substring = true).onFirst().performScrollTo()
         shot("34_settings_widgets")
     }
 

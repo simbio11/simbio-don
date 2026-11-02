@@ -175,12 +175,12 @@ private fun EventMoneyCard(
             )
             MoneyField("예산", amount, { amount = it })
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf(10_000L, 30_000L, 50_000L, 100_000L).forEach { n -> FilterChip(false, { amount = n.toString() }, { Text(compactWon(n)) }) }
+                listOf(0L, 10_000L, 30_000L, 50_000L, 100_000L).forEach { n -> FilterChip(false, { amount = n.toString() }, { Text(if (n == 0L) "0원" else compactWon(n)) }) }
             }
             val v = amount.toLongOrNull() ?: 0
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (plan != null) SubButton(onClick = { editing = false }, modifier = Modifier.weight(1f), containerColor = DonColors.SurfaceAlt) { Text("닫기") }
-                Button(onClick = { onBudget(v); editing = false }, enabled = v > 0, modifier = Modifier.weight(2f)) { Text("예산 정하기") }
+                Button(onClick = { onBudget(v); editing = false }, enabled = amount.isNotBlank(), modifier = Modifier.weight(2f)) { Text(if (amount.isNotBlank() && v == 0L) "0원 (돈 안 써요)" else "예산 정하기") }
             }
         }
     }
@@ -277,7 +277,7 @@ fun EventEditScreen(
                         title.trim(), startDate, startMin.takeIf { !allDay }, endDate, endMin.takeIf { !allDay },
                         location.trim(), memo.trim(), repeat, reminder,
                     )
-                    onSave(draft, calendar, money.toLongOrNull()?.takeIf { it > 0 })
+                    onSave(draft, calendar, money.toLongOrNull()?.takeIf { it >= 0 })
                 },
                 enabled = title.isNotBlank() && endOk,
                 modifier = Modifier.fillMaxWidth(),

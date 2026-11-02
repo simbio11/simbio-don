@@ -133,3 +133,7 @@ data class CycleLedger(val plan: CyclePlan, val entries: List<Entry> = emptyList
         const val MAX_EXCEPTIONS = 2
     }
 }
+
+/** 예외 지출을 한 달 한도보다 더 적었으면 버리지 않고 보통 지출로 센다 (장부에서 사라지면 돈이 안 맞는다) */
+fun CycleLedger.addSafely(entry: Entry): CycleLedger =
+    if (entry.type == EntryType.EXCEPTION && !canAddException) add(entry.copy(type = EntryType.SPEND)) else add(entry)

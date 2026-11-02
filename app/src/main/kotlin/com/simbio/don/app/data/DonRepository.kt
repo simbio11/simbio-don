@@ -12,6 +12,7 @@ import com.simbio.don.game.MiniGameRewards
 import com.simbio.don.game.Sets
 import com.simbio.don.notify.SelfTransfer
 import com.simbio.don.budget.Subcategories
+import com.simbio.don.budget.addSafely
 import com.simbio.don.budget.RecurringIncomes
 import com.simbio.don.budget.Installments
 import android.content.Context
@@ -453,7 +454,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val cycle = cycleOf(c, cycles[0], s.payDay)
         return combine(dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()), dao.settledWeeks(c.nominal)) { entries, settled ->
             val plan = planFor(c, cycle)
-            val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e.toEntry()) }.getOrDefault(l) }
+            val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.addSafely(e.toEntry()) }.getOrDefault(l) }
             PrevMonth(c.nominal, ledger.results(), settled.map { it.weekIndex }.toSet())
         }
     }
@@ -486,7 +487,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         prevSalary: Long? = null,
     ): HomeState {
         val plan = planFor(c, cycle)
-        val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e.toEntry()) }.getOrDefault(l) }
+        val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.addSafely(e.toEntry()) }.getOrDefault(l) }
         val results = ledger.results()
         val today = now.toLocalDate()
         val settledIdx = settled.map { it.weekIndex }.toSet()
@@ -647,7 +648,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             ) { entities, prevEntities ->
                 val plan = planFor(c, cycle)
                 val entries = entities.map { it.toEntry() }
-                val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e) }.getOrDefault(l) }
+                val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.addSafely(e) }.getOrDefault(l) }
                 MonthView(
                     nominal = c.nominal,
                     cycle = cycle,
@@ -2622,7 +2623,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     private suspend fun weekResultNow(c: CycleEntity, cycle: PayCycle, index: Int): WeekResult? {
         val plan = planFor(c, cycle)
         val entries = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).map { it.toEntry() }
-        val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e) }.getOrDefault(l) }
+        val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.addSafely(e) }.getOrDefault(l) }
         return ledger.results().getOrNull(index)
     }
 

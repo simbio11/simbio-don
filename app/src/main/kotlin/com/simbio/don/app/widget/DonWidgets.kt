@@ -31,7 +31,7 @@ import java.time.LocalDateTime
 /** 고를 수 있는 위젯 (설정에서 홈 화면에 바로 놓기) */
 enum class WidgetKind(val label: String, val description: String, val cls: Class<*>) {
     WEEK("이번 주 남은 돈", "남은 돈과 오늘 쓸 수 있는 돈, + 버튼으로 바로 적기", WeekWidget::class.java),
-    GRASS("잔디", "깃허브 잔디처럼 날마다 한 칸 — 안 쓴 날은 진한 초록, 넘긴 날은 빨강 (설정에서 큰 달력도 같이)", GrassWidget::class.java),
+    GRASS("절약 잔디", "날마다 한 칸 — 하루 예산을 지킨 날은 초록, 안 쓴 날은 더 진하게, 넘긴 날은 빨강 (설정에서 큰 달력도 같이)", GrassWidget::class.java),
     CALENDAR("이번 달 달력", "날마다 수입·지출·다가올 계획, + 버튼으로 바로 적기", CalendarWidget::class.java),
     SAVED("모은 돈", "지금까지 모은 돈과 목표까지 남은 돈", SavedWidget::class.java),
     BUDDY("내 캐릭터", "이번 주 씀씀이에 따라 표정이 바뀌어요", BuddyWidget::class.java),
