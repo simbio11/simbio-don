@@ -4,7 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -15,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
@@ -67,8 +70,10 @@ object PetRenderer {
         bitmap(context, look, PetExpr.of(mood, sleeping))
 
     /** 위젯 같은 곳에 쓸 안드로이드 비트맵 (긴 쪽이 [max]px) */
-    fun androidBitmap(context: Context, look: CharacterLook, mood: Mood, max: Int = 360): Bitmap {
-        val b = bitmap(context, look, mood).asAndroidBitmap()
+    fun androidBitmap(context: Context, look: CharacterLook, mood: Mood, max: Int = 360): Bitmap = androidBitmap(context, look, PetExpr.of(mood), max)
+
+    fun androidBitmap(context: Context, look: CharacterLook, expr: String, max: Int = 360): Bitmap {
+        val b = bitmap(context, look, expr).asAndroidBitmap()
         val k = max.toFloat() / maxOf(b.width, b.height)
         return if (k >= 1f) b else Bitmap.createScaledBitmap(b, (b.width * k).toInt(), (b.height * k).toInt(), true)
     }
@@ -78,24 +83,55 @@ object PetRenderer {
 }
 
 /**
- * 살아 있는 동물 한 마리: 숨 쉬듯 몸이 조금 늘었다 줄고, 기분이 좋을수록 통통 튀고, 슬프면 느리게 처진다.
- * [height]는 그림 높이. 그리는 값은 레이아웃 단계가 아니라 그리기 단계에서만 읽어 화면을 다시 만들지 않는다.
+ * 살아 있는 동물 한 마리: 숨 쉬듯 몸이 조금 늘었다 줄고, 가끔 고개를 갸웃한다 (튀지 않는다).
+ * [expr]가 있으면 그 표정, 없으면 [mood] 표정. [height]는 그림 높이.
+ * 그리는 값은 그리기 단계에서만 읽어 화면을 다시 만들지 않는다.
  */
 @Composable
-fun PetSprite(look: CharacterLook, mood: Mood, height: Dp, modifier: Modifier = Modifier, animate: Boolean = true, sleeping: Boolean = false) {
+fun PetSprite(
+    look: CharacterLook,
+    mood: Mood,
+    height: Dp,
+    modifier: Modifier = Modifier,
+    animate: Boolean = true,
+    sleeping: Boolean = false,
+    expr: String? = null,
+    /** 0이 아니면 바뀔 때마다 몸을 살랑살랑 (돌봐 줬을 때) */
+    wiggle: Int = 0,
+) {
     val context = LocalContext.current
-    val img = remember(look, mood, sleeping) { PetRenderer.bitmap(context, look, mood, sleeping) }
+    val face = expr ?: PetExpr.of(mood, sleeping)
+    val img = remember(look, face) { PetRenderer.bitmap(context, look, face) }
     val w = height * img.width / img.height
     if (!animate) {
         Image(img, look.callName, modifier.size(w, height), filterQuality = FilterQuality.Medium)
         return
     }
-    val lively = mood == Mood.JOYFUL || mood == Mood.HAPPY || mood == Mood.CHEER
-    val gloomy = mood == Mood.SAD || mood == Mood.WORRIED
+    val slow = face == "sleep" || face == "sad" || face == "worry"
     val t = rememberInfiniteTransition(label = "pet")
-    val breathe = t.animateFloat(0f, 1f, infiniteRepeatable(tween(if (sleeping) 3200 else if (gloomy) 2800 else 2000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")
-    val hop = t.animateFloat(0f, 1f, infiniteRepeatable(tween(if (lively) 520 else 1000, easing = LinearEasing), RepeatMode.Reverse), label = "hop")
-    val sway = t.animateFloat(-1f, 1f, infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "sway")
+    val breathe = t.animateFloat(0f, 1f, infiniteRepeatable(tween(if (face == "sleep") 3200 else if (slow) 2600 else 2000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")
+    // 갸웃: 6초에 한 번 살짝 기울였다 돌아온다
+    val tilt = t.animateFloat(
+        0f, 0f,
+        infiniteRepeatable(
+            keyframes {
+                durationMillis = 6000
+                0f at 0
+                0f at 3800
+                3f at 4200 using FastOutSlowInEasing
+                3f at 4900
+                0f at 5400 using FastOutSlowInEasing
+            },
+        ),
+        label = "tilt",
+    )
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(wiggle) {
+        if (wiggle != 0) {
+            shake.snapTo(1f)
+            shake.animateTo(0f, tween(1400, easing = LinearEasing))
+        }
+    }
     val dp = LocalDensity.current.density
     Box(modifier.size(w, height + 6.dp)) {
         Image(
@@ -103,16 +139,11 @@ fun PetSprite(look: CharacterLook, mood: Mood, height: Dp, modifier: Modifier = 
             Modifier.size(w, height).graphicsLayer {
                 transformOrigin = TransformOrigin(0.5f, 1f)
                 val b = breathe.value
-                scaleY = 1f + (if (sleeping) 0.035f else 0.028f) * b
-                scaleX = 1f - 0.012f * b
-                if (lively) {
-                    // 통통: 위로 튀었다 내려오며 착지할 때 살짝 눌린다
-                    val h = hop.value
-                    translationY = -(height.toPx() * 0.045f) * h * (1f - h) * 4f
-                    scaleY *= 1f - 0.03f * (1f - h) * (1f - h)
-                }
-                if (!sleeping && !gloomy) rotationZ = sway.value * (if (lively) 2.2f else 1.2f)
-                translationY += (height.toPx() * 0.02f) + 3f * dp
+                scaleY = 1f + (if (face == "sleep") 0.035f else 0.025f) * b
+                scaleX = 1f - 0.01f * b
+                val s = shake.value
+                rotationZ = if (s > 0f) kotlin.math.sin((1f - s) * 40f) * 4f * s else if (face == "sleep") 0f else tilt.value
+                translationY = (height.toPx() * 0.02f) + 3f * dp
             },
             filterQuality = FilterQuality.Medium,
         )

@@ -141,6 +141,8 @@ data class HomeState(
     val accounts: List<AccountBalance> = emptyList(),
     /** 내 캐릭터 모습 */
     val look: CharacterLook = CharacterLook.MALE,
+    /** 집 친구(동물) 돌보기 상태 — 방에서 표정·말풍선에 쓴다 */
+    val pet: com.simbio.don.game.PetState = com.simbio.don.game.PetState(),
     // ── M2 ──
     val miles: MileState = MileState(),
     /** 수납 가구·인테리어 */
@@ -555,6 +557,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             wallet = wallet,
             house = HouseLayout.of(enumOr(house?.level, HouseLevel.ONE_ROOM), items, HouseSetup.decode(house?.setup).bonus()),
             look = CharacterLook.decode(house?.look),
+            pet = com.simbio.don.game.PetState.decode(house?.pet),
             setup = HouseSetup.decode(house?.setup),
             owned = house?.owned.orEmpty().split(',').filter { it.isNotBlank() }.toSet(),
             freeMakeover = house?.freeMakeover ?: true,

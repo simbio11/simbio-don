@@ -67,10 +67,20 @@ object PetFur {
             h in 52f..58f -> (58f - h) / 6f
             else -> 0f
         }
-        if (hw == 0f || s < 0.12f) return argb
-        // 어두운 곳(외곽선·눈)은 지킨다
+        // 어두운 곳(외곽선·눈)은 털 변환에서 지킨다
         val lw = ((l - 0.24f) / 0.2f).coerceIn(0f, 1f)
-        val w = hw * lw
+        val w = if (s < 0.12f) 0f else hw * lw
+        // 외곽선·코·털 끝의 적갈색: 털을 검정·회색으로 바꾸면 붉은 테두리로 보여서 털 색 쪽으로 같이 바꾼다
+        // (밝은 볼 터치·혀·귀 안쪽 분홍은 그대로)
+        val maroon = (h >= 290f || h < 14f) && l < 0.52f && (l < 0.36f || s < 0.65f)
+        if (maroon && tone.hue != null) {
+            val k = ((0.52f - l) / 0.12f).coerceIn(0f, 1f)
+            if (k >= w) {
+                val s2 = (s * min(1f, tone.sat * 1.5f)).coerceIn(0f, 1f)
+                val l2 = l * min(1f, tone.mul + 0.3f)
+                return (a shl 24) or hsl(lerpHue(h, tone.hue, k), s + (s2 - s) * k, l + (l2 - l) * k)
+            }
+        }
         if (w == 0f) return argb
         val h2 = tone.hue ?: h
         val s2 = (s * tone.sat).coerceIn(0f, 1f)

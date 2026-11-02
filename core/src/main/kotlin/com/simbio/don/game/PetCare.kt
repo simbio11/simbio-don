@@ -135,6 +135,10 @@ object PetCare {
 
     enum class Action(val label: String) { FEED("밥 주기"), TREAT("간식 주기"), PLAY("놀아 주기"), WALK("산책 가기"), GROOM("털 빗어 주기"), PET("쓰다듬기") }
 
+    /** 이 동물에게 할 수 있는 돌보기 — 고양이는 산책 대신 집에서 논다 */
+    fun actionsFor(kind: PetKind?): List<Action> =
+        if (kind == PetKind.CAT) Action.entries.filter { it != Action.WALK } else Action.entries
+
     /** 지금 할 수 있는지 (못 하면 그 까닭) */
     fun blocked(s: PetState, a: Action, today: LocalDate): String? {
         val t = today.toEpochDay()

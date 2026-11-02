@@ -349,7 +349,9 @@ class BuddyWidget : DonWidget() {
             return v
         }
         if (home.look.isPet) {
-            v.setImageViewBitmap(R.id.widget_image, com.simbio.don.app.ui.kit.PetRenderer.androidBitmap(context, home.look, home.mood))
+            // 집 화면과 같은 표정 (배고픔·밤잠·지갑 걱정)
+            val f = com.simbio.don.game.PetFeelings.of(home.mood, home.pet, java.time.LocalTime.now().hour, home.look.callName)
+            v.setImageViewBitmap(R.id.widget_image, com.simbio.don.app.ui.kit.PetRenderer.androidBitmap(context, home.look, f.expr))
         } else {
             val px = CharacterRenderer.pixels(context, home.look, home.mood)
             v.setImageViewBitmap(R.id.widget_image, WidgetArt.pixels(px, CharacterRenderer.W, CharacterRenderer.H, 8))

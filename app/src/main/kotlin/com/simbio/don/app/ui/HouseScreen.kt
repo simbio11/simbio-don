@@ -79,8 +79,8 @@ fun HouseScreen(
                     if (home.title.isNotEmpty()) Badge("「${home.title}」", DonColors.GameDeep)
                 }
                 Text(
-                    (if (home.look.isPet) "${home.look.callName}" + com.simbio.don.game.PetCare.josa(home.look.callName, "은", "는") + " 지금 " else "나는 지금 ") +
-                        home.mood.label + if (weather != null && city != null) " · $city ${weather.label}" else "",
+                    (if (home.look.isPet) com.simbio.don.game.PetFeelings.of(home.mood, pet ?: home.pet, home.now.hour, home.look.callName).line else "나는 지금 ${home.mood.label}") +
+                        if (weather != null && city != null) " · $city ${weather.label}" else "",
                     fontSize = 13.sp,
                     color = DonColors.GameDeep,
                 )
@@ -99,16 +99,22 @@ fun HouseScreen(
                 phase = DayPhase.of(home.now.toLocalTime()),
                 weather = weather ?: Weather.CLEAR,
                 interior = home.setup.interior,
+                petState = pet ?: home.pet,
+                hour = home.now.hour,
                 onTap = { hit ->
                     when (hit) {
                         is RoomHit.OfSlot -> picking = hit.slot.label to house.slots[hit.slot].orEmpty()
                         RoomHit.Floor -> picking = "바닥" to house.floor
                         RoomHit.Trash -> onRecycle()
+                        // 동물을 누르면 쓰다듬기 (하루 한 번 기분이 오른다, 그 뒤로는 좋아하기만)
+                        RoomHit.Pet -> if (pet != null && com.simbio.don.game.PetCare.blocked(pet, com.simbio.don.game.PetCare.Action.PET, home.today) == null) {
+                            onPetAct(com.simbio.don.game.PetCare.Action.PET)
+                        }
                     }
                 },
             )
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("가구를 누르면 그 안의 물건을 볼 수 있어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                Text(if (home.look.isPet) "가구를 누르면 물건을, ${home.look.callName}" + com.simbio.don.game.PetCare.josa(home.look.callName, "을", "를") + " 누르면 쓰다듬어요." else "가구를 누르면 그 안의 물건을 볼 수 있어요.", fontSize = 12.sp, color = DonColors.InkMuted)
                 if (house.isCluttered) WarnLine("수납이 넘쳐서 바닥에 ${house.floor.size}개가 쌓였어요")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onShop, containerColor = DonColors.Game, modifier = Modifier.weight(1f)) { Text("모의 쇼핑") }
@@ -277,11 +283,14 @@ fun HomeGameCard(home: HomeState, onHouse: () -> Unit, onShop: () -> Unit, weath
         Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("게임 · 내 ${home.house.level.label}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = DonColors.GameDeep)
-                Text("나는 지금 ${home.mood.label}", fontSize = 13.sp, color = DonColors.InkSoft)
+                Text(
+                    if (home.look.isPet) com.simbio.don.game.PetFeelings.of(home.mood, home.pet, home.now.hour, home.look.callName).line else "나는 지금 ${home.mood.label}",
+                    fontSize = 13.sp, color = DonColors.InkSoft,
+                )
             }
             MoreButton("내 집 보기", onHouse)
         }
-        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)), DayPhase.of(home.now.toLocalTime()), weather ?: Weather.CLEAR, interior = home.setup.interior)
+        PixelRoom(home.house, home.mood, Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)), DayPhase.of(home.now.toLocalTime()), weather ?: Weather.CLEAR, interior = home.setup.interior, petState = home.pet, hour = home.now.hour)
         Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

@@ -10,6 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,6 +40,16 @@ import java.time.LocalDate
 @Composable
 fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (PetCare.Action) -> Unit, onShop: () -> Unit, onChange: () -> Unit = {}, mood: com.simbio.don.game.Mood = com.simbio.don.game.Mood.CALM) {
     val name = look.callName
+    // 돌봐 주면 잠깐 활짝 웃으며 몸을 흔든다, 평소엔 기본 얼굴
+    var cared by remember { mutableIntStateOf(0) }
+    var beaming by remember { mutableStateOf(false) }
+    LaunchedEffect(cared) {
+        if (cared > 0) {
+            beaming = true
+            delay(1_600)
+            beaming = false
+        }
+    }
     Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("$name 돌보기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink, modifier = Modifier.weight(1f))
@@ -43,17 +60,9 @@ fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (Pe
                 color = if (pet.hungry || pet.bored) DonColors.Warn else DonColors.Good,
             )
         }
-        // 배고프면 슬픈 얼굴, 심심하면 걱정 얼굴, 아니면 기분 얼굴
+        // 초상화는 기본 얼굴 (기분·배고픔은 방 안의 표정과 말풍선으로 보인다)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            com.simbio.don.app.ui.kit.PetSprite(
-                look,
-                when {
-                    pet.hungry -> com.simbio.don.game.Mood.SAD
-                    pet.bored -> com.simbio.don.game.Mood.WORRIED
-                    else -> mood
-                },
-                96.dp,
-            )
+            com.simbio.don.app.ui.kit.PetSprite(look, mood, 96.dp, expr = if (beaming) "joy" else "calm", wiggle = cared)
         }
         Meter("배부름", pet.full, if (pet.hungry) DonColors.Warn else DonColors.Good)
         Meter("기분", pet.joy, if (pet.bored) DonColors.Warn else DonColors.Game)
@@ -74,10 +83,10 @@ fun PetCareCard(look: CharacterLook, pet: PetState, today: LocalDate, onAct: (Pe
             color = DonColors.InkSoft,
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            PetCare.Action.entries.forEach { a ->
+            PetCare.actionsFor(look.kind.kind).forEach { a ->
                 val why = PetCare.blocked(pet, a, today)
                 if (why == null) {
-                    SmallButton(onClick = { onAct(a) }) { Text(a.label) }
+                    SmallButton(onClick = { cared++; onAct(a) }) { Text(a.label) }
                 } else {
                     SubButton(onClick = { onAct(a) }, containerColor = DonColors.SurfaceAlt) { Text("${a.label} · $why", fontSize = 12.sp, color = DonColors.InkMuted) }
                 }

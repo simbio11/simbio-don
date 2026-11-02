@@ -144,4 +144,51 @@ class PetCareTest {
         assertEquals("pg9", Dex.productOf("스테인리스 밥그릇 세트")?.id)
         Catalog.LEGACY_NAMES.values.forEach { assertNotNull(Catalog.byId(it), it) }
     }
+
+    @Test
+    fun 표정은_잠_배고픔_지갑_심심함_순서로() {
+        val ok = PetState(full = 80, joy = 80)
+        // 밤늦게는 무엇이든 잔다
+        assertEquals("sleep", PetFeelings.of(Mood.ANGRY, ok.copy(full = 0), 23, "콩이").expr)
+        assertEquals(PetBubble.ZZZ, PetFeelings.of(Mood.CALM, ok, 3, "콩이").bubble)
+        assertEquals(PetEnergy.SLEEP, PetFeelings.of(Mood.CALM, ok, 5, "콩이").energy)
+        // 많이 배고프면 지갑 걱정보다 먼저
+        val starving = PetFeelings.of(Mood.ANGRY, ok.copy(full = 10), 12, "콩이")
+        assertEquals("sad", starving.expr)
+        assertEquals(PetBubble.FOOD, starving.bubble)
+        assertEquals("콩이가 많이 배고파해요", starving.line)
+        // 돈을 다 써서 지갑이 비면 화낸다
+        val angry = PetFeelings.of(Mood.ANGRY, ok, 12, "별")
+        assertEquals("angry", angry.expr)
+        assertEquals(PetBubble.ANGER, angry.bubble)
+        assertTrue(angry.line.startsWith("별이 "))
+        assertEquals(PetBubble.FOOD, PetFeelings.of(Mood.CALM, ok.copy(full = 25), 12, "콩이").bubble)
+        assertEquals(PetBubble.SWEAT, PetFeelings.of(Mood.WORRIED, ok, 12, "콩이").bubble)
+        assertEquals(PetBubble.BORED, PetFeelings.of(Mood.CALM, ok.copy(joy = 10), 12, "콩이").bubble)
+        assertEquals("joy", PetFeelings.of(Mood.JOYFUL, ok, 12, "콩이").expr)
+        assertEquals("calm", PetFeelings.of(Mood.CALM, ok.copy(full = 50, joy = 50), 12, "콩이").expr)
+        // 밤 9~10시는 졸려서 덜 움직인다
+        assertEquals(PetEnergy.LOW, PetFeelings.of(Mood.JOYFUL, ok, 21, "콩이").energy)
+    }
+
+    @Test
+    fun 고양이는_산책_대신_집에서_논다() {
+        assertTrue(PetCare.Action.WALK !in PetCare.actionsFor(PetKind.CAT))
+        assertTrue(PetCare.Action.WALK in PetCare.actionsFor(PetKind.DOG))
+    }
+
+    @Test
+    fun 검정_털로_바꾸면_적갈색_외곽선도_어둡게() {
+        val black = PetFur.tone("검정")
+        val outline = 0xFF6E2A33.toInt() // 그림의 자줏빛 적갈색 외곽선
+        val out = PetFur.apply(outline, black)
+        val r = (out shr 16) and 0xFF
+        val g = (out shr 8) and 0xFF
+        assertTrue(r - g < 20, "붉은 기가 남았어요: ${Integer.toHexString(out)}")
+        // 밝은 볼 터치·귀 안쪽 분홍은 그대로
+        val blush = 0xFFF4A0B0.toInt()
+        assertEquals(blush, PetFur.apply(blush, black))
+        // 원래 털색이면 외곽선도 그대로
+        assertEquals(outline, PetFur.apply(outline, PetFur.tone("탠")))
+    }
 }
