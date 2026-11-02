@@ -318,6 +318,8 @@ data class HouseEntity(
     @ColumnInfo(defaultValue = "1") val freeMakeover: Boolean = true,
     /** 집 화면에 다는 칭호 (세트·도감으로 얻음, 비면 없음) */
     @ColumnInfo(defaultValue = "") val title: String = "",
+    /** 집 친구(동물) 돌보기 상태 (com.simbio.don.game.PetState.encode) */
+    @ColumnInfo(defaultValue = "") val pet: String = "",
 )
 
 /** 직접 만든 카테고리. [name]은 "U" + 번호 (기록에는 이 이름이 저장된다) */
@@ -432,6 +434,10 @@ data class PlanEntity(
     @ColumnInfo(defaultValue = "0") val autoLinked: Boolean = false,
     /** "이 계획 아니에요" 한 기록 id들 ("12,40") — 다시 묻거나 잇지 않는다 */
     @ColumnInfo(defaultValue = "") val rejected: String = "",
+    /** 한 달에 나눠서 (경조사처럼 큰돈): 그 주만 깎지 않고 이번 달 남은 주에 나눠 뺀다 */
+    @ColumnInfo(defaultValue = "0") val monthly: Boolean = false,
+    /** 만든 날 (한 달에 나눠서면 이 주부터 나눈다, 0 = 모름 → 그 달 처음부터) */
+    @ColumnInfo(defaultValue = "0") val createdEpochDay: Long = 0,
 ) {
     fun rejects(entryId: Long): Boolean = rejected.split(",").any { it == entryId.toString() }
 

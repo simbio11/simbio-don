@@ -228,7 +228,7 @@ private fun MallHome(
         SearchBox(query, onQuery, "무엇을 사고 싶어요?")
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
             FilterChip(selected = kind == null, onClick = { onKind(null) }, label = { Text("전체") })
-            ItemKind.entries.forEach { k -> FilterChip(selected = kind == k, onClick = { onKind(k) }, label = { Text(k.label) }) }
+            (listOf(ItemKind.PET) + ItemKind.entries.filter { it != ItemKind.PET }).forEach { k -> FilterChip(selected = kind == k, onClick = { onKind(k) }, label = { Text(k.label) }) }
         }
         if (query.isBlank() && kind == null) {
             Text("많이 담는 물건", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)

@@ -564,7 +564,8 @@ SHOP = {
 
 
 def _all():
-    out = {}
+    from . import pet16
+    out = {"px16_item_pet": pet16.KIND}
     for k, rows in ITEMS.items():
         out[f"px16_item_{k}"] = rows
     for k, rows in SHOP.items():

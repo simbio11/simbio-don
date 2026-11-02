@@ -1323,9 +1323,11 @@ PRODUCTS = {
 
 
 def all_rows():
-    """{상품 id: 16줄} — REUSE 포함"""
+    """{상품 id: 16줄} — REUSE 포함 (반려동물 용품은 pet16)"""
+    from . import pet16
     out = {k: items16.ITEMS[v] for k, v in REUSE.items()}
     out.update(PRODUCTS)
+    out.update(pet16.all_rows())
     return out
 
 

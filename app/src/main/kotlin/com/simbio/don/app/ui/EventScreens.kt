@@ -88,6 +88,7 @@ fun EventDetailScreen(
     onUnlink: (PlanEntity) -> Unit,
     onOpenEntry: (EntryEntity) -> Unit,
     onBack: () -> Unit,
+    onMonthly: (PlanEntity, Boolean) -> Unit = { _, _ -> },
 ) {
     var confirm by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
@@ -112,7 +113,7 @@ fun EventDetailScreen(
                 e.memo?.takeIf { it.isNotBlank() }?.let { DetailLine(UiIcon.NOTE, it) }
                 DetailLine(UiIcon.CALENDAR, calendarName)
             }
-            EventMoneyCard(e, plan, linked, today, onBudget, onSpent, onUnlink, onOpenEntry)
+            EventMoneyCard(e, plan, linked, today, onBudget, onSpent, onUnlink, onOpenEntry, onMonthly)
         }
     }
     if (confirm) {
@@ -149,6 +150,7 @@ private fun EventMoneyCard(
     onSpent: (PlanEntity) -> Unit,
     onUnlink: (PlanEntity) -> Unit,
     onOpenEntry: (EntryEntity) -> Unit,
+    onMonthly: (PlanEntity, Boolean) -> Unit = { _, _ -> },
 ) {
     var editing by remember(plan?.id) { mutableStateOf(plan == null) }
     var amount by remember(plan?.id) { mutableStateOf(plan?.amount?.toString() ?: "") }
@@ -159,6 +161,19 @@ private fun EventMoneyCard(
             Text("예산 ${won(plan.amount)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DonColors.Real)
             if (plan.done || plan.canceled) Text(line, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = color)
             if (plan.autoLinked) Text("들어온 결제와 저절로 이었어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            if (plan.amount > 0 && !plan.canceled) {
+                // 이 돈을 어디서 뺄지: 그 주 예산에서 / 이번 달 남은 주에 나눠서 (경조사처럼 큰돈)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(!plan.monthly, { onMonthly(plan, false) }, { Text("그 주 예산에서") })
+                    FilterChip(plan.monthly, { onMonthly(plan, true) }, { Text("한 달에 나눠서") })
+                }
+                Text(
+                    if (plan.monthly) "이번 달 남은 주에 조금씩 나눠 빼요. 그 주만 초과되지 않고, 예외 지출 횟수도 안 써요."
+                    else "그 주 하루 몫에서 미리 빼 둬요. 회식·모임처럼 내가 조절할 수 있는 돈에 맞아요.",
+                    fontSize = 12.sp,
+                    color = DonColors.InkMuted,
+                )
+            }
             linked?.let { LedgerRow(it, emptyMap(), onOpenEntry) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 SubButton(onClick = { editing = true }, containerColor = DonColors.SurfaceAlt) { Text("예산 고치기") }

@@ -39,7 +39,7 @@ import com.simbio.don.budget.CategoryGuesser
         BalanceGapEntity::class,
         AppEventEntity::class,
     ],
-    version = 17,
+    version = 18,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -57,7 +57,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                 }
                 ).build().also { instance = it }
         }
@@ -67,6 +67,18 @@ abstract class DonDatabase : RoomDatabase() {
             // 메모리 DB는 닫지 않고 놓기만 한다: 앞 테스트의 화면 밖 계산이 닫힌 DB를 읽어 다음 테스트를 깨지 않게
             if (!inMemoryForTests) instance?.close()
             instance = null
+        }
+
+        /** v18: 동물 돌보기 상태, 계획을 한 달에 나눠서 (경조사는 처음부터 그렇게) */
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE house ADD COLUMN pet TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `plan` ADD COLUMN monthly INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `plan` ADD COLUMN createdEpochDay INTEGER NOT NULL DEFAULT 0")
+                // 예전 계획은 만든 날을 모르니 오늘로 (지난 주 예산을 거슬러 바꾸지 않게)
+                db.execSQL("UPDATE `plan` SET createdEpochDay = CAST(julianday('now', 'localtime') - 2440587.5 AS INTEGER)")
+                db.execSQL("UPDATE `plan` SET monthly = 1 WHERE category = 'EVENT' AND doneAmount IS NULL")
+            }
         }
 
         /** v17: 정산 짝을 저절로 이었는지 (확인·되돌리기) */

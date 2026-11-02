@@ -71,6 +71,7 @@ fun ItemKind.icon(trash: Boolean = false): Int = when (this) {
     ItemKind.MEAL -> if (trash) R.drawable.px_item_meal_trash else R.drawable.px_item_meal
     ItemKind.DRINK -> if (trash) R.drawable.px_item_drink_trash else R.drawable.px_item_drink
     ItemKind.ETC -> R.drawable.px_item_etc
+    ItemKind.PET -> R.drawable.px_item_pet
 }
 
 @Composable
@@ -91,6 +92,7 @@ fun ItemKind.icon16(trash: Boolean = false): Int = when (this) {
     ItemKind.MEAL -> if (trash) R.drawable.px16_item_meal_trash else R.drawable.px16_item_meal
     ItemKind.DRINK -> if (trash) R.drawable.px16_item_drink_trash else R.drawable.px16_item_drink
     ItemKind.ETC -> R.drawable.px16_item_etc
+    ItemKind.PET -> R.drawable.px16_item_pet
 }
 
 @Composable

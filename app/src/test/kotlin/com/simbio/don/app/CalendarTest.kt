@@ -272,8 +272,10 @@ class CalendarRepoTest {
         val h0 = repo.home(flowOf(now)).first()!!
         val dinner = repo.budgetForEvent(11, "팀 회식", d(10, 27), 50_000)
         val wedding = repo.budgetForEvent(12, "민지 결혼식", d(10, 31), 100_000)
+        // 결혼식(경조사)은 처음부터 한 달에 나눠서 — 이번 주 하루 몫에서는 회식만 미리 뺀다
+        assertTrue(repo.planNow(wedding)!!.monthly)
         val h1 = repo.home(flowOf(now)).first()!!
-        assertEquals(150_000L, h1.day.reserved)
+        assertEquals(50_000L, h1.day.reserved)
         assertTrue(h1.day.allowance < h0.day.allowance)
 
         val e = repo.addManual(d(10, 27), 62_000, "고깃집", EntryType.SPEND, Category.FOOD)
@@ -282,7 +284,7 @@ class CalendarRepoTest {
         val h2 = repo.home(flowOf(now)).first()!!
         assertEquals(9_000L, h2.day.spentDaily)
         assertEquals(62_000L, h2.day.spentBig)
-        assertEquals(100_000L, h2.day.reserved)
+        assertEquals(0L, h2.day.reserved)
         assertTrue(!h2.day.over)
         assertTrue(repo.planNow(wedding)!!.open)
     }

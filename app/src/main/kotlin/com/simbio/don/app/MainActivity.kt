@@ -580,6 +580,23 @@ class MainActivity : ComponentActivity() {
                         onGiveUpWish = { vm.giveUpWished(it.id) },
                         weather = weather,
                         city = WeatherService.city(this@MainActivity)?.name,
+                        pet = vm.pet.collectAsStateWithLifecycle().value,
+                        onPetAct = { a ->
+                            vm.petAct(a) { why ->
+                                val name = home.look.callName
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    why ?: when (a) {
+                                        com.simbio.don.game.PetCare.Action.FEED -> "$name 맛있게 먹었어요"
+                                        com.simbio.don.game.PetCare.Action.TREAT -> "$name 간식에 신났어요"
+                                        com.simbio.don.game.PetCare.Action.PLAY -> "$name 신나게 놀았어요"
+                                        com.simbio.don.game.PetCare.Action.WALK -> "$name 산책 다녀왔어요"
+                                        com.simbio.don.game.PetCare.Action.PET -> "$name 기분 좋아해요"
+                                    },
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
                     )
                     Tab.Assets -> AssetsScreen(
                         balances = home.accounts,
@@ -1164,6 +1181,7 @@ class MainActivity : ComponentActivity() {
                     onSpent = { p -> open(Overlay.Edit(null, spentDraft(p))) },
                     onUnlink = { p -> p.doneEntryId?.let { vm.rejectPlanMatch(p.id, it) } },
                     onOpenEntry = { open(Overlay.Edit(it)) },
+                    onMonthly = { p, m -> vm.setPlanMonthly(p.id, m) },
                     onBack = close,
                 )
             }

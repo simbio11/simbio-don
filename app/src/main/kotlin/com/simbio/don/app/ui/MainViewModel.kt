@@ -229,6 +229,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val incomeQuestions = repo.incomeQuestions().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     fun explainIncome(e: EntryEntity, kind: DonRepository.IncomeKind, targetId: Long? = null) =
         viewModelScope.launch { repo.explainIncome(e.id, kind, targetId) }
+    val pet = repo.pet.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.simbio.don.game.PetState())
+    fun petAct(a: com.simbio.don.game.PetCare.Action, done: (String?) -> Unit) = viewModelScope.launch { done(repo.petAct(a)) }
     fun confirmAutoLink(e: EntryEntity) = viewModelScope.launch { repo.confirmAutoLink(e.id) }
     fun forgiveSplit(target: EntryEntity) = viewModelScope.launch { repo.forgiveSplit(target) }
     fun unsettle(receipt: EntryEntity) = viewModelScope.launch { repo.unsettle(receipt) }
@@ -437,6 +439,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshCalendar()
         }
     }
+    fun setPlanMonthly(id: Long, monthly: Boolean) = viewModelScope.launch { repo.setPlanMonthly(id, monthly) }
     fun cancelPlan(id: Long, canceled: Boolean) = viewModelScope.launch { repo.cancelPlan(id, canceled) }
     fun linkPlan(id: Long, e: com.simbio.don.app.data.EntryEntity) = viewModelScope.launch { repo.linkPlan(id, e) }
 

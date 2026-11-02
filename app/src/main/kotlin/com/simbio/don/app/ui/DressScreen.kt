@@ -51,6 +51,7 @@ import com.simbio.don.game.Gender
 import com.simbio.don.game.Mood
 
 private enum class DressTab(val label: String) {
+    FRIEND("친구"),
     FACE("얼굴"), EYES("눈"), BROWS("눈썹"), NOSE_MOUTH("코·입"), HAIR("머리"), CLOTHES("옷"), HAT("모자·소품"),
 }
 
@@ -76,7 +77,7 @@ fun DressScreen(
     onBack: () -> Unit,
 ) {
     var draft by remember(current) { mutableStateOf(current) }
-    var tab by rememberSaveable { mutableStateOf(DressTab.FACE) }
+    var tab by rememberSaveable { mutableStateOf(DressTab.FRIEND) }
     var mood by remember { mutableStateOf(Mood.CALM) }
     var payWithMiles by remember { mutableStateOf(false) }
     val changed = draft != current
@@ -89,7 +90,7 @@ fun DressScreen(
     fun cost(key: String) = if (key in owned) 0 else Shop.wardrobeCost(key)
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
-        BackBar("옷장 · 뷰티샵", onBack, trailing = { com.simbio.don.app.ui.kit.Badge(miles(miles), DonColors.GameDeep, modifier = Modifier.padding(end = 16.dp)) })
+        BackBar(if (current.isPet) "꾸미기 · ${current.callName}" else "옷장 · 뷰티샵", onBack, trailing = { com.simbio.don.app.ui.kit.Badge(miles(miles), DonColors.GameDeep, modifier = Modifier.padding(end = 16.dp)) })
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -101,10 +102,50 @@ fun DressScreen(
                     Mood.entries.forEach { m -> FilterChip(selected = mood == m, onClick = { mood = m }, label = { Text(m.label) }) }
                 }
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                DressTab.entries.forEach { t -> FilterChip(selected = tab == t, onClick = { tab = t }, label = { Text(t.label) }) }
+            // 동물이면 사람 꾸미기 칸은 숨긴다
+            val tabs = if (draft.isPet) listOf(DressTab.FRIEND) else DressTab.entries
+            if (tabs.size > 1) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    tabs.forEach { t -> FilterChip(selected = tab == t, onClick = { tab = t }, label = { Text(t.label) }) }
+                }
             }
-            when (tab) {
+            when (if (tab in tabs) tab else DressTab.FRIEND) {
+                DressTab.FRIEND -> {
+                    Section("누구랑 살까요") {
+                        val friends = com.simbio.don.game.Species.pets.map { sp ->
+                            Choice(
+                                sp.label,
+                                draft.copy(species = sp.id, fur = if (draft.species == sp.id) draft.fur else ""),
+                                cost("pet:${sp.id}"),
+                            )
+                        } + Choice("사람", draft.copy(species = com.simbio.don.game.Species.HUMAN.id))
+                        Choices(friends, draft, head = false) { draft = it }
+                        Text("토끼·햄스터·여우·펭귄·판다는 마일로 한 번 데려오면 계속 함께해요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    }
+                    if (draft.isPet) {
+                        val furs = com.simbio.don.app.ui.kit.CharacterRenderer.furColors(draft.species)
+                        if (furs.size > 1) Section("털색") { Swatches(furs, draft.fur.ifBlank { furs.first().first }) { draft = draft.copy(fur = it) } }
+                        Section("소품") {
+                            val accs = listOf(Choice("없음", draft.copy(petAcc = null))) +
+                                com.simbio.don.game.PetAcc.entries.map { a -> Choice(a.label, draft.copy(petAcc = a.id), cost("petacc:${a.id}")) }
+                            Choices(accs, draft, head = false) { draft = it }
+                        }
+                        if (draft.petAcc != null && draft.petAcc != com.simbio.don.game.PetAcc.CROWN.id) {
+                            Section("소품 색") { Swatches(CharacterParts.hatColors, draft.hatColor) { draft = draft.copy(hatColor = it) } }
+                        }
+                        Section("이름") {
+                            androidx.compose.material3.OutlinedTextField(
+                                value = draft.petName,
+                                onValueChange = { draft = draft.copy(petName = it.take(10)) },
+                                label = { Text("이름 (예: 콩이)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    } else {
+                        Text("사람 모습은 위 칸(얼굴·눈·머리·옷)에서 꾸며요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                    }
+                }
                 DressTab.FACE -> {
                     Section("처음 모습") {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

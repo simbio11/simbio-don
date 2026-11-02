@@ -62,6 +62,8 @@ fun HouseScreen(
     onGiveUpWish: (MockItem) -> Unit = {},
     weather: Weather? = null,
     city: String? = null,
+    pet: com.simbio.don.game.PetState? = null,
+    onPetAct: (com.simbio.don.game.PetCare.Action) -> Unit = {},
 ) {
     val house = home.house
     var picking by remember { mutableStateOf<Pair<String, List<MockItem>>?>(null) }
@@ -77,7 +79,8 @@ fun HouseScreen(
                     if (home.title.isNotEmpty()) Badge("「${home.title}」", DonColors.GameDeep)
                 }
                 Text(
-                    "나는 지금 ${home.mood.label}" + if (weather != null && city != null) " · $city ${weather.label}" else "",
+                    (if (home.look.isPet) "${home.look.callName}" + com.simbio.don.game.PetCare.josa(home.look.callName, "은", "는") + " 지금 " else "나는 지금 ") +
+                        home.mood.label + if (weather != null && city != null) " · $city ${weather.label}" else "",
                     fontSize = 13.sp,
                     color = DonColors.GameDeep,
                 )
@@ -120,6 +123,10 @@ fun HouseScreen(
                     }
                 }
             }
+        }
+
+        if (home.look.isPet && pet != null) {
+            PetCareCard(home.look, pet, home.today, onPetAct, onShop)
         }
 
         MilesCard(

@@ -393,14 +393,17 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 오늘 몫 (이번 주 기록과 아직 안 쓴 계획으로) */
     private fun dayOf(h: HomeState, plans: List<PlanEntity>): com.simbio.don.budget.DayBudget {
         val w = h.currentWeek ?: return com.simbio.don.budget.DayBudget.Empty
-        val pairs = h.entries.filter { LocalDate.ofEpochDay(it.epochDay) in w.week }.mapNotNull { e -> runCatching { e to e.toEntry() }.getOrNull() }
+        // 한 달에 나눠서 계획으로 쓴 기록은 주 예산에서 이미 나눠 뺐으니 이번 주 지출로 세지 않는다
+        val spreadIds = plans.filter { it.monthly }.mapNotNull { it.doneEntryId }.toSet()
+        val pairs = h.entries.filter { LocalDate.ofEpochDay(it.epochDay) in w.week && it.id !in spreadIds }
+            .mapNotNull { e -> runCatching { e to e.toEntry() }.getOrNull() }
         // 계획에서 "썼어요"로 이은 기록 (미리 떼어 둔 돈이라 큰 지출로)
         val linkedIds = plans.mapNotNull { it.doneEntryId }.toSet()
         val linked = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<com.simbio.don.budget.Entry, Boolean>())
         pairs.filter { it.first.id in linkedIds }.forEach { linked += it.second }
         return com.simbio.don.budget.DayBudgets.of(
             w, pairs.map { it.second }, h.today, h.dailyCategories,
-            plans.filter { it.open }.map { LocalDate.ofEpochDay(it.epochDay) to it.amount },
+            plans.filter { it.open && !it.monthly }.map { LocalDate.ofEpochDay(it.epochDay) to it.amount },
             planned = { it in linked },
         )
     }
@@ -445,6 +448,24 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         )
     }
 
+    /**
+     * 한 달 장부: 기록을 담고, "한 달에 나눠서" 계획(경조사 등)은 그 주만 깎지 않고 만든 주부터 남은 주에 나눠 뺀다.
+     * 그 계획으로 쓴 기록은 주 지출로 다시 세지 않는다 (예외 지출 한도와 따로).
+     */
+    private fun ledgerOf(plan: com.simbio.don.budget.CyclePlan, entries: List<EntryEntity>, plans: List<PlanEntity>): CycleLedger {
+        val monthly = plans.filter { it.monthly && !it.canceled }
+        val linked = monthly.mapNotNull { it.doneEntryId }.toSet()
+        val spreads = monthly.mapNotNull { p ->
+            val day = LocalDate.ofEpochDay(p.epochDay)
+            val amount = if (p.done) p.doneAmount ?: 0 else p.amount
+            if (amount <= 0 || day !in plan.cycle) null
+            else com.simbio.don.budget.Spread(LocalDate.ofEpochDay(p.createdEpochDay).coerceAtMost(day), amount)
+        }
+        return entries.fold(CycleLedger(plan, spreads = spreads)) { l, e ->
+            runCatching { l.addSafely(e.toEntry().let { x -> if (e.id in linked) x.copy(type = EntryType.TRANSFER) else x }) }.getOrDefault(l)
+        }
+    }
+
     /** 지난달에 아직 결산하지 않은 주 (지난달 마지막 주는 새 달이 돼도 결산 화면으로 본다) */
     private data class PrevMonth(val nominal: String, val results: List<WeekResult>, val settled: Set<Int>)
 
@@ -452,9 +473,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     private fun previousMonth(s: SettingsEntity, cycles: List<CycleEntity>): Flow<PrevMonth?> {
         val c = cycles.getOrNull(1) ?: return flowOf(null)
         val cycle = cycleOf(c, cycles[0], s.payDay)
-        return combine(dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()), dao.settledWeeks(c.nominal)) { entries, settled ->
+        return combine(dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()), dao.settledWeeks(c.nominal), dao.plans()) { entries, settled, plans ->
             val plan = planFor(c, cycle)
-            val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.addSafely(e.toEntry()) }.getOrDefault(l) }
+            val ledger = ledgerOf(plan, entries, plans)
             PrevMonth(c.nominal, ledger.results(), settled.map { it.weekIndex }.toSet())
         }
     }
@@ -469,8 +490,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()),
                 combine(dao.reviewItems(), dao.settledWeeks(c.nominal), previousMonth(s, cs)) { r, w, p -> Triple(r, w, p) },
                 now,
-                combine(dao.mockPurchases(), dao.house()) { m, h -> m to h },
-            ) { entries, rw, t, game -> buildHome(s, c, cycle, entries, rw.first, rw.second, t, game.first, game.second, rw.third, cs.getOrNull(1)?.salary) }
+                combine(dao.mockPurchases(), dao.house(), dao.plans()) { m, h, p -> Triple(m, h, p) },
+            ) { entries, rw, t, game -> buildHome(s, c, cycle, entries, rw.first, rw.second, t, game.first, game.second, rw.third, cs.getOrNull(1)?.salary, game.third) }
         }
 
     private fun buildHome(
@@ -485,9 +506,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         house: HouseEntity? = null,
         prev: PrevMonth? = null,
         prevSalary: Long? = null,
+        plans: List<PlanEntity> = emptyList(),
     ): HomeState {
         val plan = planFor(c, cycle)
-        val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.addSafely(e.toEntry()) }.getOrDefault(l) }
+        val ledger = ledgerOf(plan, entries, plans)
         val results = ledger.results()
         val today = now.toLocalDate()
         val settledIdx = settled.map { it.weekIndex }.toSet()
@@ -545,6 +567,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     // ── 모의 쇼핑·집 ─────────────────────────────────────────
 
     suspend fun buyMock(name: String, price: Long, kind: ItemKind, store: String?, date: LocalDate, now: LocalDateTime) {
+        // 반려동물 용품은 바로 와서 집 친구를 돌보는 데 쓴다 (사료·간식은 쌓이고, 장난감·잠자리·하네스는 생긴다)
+        com.simbio.don.game.Dex.productOf(name)?.let { p ->
+            if (com.simbio.don.game.PetCare.effects.containsKey(p.id)) locked { savePetLocked(com.simbio.don.game.PetCare.bought(petLocked(date), p.id)) }
+        }
         dao.insertMock(
             MockPurchaseEntity(
                 name = name.ifBlank { kind.label }.take(40),
@@ -645,10 +671,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             combine(
                 dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()),
                 prev?.let { dao.entriesBetween(it.start.toEpochDay(), it.end.toEpochDay()) } ?: flowOf(emptyList()),
-            ) { entities, prevEntities ->
+                dao.plans(),
+            ) { entities, prevEntities, plans ->
                 val plan = planFor(c, cycle)
                 val entries = entities.map { it.toEntry() }
-                val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.addSafely(e) }.getOrDefault(l) }
+                val ledger = ledgerOf(plan, entities, plans)
                 MonthView(
                     nominal = c.nominal,
                     cycle = cycle,
@@ -1076,6 +1103,34 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     private suspend fun houseLocked(): HouseEntity = dao.houseNow() ?: HouseEntity()
 
+    // ── 집 친구(동물) 돌보기 ───────────────────────────────────
+
+    /** 돌보기 상태 (그날까지 배고파진 것은 앱을 열 때 센다) */
+    val pet: Flow<com.simbio.don.game.PetState> = dao.house().map { com.simbio.don.game.PetState.decode(it?.pet) }
+
+    private suspend fun petLocked(today: LocalDate): com.simbio.don.game.PetState {
+        val raw = houseLocked().pet
+        val s = if (raw.isBlank()) com.simbio.don.game.PetState(day = today.toEpochDay()) else com.simbio.don.game.PetState.decode(raw)
+        return com.simbio.don.game.PetCare.passDays(s, today)
+    }
+
+    private suspend fun savePetLocked(s: com.simbio.don.game.PetState) {
+        dao.saveHouse(houseLocked().copy(pet = s.encode()))
+    }
+
+    private suspend fun passPetDaysLocked(today: LocalDate) {
+        if (!CharacterLook.decode(houseLocked().look).isPet) return
+        savePetLocked(petLocked(today))
+    }
+
+    /** 밥 주기·간식·놀아 주기·산책·쓰다듬기. 못 하면 그 까닭 */
+    suspend fun petAct(action: com.simbio.don.game.PetCare.Action, today: LocalDate = LocalDate.now()): String? = locked {
+        val s = petLocked(today)
+        com.simbio.don.game.PetCare.blocked(s, action, today)?.let { return@locked it }
+        savePetLocked(com.simbio.don.game.PetCare.act(s, action, today))
+        null
+    }
+
     /** 이사 (더 큰 집으로만) */
     suspend fun moveHouse(level: HouseLevel, today: LocalDate = LocalDate.now()): Boolean = locked {
         val h = houseLocked()
@@ -1359,6 +1414,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun dailyUpkeep(now: LocalDateTime) = locked {
         rollOverLocked(now)
+        passPetDaysLocked(now.toLocalDate())
         recordDueFixedLocked(now.toLocalDate())
         recordDueIncomeLocked(now.toLocalDate())
         seedSubcategoriesLocked()
@@ -1665,7 +1721,23 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     val plans: Flow<List<PlanEntity>> = dao.plans()
 
-    suspend fun savePlan(p: PlanEntity): Long = dao.savePlan(p.copy(label = p.label.trim().take(30).ifBlank { "계획" }))
+    suspend fun savePlan(p: PlanEntity): Long {
+        val fresh = p.id == 0L
+        return dao.savePlan(
+            p.copy(
+                label = p.label.trim().take(30).ifBlank { "계획" },
+                createdEpochDay = p.createdEpochDay.takeIf { it > 0 } ?: LocalDate.now().toEpochDay(),
+                // 경조사는 처음부터 한 달에 나눠서 (그 주만 망가지지 않게)
+                monthly = p.monthly || (fresh && p.category == Category.EVENT.name),
+            ),
+        )
+    }
+
+    /** 이번 주에서 / 한 달에 나눠서 */
+    suspend fun setPlanMonthly(id: Long, monthly: Boolean) {
+        val p = dao.plansNow().firstOrNull { it.id == id } ?: return
+        dao.savePlan(p.copy(monthly = monthly, createdEpochDay = if (monthly) LocalDate.now().toEpochDay() else p.createdEpochDay))
+    }
 
     suspend fun deletePlan(id: Long) = dao.deletePlan(id)
 
@@ -2622,8 +2694,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     private suspend fun weekResultNow(c: CycleEntity, cycle: PayCycle, index: Int): WeekResult? {
         val plan = planFor(c, cycle)
-        val entries = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).map { it.toEntry() }
-        val ledger = entries.fold(CycleLedger(plan)) { l, e -> runCatching { l.addSafely(e) }.getOrDefault(l) }
+        val ledger = ledgerOf(plan, dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()), dao.plansNow())
         return ledger.results().getOrNull(index)
     }
 

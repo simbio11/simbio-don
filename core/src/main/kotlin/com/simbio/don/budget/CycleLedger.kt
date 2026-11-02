@@ -73,7 +73,13 @@ data class WeekResult(
 }
 
 /** 한 주기(월급날 ~ 다음 월급날 전날)의 장부. 불변이며 기록할 때마다 새 장부를 돌려준다. */
-data class CycleLedger(val plan: CyclePlan, val entries: List<Entry> = emptyList()) {
+/**
+ * 한 달에 나눠서 낼 큰돈 (경조사처럼): [from]이 든 주부터 이번 주기 끝까지 주마다 날 수만큼 나눠 그 주 예산에서 미리 뺀다.
+ * 예외 지출과 달리 횟수 한도가 없다. 이 돈으로 쓴 기록은 주 지출로 다시 세지 않는다 (부르는 쪽이 이체로 넘긴다).
+ */
+data class Spread(val from: LocalDate, val amount: Long)
+
+data class CycleLedger(val plan: CyclePlan, val entries: List<Entry> = emptyList(), val spreads: List<Spread> = emptyList()) {
 
     val exceptionCount: Int get() = entries.count { it.type == EntryType.EXCEPTION }
     val canAddException: Boolean get() = exceptionCount < MAX_EXCEPTIONS
@@ -114,6 +120,12 @@ data class CycleLedger(val plan: CyclePlan, val entries: List<Entry> = emptyList
     private fun applyExceptions(): Pair<List<Week>, List<Long>> {
         val budgets = plan.weeks.map { it.budget }.toMutableList()
         val overflow = MutableList(plan.weeks.size) { 0L }
+        for (sp in spreads) {
+            val i = plan.weekIndexOf(sp.from) ?: (if (sp.from.isBefore(plan.cycle.start)) 0 else continue)
+            val idx = (i until budgets.size).toList()
+            val parts = BudgetEngine.distribute(sp.amount, idx.map { plan.weeks[it].days.toLong() })
+            idx.forEachIndexed { k, w -> budgets[w] -= parts[k] }
+        }
         for (e in entries.filter { it.type == EntryType.EXCEPTION }.sortedBy { it.date }) {
             val i = plan.weekIndexOf(e.date) ?: continue
             val future = (i + 1 until budgets.size).toList()

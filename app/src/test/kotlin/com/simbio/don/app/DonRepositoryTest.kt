@@ -219,7 +219,9 @@ class DonRepositoryTest {
         assertEquals(600_000L / 9, before.allowance)
         repo.addManual(sat, 200_000, "축의금", EntryType.SPEND, com.simbio.don.budget.Category.EVENT)
         repo.addManual(sat, 25_000, "술", EntryType.SPEND, com.simbio.don.budget.Category.FOOD)
-        repo.savePlan(com.simbio.don.app.data.PlanEntity(epochDay = sat.plusDays(1).toEpochDay(), amount = 100_000, label = "엄마 생신", category = "EVENT"))
+        val gift = repo.savePlan(com.simbio.don.app.data.PlanEntity(epochDay = sat.plusDays(1).toEpochDay(), amount = 100_000, label = "엄마 생신", category = "EVENT"))
+        // 경조사는 처음엔 한 달에 나눠서 — 여기선 그 주 예산에서로 바꿔 본다
+        repo.setPlanMonthly(gift, false)
         val d = home(at(10, 24, 21)).day
         // (600,000 − 축의금 200,000 − 내일 계획 100,000) ÷ 9일 — 술은 오늘 몫에서
         assertEquals(300_000L / 9, d.allowance)

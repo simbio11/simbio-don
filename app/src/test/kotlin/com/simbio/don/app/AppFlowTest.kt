@@ -111,8 +111,11 @@ class AppFlowTest {
         shot("01a_name")
         rule.onNodeWithText("다음").performClick()
 
-        waitText("내 캐릭터")
-        rule.onNodeWithText("여자").performClick()
+        // 함께할 친구: 고양이 · 회색 · 이름 나비
+        waitText("함께할 친구")
+        rule.onNodeWithText("고양이").performClick()
+        rule.onNodeWithText("회색").performScrollTo().performClick()
+        rule.onNodeWithText("이름 (예: 콩이, 나비)").performScrollTo().performTextReplacement("나비")
         shot("01b_character")
         rule.onNodeWithText("다음").performClick()
 
@@ -162,7 +165,10 @@ class AppFlowTest {
         rule.onNodeWithText("이대로 시작하기").performClick()
 
         waitText("실제 내 돈 · 오늘과 이번 주")
-        assertEquals(com.simbio.don.game.Gender.FEMALE, readDb { houseNow() }?.look?.let { com.simbio.don.game.CharacterLook.decode(it).gender })
+        val look = com.simbio.don.game.CharacterLook.decode(readDb { houseNow() }?.look)
+        assertEquals("cat", look.species)
+        assertEquals("회색", look.fur)
+        assertEquals("나비", look.petName)
         assertEquals(false, readDb { appRulesNow() }.single { it.packageName == "com.kakao.bank" }.enabled)
         assertEquals(2_000_000L, readDb { accountsNow() }.single { it.type == "INVEST" }.opening)
         val living = readDb { accountsNow() }.first { it.type == "BANK" }
@@ -357,7 +363,14 @@ class AppFlowTest {
         rule.onNodeWithText("옷장·뷰티샵").performScrollTo().performClick()
         waitText("옷장 · 뷰티샵")
         rule.onNodeWithText("바뀐 게 없어요").assertExists()
+        // 친구 탭: 동물을 고르면 사람 꾸미기 칸이 숨고, 특이한 동물은 마일 값
+        rule.onAllNodesWithText("강아지").onFirst().performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        waitText("털색")
+        rule.onNodeWithText("이름 (예: 콩이)").performScrollTo().performTextReplacement("콩이")
+        shot("24_dress_pet")
+        rule.onNodeWithText("되돌리기").performClick()
         shot("25_dress_face")
+        rule.onNodeWithText("얼굴").performClick()
         rule.onNodeWithText("눈").performClick()
         rule.onNodeWithText("왕눈").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithContentDescription("초록").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
@@ -370,7 +383,7 @@ class AppFlowTest {
         rule.onNodeWithText("원피스").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         waitText("원피스를 입으면 아래옷은 안 보여요.")
         shot("28_dress_clothes")
-        rule.onNodeWithText("모자·소품").performClick()
+        rule.onNodeWithText("모자·소품").performScrollTo().performClick()
         rule.onNodeWithText("비니").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithText("슬퍼요").performScrollTo().performClick()
         shot("29_dress_hat")
@@ -624,8 +637,8 @@ class AppFlowTest {
         shot("51_house_play")
 
         // 도감 → 세트·칭호 (기록이 화면에 다 들어올 때까지 기다린다)
-        waitText("도감 7/76")
-        rule.onNodeWithText("도감 7/76").performScrollTo().performClick()
+        waitText("도감 7/90")
+        rule.onNodeWithText("도감 7/90").performScrollTo().performClick()
         waitText("모은 칸")
         shot("52_dex")
         rule.onNodeWithText("세트·칭호").performClick()

@@ -24,6 +24,9 @@ enum class ItemKind(val label: String, val slot: Slot) {
     MEAL("음식·배달", Slot.TRASH),
     DRINK("커피·음료", Slot.TRASH),
     ETC("기타", Slot.SHELF),
+
+    /** 반려동물 용품 (사료·간식·장난감·방석…) — 집 친구를 돌보는 데 쓴다 */
+    PET("반려동물 용품", Slot.SHELF),
     ;
 
     val isFood: Boolean get() = slot == Slot.TRASH
@@ -32,6 +35,7 @@ enum class ItemKind(val label: String, val slot: Slot) {
         fun of(name: String?): ItemKind = entries.firstOrNull { it.name == name } ?: ETC
 
         private val KEYWORDS: List<Pair<ItemKind, List<String>>> = listOf(
+            PET to listOf("사료", "개껌", "츄르", "펫", "강아지", "고양이", "캣타워", "스크래쳐", "하네스", "배변", "모래", "애견", "반려"),
             DRINK to listOf("커피", "아메리카노", "라떼", "스타벅스", "메가커피", "음료", "스무디", "아이스티", "밀크티", "버블티", "에이드"),
             MEAL to listOf(
                 "치킨", "피자", "버거", "떡볶이", "배달", "족발", "보쌈", "초밥", "마라", "짜장", "국밥", "도시락", "케이크",

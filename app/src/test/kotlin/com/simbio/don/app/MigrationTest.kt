@@ -182,4 +182,19 @@ class MigrationTest {
         val db = helper.runMigrationsAndValidate("m16.db", 17, true, DonDatabase.MIGRATION_16_17)
         db.query("SELECT linkState, amount FROM entry").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)); assertEquals(20000, c.getInt(1)) }
     }
+
+    @Test
+    fun v17에서_v18로_동물_돌보기와_한_달에_나눠서() {
+        helper.createDatabase("m17.db", 17).use { db ->
+            db.execSQL("INSERT INTO `plan` (id, epochDay, amount, label, category, memo, canceled, calendarOwned, autoLinked, rejected) VALUES (1, 20000, 100000, '결혼식', 'EVENT', '', 0, 0, 0, '')")
+            db.execSQL("INSERT INTO `plan` (id, epochDay, amount, label, category, memo, canceled, calendarOwned, autoLinked, rejected) VALUES (2, 20000, 50000, '회식', 'FOOD', '', 0, 0, 0, '')")
+            db.execSQL("INSERT INTO house (id, level, characterName, look, setup, owned, freeMakeover, title) VALUES (0, 'ONE_ROOM', '나', '', '', '', 1, '')")
+        }
+        val db = helper.runMigrationsAndValidate("m17.db", 18, true, DonDatabase.MIGRATION_17_18)
+        db.query("SELECT monthly, createdEpochDay FROM `plan` ORDER BY id").use { c ->
+            c.moveToNext(); assertEquals(1, c.getInt(0)); assertTrue(c.getLong(1) > 20000)
+            c.moveToNext(); assertEquals(0, c.getInt(0))
+        }
+        db.query("SELECT pet FROM house").use { c -> c.moveToNext(); assertEquals("", c.getString(0)) }
+    }
 }

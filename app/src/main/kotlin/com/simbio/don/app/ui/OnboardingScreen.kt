@@ -179,6 +179,9 @@ fun OnboardingScreen(
     var savedAlready by remember { mutableStateOf(false) }
     var direct by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf(Gender.MALE) }
+    var species by remember { mutableStateOf(com.simbio.don.game.Species.DOG) }
+    var fur by remember { mutableStateOf("") }
+    var petName by remember { mutableStateOf("") }
     var ownerName by remember { mutableStateOf("") }
     var ownerAlt by remember { mutableStateOf("") }
     // 생활비 통장·현금은 기본, 나머지(카드·다른 통장·페이·저축)는 더해서
@@ -246,7 +249,8 @@ fun OnboardingScreen(
         onDone(
             OnboardingResult(
                 salaryValue, payDayValue!!, fixedList, savingsValue, settlementDay,
-                if (midCycle) firstBudget else null, accounts, CharacterLook.default(gender), apps,
+                if (midCycle) firstBudget else null, accounts,
+                if (species.isPet) CharacterLook.pet(species, fur, petName, CharacterLook.default(gender)) else CharacterLook.default(gender), apps,
                 listOf(ownerName, ownerAlt).map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ").ifBlank { null },
             ),
         )
@@ -291,19 +295,50 @@ fun OnboardingScreen(
                         }
                     }
                     Step.CHARACTER -> {
-                        StepTitle("내 캐릭터", "아낀 돈으로 꾸미는 방에 살 캐릭터예요. 얼굴·머리·옷은 나중에 집 탭의 꾸미기에서 마음대로 바꿀 수 있어요.")
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Gender.entries.forEach { g ->
-                                val selected = gender == g
+                        StepTitle(
+                            "함께할 친구",
+                            "아낀 돈으로 꾸미는 방에서 같이 사는 친구예요. 돈을 잘 지키면 신나 하고, 너무 쓰면 시무룩해져요. " +
+                                "토끼·햄스터·여우·펭귄·판다는 마일을 모아 데려올 수 있어요.",
+                        )
+                        val options = listOf(com.simbio.don.game.Species.DOG, com.simbio.don.game.Species.CAT, com.simbio.don.game.Species.HUMAN)
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            options.forEach { sp ->
+                                val selected = species == sp
+                                val look = if (sp.isPet) CharacterLook.pet(sp, if (selected) fur else "") else CharacterLook.default(gender)
                                 Column(
                                     Modifier.weight(1f).card().border(2.dp, if (selected) DonColors.Real else Color.Transparent, RoundedCornerShape(16.dp))
-                                        .clickable { gender = g }.padding(vertical = 16.dp),
+                                        .clickable { if (species != sp) { species = sp; fur = "" } }.padding(vertical = 14.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
-                                    CharacterSprite(Mood.HAPPY, 108.dp, look = CharacterLook.default(g), animate = selected)
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(g.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (selected) DonColors.Real else DonColors.Ink)
+                                    CharacterSprite(Mood.HAPPY, 84.dp, look = look, animate = selected)
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(sp.label, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (selected) DonColors.Real else DonColors.Ink)
                                 }
+                            }
+                        }
+                        if (species.isPet) {
+                            FormCard("털색") {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                    com.simbio.don.app.ui.kit.CharacterRenderer.furColors(species.id).forEachIndexed { i, (name, _) ->
+                                        FilterChip(selected = fur == name || (fur.isBlank() && i == 0), onClick = { fur = name }, label = { Text(name) })
+                                    }
+                                }
+                            }
+                            FormCard("이름 지어 주기") {
+                                OutlinedTextField(
+                                    value = petName,
+                                    onValueChange = { petName = it.take(10) },
+                                    label = { Text("이름 (예: 콩이, 나비)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        } else {
+                            FormCard("사람") {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Gender.entries.forEach { g -> FilterChip(selected = gender == g, onClick = { gender = g }, label = { Text(g.label) }) }
+                                }
+                                Text("얼굴·머리·옷은 나중에 집 탭의 꾸미기에서 바꿀 수 있어요.", fontSize = 12.sp, color = DonColors.InkMuted)
                             }
                         }
                     }

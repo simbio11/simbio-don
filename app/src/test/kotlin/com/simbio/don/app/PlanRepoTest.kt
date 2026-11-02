@@ -93,4 +93,32 @@ class PlanRepoTest {
         assertEquals("택배비", db.dao().plansNow().single().label)
         assertEquals("홍길동", db.dao().settingsNow()!!.ownerName)
     }
+
+    @Test
+    fun `경조사는 한 달에 나눠서 — 남은 주에 조금씩 빼고, 쓴 돈은 그 주 지출로 다시 안 센다`() = runTest {
+        val before = home(at(10, 23)).results.map { it.budget }
+        val id = repo.savePlan(plan(30, 100_000, "지수 결혼식", Category.EVENT).copy(createdEpochDay = d(10, 23).toEpochDay()))
+        assertTrue(repo.planNow(id)!!.monthly)
+        val h = home(at(10, 23))
+        val after = h.results.map { it.budget }
+        assertEquals(100_000L, before.sum() - after.sum())
+        // 결혼식 주만 10만 원 깎이지 않는다
+        val weddingWeek = h.plan.weekIndexOf(d(10, 30))!!
+        assertTrue(before[weddingWeek] - after[weddingWeek] < 100_000)
+        // 하루 몫에서 미리 떼지도 않는다
+        assertEquals(0L, h.day.reserved)
+
+        // 축의금을 내고 계획과 이으면 그 주 지출로 다시 안 센다
+        val e = repo.addManual(d(10, 30), 100_000, "축의금", com.simbio.don.budget.EntryType.SPEND, Category.EVENT)
+        repo.completePlan(id, e, 100_000, d(10, 30))
+        val h2 = home(at(10, 30))
+        assertEquals(0L, h2.results[weddingWeek].spent)
+        assertEquals(100_000L, before.sum() - h2.results.map { it.budget }.sum())
+
+        // 그 주 예산에서로 바꾸면 그 주 지출로
+        repo.setPlanMonthly(id, false)
+        val h3 = home(at(10, 30))
+        assertEquals(100_000L, h3.results[weddingWeek].spent)
+        assertEquals(before.sum(), h3.results.map { it.budget }.sum())
+    }
 }
