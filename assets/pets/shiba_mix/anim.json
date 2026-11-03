@@ -1,0 +1,92 @@
+{
+  "species": "shiba_mix",
+  "bodyHeight": 210,
+  "anchor": {
+    "x": 0.5,
+    "y": 0.94
+  },
+  "anims": {
+    "walk": {
+      "frames": 4,
+      "fps": 6,
+      "loop": true,
+      "canvas": [
+        224,
+        257
+      ],
+      "files": [
+        "walk_1.png",
+        "walk_2.png",
+        "walk_3.png",
+        "walk_4.png"
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "loop": true,
+      "canvas": [
+        224,
+        256
+      ],
+      "files": [
+        "idle_1.png",
+        "idle_2.png",
+        "idle_3.png",
+        "idle_4.png"
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "loop": false,
+      "canvas": [
+        268,
+        270
+      ],
+      "files": [
+        "sit_1.png",
+        "sit_2.png"
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "loop": true,
+      "canvas": [
+        426,
+        257
+      ],
+      "files": [
+        "sleep_1.png",
+        "sleep_2.png"
+      ]
+    },
+    "play": {
+      "frames": 2,
+      "fps": 6,
+      "loop": true,
+      "canvas": [
+        222,
+        258
+      ],
+      "files": [
+        "play_1.png",
+        "play_2.png"
+      ]
+    },
+    "eat": {
+      "frames": 2,
+      "fps": 4,
+      "loop": false,
+      "canvas": [
+        317,
+        307
+      ],
+      "files": [
+        "eat_1.png",
+        "eat_2.png"
+      ]
+    }
+  }
+}
