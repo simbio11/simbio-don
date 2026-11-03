@@ -6,6 +6,7 @@ assets/pets/<품종>/sprites/NN_표정.png → app/src/main/res/drawable-nodpi/p
 
 그림은 제미나이로 만든 270px 안팎 일러스트라 24×36 도트 아틀라스(make_art.py)와 따로 가져온다.
 """
+import json
 import os
 import re
 from collections import deque
@@ -67,20 +68,115 @@ def clean(src):
     return im
 
 
+# ── 동작 프레임 (assets/pets/<품종>/anim, anim.json) ──────────────────────────
+ANIMS = ["idle", "walk", "sit", "sleep", "play", "eat"]
+# 그림체가 다르거나 깨진 것은 뺀다 (앱은 표정 그림으로 대신한다)
+SKIP = {("corgi", "idle"), ("corgi", "play"), ("tabby_cat", "play"), ("beagle", "sleep")}
+# 두 장모 고양이의 앉기·자기·먹기 그림이 서로 바뀌어 들어가 있다 (얼굴 무늬·눈 색으로 확인) → 바꿔 쓴다
+FROM = {
+    ("longhair_cat", "sit"): "longhair_tabby_cat", ("longhair_cat", "sleep"): "longhair_tabby_cat", ("longhair_cat", "eat"): "longhair_tabby_cat",
+    ("longhair_tabby_cat", "sit"): "longhair_cat", ("longhair_tabby_cat", "sleep"): "longhair_cat", ("longhair_tabby_cat", "eat"): None,
+}
+REF_H = 210          # 표정 그림 몸 높이 (앉은 키)
+LYING = 0.68         # 엎드리면 앉은 키의 이만큼
+FPS = {"idle": 5, "walk": 7, "sit": 4, "sleep": 1, "play": 6, "eat": 4}
+
+
+def side(im):
+    """몸통·꼬리가 머리보다 오른쪽이면 +, 왼쪽이면 - (머리 쪽을 바라본다)"""
+    a = im.getchannel("A").load()
+    w, h = im.size
+    pts = [(x, y) for y in range(0, h, 2) for x in range(0, w, 2) if a[x, y] > 40]
+    if not pts:
+        return 0.0
+    top = min(y for _, y in pts)
+    bot = max(y for _, y in pts)
+    cut = top + (bot - top) * 0.45
+    head = [x for x, y in pts if y < cut]
+    low = [x for x, y in pts if y >= cut]
+    if not head or not low:
+        return 0.0
+    return sum(low) / len(low) - sum(head) / len(head)
+
+
+def bbox(im):
+    return im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+
+
+def union(boxes):
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
+def save_q(im, path):
+    im.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE).save(path, optimize=True)
+
+
+def import_anims(b):
+    """한 품종의 동작 프레임 → (동작 → 파일 이름 목록), 바라보는 쪽(왼쪽이면 True)"""
+    js = os.path.join(SRC, b, "anim.json")
+    if not os.path.exists(js):
+        return {}, True
+    frames = {}
+    for name in ANIMS:
+        src = FROM.get((b, name), b)
+        if src is None or (b, name) in SKIP:
+            continue
+        m = json.load(open(os.path.join(SRC, src, "anim.json")))["anims"].get(name)
+        if not m or len(m["files"]) < 2:
+            continue
+        frames[name] = [clean(Image.open(os.path.join(SRC, src, "anim", f))) for f in m["files"]]
+    if not frames:
+        return {}, True
+    # 바라보는 쪽: 걷기 그림 기준. 반대로 그려진 칸은 뒤집어 맞춘다 (몸이 칸마다 좌우로 뒤집히면 어색하다)
+    ref_frames = frames.get("walk") or next(iter(frames.values()))
+    sides = sorted(side(f) for f in ref_frames)
+    ref = sides[len(sides) // 2]
+    faces_left = ref >= 0
+    out = {}
+    for name, ims in frames.items():
+        fixed = []
+        for im in ims:
+            sd = side(im)
+            if abs(sd) > 10 and (sd > 0) != (ref >= 0):
+                im = im.transpose(Image.FLIP_LEFT_RIGHT)
+            fixed.append(im)
+        # 크기: 같은 동작 안의 상대 크기는 그대로, 가장 큰 칸을 앉은 키에 맞춘다 (자는 건 낮게)
+        boxes = [bbox(im) for im in fixed]
+        tall = max(bx[3] - bx[1] for bx in boxes)
+        k = REF_H / tall * (LYING if name == "sleep" else 1.0)
+        u = union(boxes)
+        names = []
+        for i, im in enumerate(fixed):
+            c = im.crop((u[0] - 1, u[1] - 1, u[2] + 1, u[3] + 1))
+            c = c.resize((max(1, round(c.width * k)), max(1, round(c.height * k))), Image.LANCZOS)
+            fn = f"pet_{b}_m_{name}_{i + 1}"
+            save_q(c, os.path.join(OUT, fn + ".png"))
+            names.append(fn)
+        out[name] = names
+    return out, faces_left
+
+
 def main():
     for f in os.listdir(OUT):
-        if f.startswith("pet_") and f.endswith(".png"):
+        if f.startswith("pet_") and f.endswith(".png"):  # 표정·동작 모두 다시 만든다
             os.remove(os.path.join(OUT, f))
     breeds = sorted(b for b in os.listdir(SRC) if os.path.isdir(os.path.join(SRC, b, "sprites")))
     lines = []
+    alines = []
     for b in breeds:
         files = {re.sub(r"^\d+_", "", f[:-4]): f for f in os.listdir(os.path.join(SRC, b, "sprites")) if f.endswith(".png")}
         assert set(files) == set(EXPRS), f"{b}: 표정이 달라요 {sorted(files)}"
+        ims = {e: clean(Image.open(os.path.join(SRC, b, "sprites", files[e]))) for e in EXPRS}
+        # 8장을 같은 칸으로 잘라 발바닥(아래 끝)을 맞춘다
+        u = union([bbox(im) for im in ims.values()])
         for e in EXPRS:
-            im = clean(Image.open(os.path.join(SRC, b, "sprites", files[e])))
+            im = ims[e].crop((u[0] - 1, u[1] - 1, u[2] + 1, u[3] + 1))
             # 256색 팔레트로 (용량 절반) — 원본도 팔레트 그림이라 티 안 난다
             im.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE).save(os.path.join(OUT, f"pet_{b}_{e}.png"), optimize=True)
             lines.append(f'        "{b}/{e}" to R.drawable.pet_{b}_{e},')
+        anims, faces_left = import_anims(b)
+        body = ", ".join(f'"{n}" to listOf(' + ", ".join(f"R.drawable.{f}" for f in fs) + ")" for n, fs in anims.items())
+        alines.append(f'        "{b}" to PetMotion(mapOf({body}), facesLeft = {"true" if faces_left else "false"}),')
     kt = f"""package com.simbio.don.app.ui.pixel
 
 import com.simbio.don.app.R
@@ -94,7 +190,18 @@ object PetArt {{
     )
 
     val breeds: List<String> = listOf({', '.join('"' + b + '"' for b in breeds)})
+
+    /** 품종 → 동작 프레임 (idle·walk·sit·sleep·play·eat 중 있는 것) */
+    val motions: Map<String, PetMotion> = mapOf(
+{chr(10).join(alines)}
+    )
+
+    /** 동작마다 초당 프레임 */
+    val fps: Map<String, Int> = mapOf({', '.join(f'"{k}" to {v}' for k, v in FPS.items())})
 }}
+
+/** 한 품종의 동작 그림. [facesLeft]: 그림이 왼쪽(머리 쪽)을 보고 있다 — 오른쪽으로 갈 땐 뒤집는다 */
+data class PetMotion(val frames: Map<String, List<Int>>, val facesLeft: Boolean)
 """
     with open(KT, "w") as f:
         f.write(kt)

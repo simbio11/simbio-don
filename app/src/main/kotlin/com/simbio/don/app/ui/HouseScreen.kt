@@ -63,9 +63,12 @@ fun HouseScreen(
     weather: Weather? = null,
     city: String? = null,
     pet: com.simbio.don.game.PetState? = null,
-    onPetAct: (com.simbio.don.game.PetCare.Action) -> Unit = {},
+    onPetAct: (String) -> Unit = {},
 ) {
     val house = home.house
+    // 방금 돌봐 준 것: 방 안 동물과 초상화가 함께 반응한다
+    var careReaction by remember { mutableStateOf<Pair<com.simbio.don.game.CareAnim, Int>?>(null) }
+    fun react(a: com.simbio.don.game.CareAnim) { careReaction = a to ((careReaction?.second ?: 0) + 1) }
     var picking by remember { mutableStateOf<Pair<String, List<MockItem>>?>(null) }
 
     Column(
@@ -101,14 +104,16 @@ fun HouseScreen(
                 interior = home.setup.interior,
                 petState = pet ?: home.pet,
                 hour = home.now.hour,
+                reaction = careReaction,
                 onTap = { hit ->
                     when (hit) {
                         is RoomHit.OfSlot -> picking = hit.slot.label to house.slots[hit.slot].orEmpty()
                         RoomHit.Floor -> picking = "바닥" to house.floor
                         RoomHit.Trash -> onRecycle()
                         // 동물을 누르면 쓰다듬기 (하루 한 번 기분이 오른다, 그 뒤로는 좋아하기만)
-                        RoomHit.Pet -> if (pet != null && com.simbio.don.game.PetCare.blocked(pet, com.simbio.don.game.PetCare.Action.PET, home.today) == null) {
-                            onPetAct(com.simbio.don.game.PetCare.Action.PET)
+                        RoomHit.Pet -> if (pet != null) {
+                            val a = com.simbio.don.game.PetCare.action(pet, home.look.kind.kind, "pet")
+                            if (a != null && com.simbio.don.game.PetCare.blocked(pet, a, home.now) == null) onPetAct("pet")
                         }
                     }
                 },
@@ -132,7 +137,7 @@ fun HouseScreen(
         }
 
         if (home.look.isPet && pet != null) {
-            PetCareCard(home.look, pet, home.today, onPetAct, onShop, onChange = onDress, mood = home.mood)
+            PetCareCard(home.look, pet, home.now, { a -> react(a.anim); onPetAct(a.id) }, onShop, onChange = onDress, reaction = careReaction)
         }
 
         MilesCard(

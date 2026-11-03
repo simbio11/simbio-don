@@ -24,6 +24,7 @@ import com.simbio.don.app.weather.Weather
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import com.simbio.don.app.ui.kit.PetRenderer
+import com.simbio.don.app.ui.kit.drawPetFrame
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -65,6 +66,39 @@ sealed interface RoomHit {
 
     /** 동물을 눌렀다 (쓰다듬기) */
     data object Pet : RoomHit
+}
+
+/**
+ * 동물 일과 시계: 돌봐 준 반응을 보여 주는 동안은 일과를 멈췄다가 이어 간다 (반응 뒤 순간 이동 없게).
+ * 그리기 단계에서 읽고 바꾸는 보통 값이다 (화면을 다시 만들지 않는다).
+ */
+internal class PetClock {
+    private var paused = 0L
+    var reactStart = -1L
+        private set
+    private var anim: com.simbio.don.game.CareAnim? = null
+
+    fun start(now: Long, a: com.simbio.don.game.CareAnim) {
+        reacting(now)
+        if (anim != null) paused += now - reactStart
+        reactStart = now
+        anim = a
+    }
+
+    /** 지금 보여 줄 반응 (끝났으면 null) */
+    fun reacting(now: Long): com.simbio.don.game.CareAnim? {
+        if (anim != null && now - reactStart >= REACT_MS) {
+            paused += REACT_MS
+            anim = null
+        }
+        return anim
+    }
+
+    fun planTime(now: Long): Long = now - paused - (if (reacting(now) != null) now - reactStart else 0)
+
+    companion object {
+        const val REACT_MS = 3_000L
+    }
 }
 
 /** 번개: 6초마다 0.12초쯤 번쩍 */
@@ -169,6 +203,8 @@ fun PixelRoom(
     petState: com.simbio.don.game.PetState? = null,
     /** 지금 몇 시 (밤늦게는 잔다) */
     hour: Int = remember { LocalTime.now().hour },
+    /** 돌봐 준 반응 (반응 종류, 바뀔 때마다 새로) — 먹기·놀기·기뻐하기를 잠깐 보여 준다 */
+    reaction: Pair<com.simbio.don.game.CareAnim, Int>? = null,
 ) {
     val level = house.level
     val roomContext = LocalContext.current
@@ -203,9 +239,9 @@ fun PixelRoom(
     val feeling = remember(look, mood, petState, hour) {
         if (look.isPet) com.simbio.don.game.PetFeelings.of(mood, petState, hour, look.callName) else null
     }
-    val petFace = remember(look, feeling) { feeling?.let { PetRenderer.bitmap(context, look, it.expr) } }
-    val petJoy = remember(look) { if (look.isPet) PetRenderer.bitmap(context, look, "joy") else null }
-    val petTapAt = remember { mutableLongStateOf(-1L) }
+    val petFrames = if (look.isPet) com.simbio.don.app.ui.kit.rememberPetFrames(look) else null
+    val petClock = remember { PetClock() }
+    val bowl = ImageBitmap.imageResource(R.drawable.px16_p_pg9)
     // 지금 그려진 동물 자리 (누른 곳이 동물인지 볼 때) — 그리기 단계에서만 쓰고 화면을 다시 만들지 않는다
     val petBox = remember { FloatArray(4) }
     val petShade = when (phase) {
@@ -223,6 +259,7 @@ fun PixelRoom(
             elapsed.longValue = withFrameMillis { it } - start
         }
     }
+    LaunchedEffect(reaction) { reaction?.let { petClock.start(elapsed.longValue, it.first) } }
     val skyCycle = if (phase == DayPhase.NIGHT) 120_000L else 64_000L
 
     // 원본 크기(160×136) 버퍼에 한 장으로 겹쳐 그린 뒤 통째로 키운다.
@@ -236,7 +273,7 @@ fun PixelRoom(
         val tap = if (onTap == null && !look.isPet) Modifier else Modifier.pointerInput(house, look) {
             detectTapGestures { o ->
                 if (look.isPet && o.x in petBox[0]..petBox[2] && o.y in petBox[1]..petBox[3]) {
-                    petTapAt.longValue = elapsed.longValue
+                    petClock.start(elapsed.longValue, com.simbio.don.game.CareAnim.HAPPY)
                     onTap?.invoke(RoomHit.Pet)
                     return@detectTapGestures
                 }
@@ -310,57 +347,60 @@ fun PixelRoom(
                 filterQuality = FilterQuality.None,
             )
             // 동물은 도트 칸에 맞추지 않고 원래 해상도로: 숨 쉬고, 두리번거리고, 종종걸음으로 돌아다닌다 (튀지 않는다)
-            if (feeling != null && petFace != null && petJoy != null) {
+            if (feeling != null && petFrames != null) {
                 val k = size.width / RoomLayout.WIDTH
-                val since = now - petTapAt.longValue
-                val pleased = petTapAt.longValue >= 0 && since in 0L..2_400L
-                val f = if (pleased) com.simbio.don.game.PetFeelings.pleased else feeling
-                val img = if (pleased) petJoy else petFace
-                val sleeping = feeling.energy == com.simbio.don.game.PetEnergy.SLEEP
-                val p = petPoseAt(now, feeling.energy)
-                val h = 34f * k
-                val w = h * img.width / img.height
+                val unit = 28f * k / com.simbio.don.app.ui.kit.PetFrames.UNIT_H
+                val react = petClock.reacting(now)
+                val since = now - petClock.reactStart
+                val p = petPoseAt(petClock.planTime(now), feeling.energy, petFrames.canWalk)
+                val act = react?.let { r ->
+                    when (r) {
+                        com.simbio.don.game.CareAnim.EAT -> PetAct.EAT
+                        com.simbio.don.game.CareAnim.PLAY -> PetAct.PLAY
+                        com.simbio.don.game.CareAnim.SLEEP -> PetAct.LIE
+                        else -> PetAct.IDLE
+                    }
+                } ?: p.act
+                val happy = react == com.simbio.don.game.CareAnim.HAPPY || react == com.simbio.don.game.CareAnim.WALK
+                val face = when {
+                    happy -> "joy"
+                    react != null -> "smile"
+                    else -> feeling.expr
+                }
+                val (img, bob) = if (react != null) petFrames.pick(act, since, PetClock.REACT_MS - since, face, now)
+                else petFrames.pick(p.act, p.inAct, p.left, face, now)
                 val cx = p.x * k
                 val floor = (cy0 + RoomLayout.CHAR_H - 2f) * k
                 val t = now / 1000f
-                val breathe = 0.5f + 0.5f * kotlin.math.sin(t * if (sleeping) 1.5f else if (feeling.energy == com.simbio.don.game.PetEnergy.LOW) 2.0f else 2.6f)
-                var sy = 1f + (if (sleeping) 0.04f else 0.022f) * breathe
-                val sx = 1f - 0.01f * breathe
-                var rot = 0f
-                var lift = 0f
-                val dir = if (p.faceLeft) -1f else 1f
-                when (p.act) {
-                    PetAct.TROT -> {
-                        rot = trotTilt(p.step)
-                        sy *= trotSquash(p.step)
-                        lift = kotlin.math.abs(kotlin.math.sin(p.step * 2f * Math.PI.toFloat())) * 0.3f * k
-                    }
-                    // 킁킁: 가는 쪽으로 고개를 숙였다 든다
-                    PetAct.SNIFF -> rot = dir * (2.5f + 2f * kotlin.math.sin(t * 7f))
-                    else -> if (feeling.energy == com.simbio.don.game.PetEnergy.HIGH) rot = kotlin.math.sin(t * 8f) * 1.2f
-                }
+                val lying = act == PetAct.LIE
+                val walking = act == PetAct.WALK
+                val breathe = 0.5f + 0.5f * kotlin.math.sin(t * if (lying) 1.5f else 2.4f)
+                val sy = if (walking) 1f else 1f + (if (lying) 0.025f else 0.012f) * breathe
                 // 쓰다듬으면 몸을 살랑살랑
-                if (pleased) rot = kotlin.math.sin(since / 1000f * 13f) * 3f * (1f - since / 2_400f)
+                val rot = if (happy) kotlin.math.sin(since / 1000f * 13f) * 3f * (1f - since / PetClock.REACT_MS.toFloat()) else 0f
+                val w = img.width * unit
+                val h = img.height * unit
                 drawOval(Color(0x33202040), Offset(cx - w * 0.36f, floor - 1.5f * k), Size(w * 0.72f, 3f * k))
-                withTransform({
-                    translate(0f, -lift)
-                    rotate(rot, pivot = Offset(cx, floor))
-                    scale(dir * sx, sy, pivot = Offset(cx, floor))
-                }) {
-                    drawImage(
-                        img,
-                        srcOffset = IntOffset.Zero,
-                        srcSize = IntSize(img.width, img.height),
-                        dstOffset = IntOffset((cx - w / 2f).toInt(), (floor - h).toInt()),
-                        dstSize = IntSize(w.toInt(), h.toInt()),
-                        filterQuality = FilterQuality.Medium,
-                        colorFilter = petShade?.let { androidx.compose.ui.graphics.ColorFilter.tint(it, androidx.compose.ui.graphics.BlendMode.SrcAtop) },
-                    )
+                drawPetFrame(
+                    img, cx, floor + bob * unit, unit, flip = p.faceLeft != petFrames.facesLeft,
+                    colorFilter = petShade?.let { androidx.compose.ui.graphics.ColorFilter.tint(it, androidx.compose.ui.graphics.BlendMode.SrcAtop) },
+                    scaleY = sy, rotate = rot,
+                )
+                // 먹을 땐 앞에 밥그릇
+                if (act == PetAct.EAT) {
+                    val bw = 9f * k
+                    val bx = cx + (if (p.faceLeft) -1f else 1f) * w * 0.28f - bw / 2f
+                    drawImage(bowl, IntOffset.Zero, IntSize(bowl.width, bowl.height), IntOffset(bx.toInt(), (floor - bw * 0.8f).toInt()), IntSize(bw.toInt(), bw.toInt()), filterQuality = FilterQuality.None)
                 }
                 petBox[0] = cx - w / 2f; petBox[1] = floor - h; petBox[2] = cx + w / 2f; petBox[3] = floor
-                f.bubble?.let { b ->
-                    val alpha = if (pleased) 1f else bubbleAlpha(now, b)
-                    drawPetBubble(b, Offset(cx + w * 0.12f, floor - h * sy + h * 0.12f), k, alpha, now)
+                val bubble = when {
+                    react == com.simbio.don.game.CareAnim.EAT -> com.simbio.don.game.PetBubble.NOTE
+                    react != null -> com.simbio.don.game.PetBubble.HEART
+                    else -> feeling.bubble
+                }
+                bubble?.let { b ->
+                    val alpha = if (react != null) 1f else bubbleAlpha(now, b)
+                    drawPetBubble(b, Offset(cx + w * 0.12f, floor - h * sy + h * 0.08f), k, alpha, now)
                 }
             }
         }

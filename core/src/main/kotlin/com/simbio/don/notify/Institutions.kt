@@ -49,6 +49,41 @@ object Institutions {
     fun appFor(inst: Institution, installed: Map<String, String>): String? {
         if (installed.isEmpty()) return inst.packages.firstOrNull()
         inst.packages.firstOrNull { it in installed }?.let { return it }
-        return installed.entries.firstOrNull { (_, label) -> inst.labelWords.any { it in label } }?.key
+        // 다른 은행·카드·페이의 알려진 앱은 고르지 않는다 ("신한 SOL"로 찾다가 "신한 SOL페이"(카드 앱)를 은행에 잇지 않게)
+        val others = all.filter { it != inst }.flatMap { it.packages }.toSet() - inst.packages.toSet()
+        val payWords = listOf("페이", "Pay", "pay", "PAY", "카드")
+        return installed.entries.firstOrNull { (pkg, label) ->
+            pkg !in others && inst.labelWords.any { it in label } &&
+                (inst.kind != InstitutionKind.BANK || payWords.none { it in label })
+        }?.key
     }
+}
+
+/**
+ * 신용카드 결제인지 (돈이 통장에서 바로 안 나가고 카드값으로 나중에 나간다).
+ * 카드사 앱 알림이거나 "○○카드 승인"처럼 카드사 이름이 있는 결제 알림이면 신용카드 — "체크"가 있으면 통장에서 바로 나가는 체크카드.
+ */
+object CreditCards {
+    private val COMPANY = Regex("(신한|삼성|현대|KB국민|국민|롯데|하나|우리|BC|비씨|NH농협|농협|씨티|IBK기업|기업)\\s?카드")
+    private val USE = listOf("승인", "결제", "사용", "일시불", "할부")
+
+    /** 신용카드 결제면 카드사 이름 ("신한카드"), 아니면 null */
+    fun company(packageName: String?, text: String): String? {
+        if ("체크" in text) return null
+        if (MoneyMoves.isCardBillFromBank(text)) return null
+        Institutions.of(InstitutionKind.CARD).firstOrNull { packageName != null && packageName in it.packages }?.let { return it.name }
+        val m = COMPANY.find(text) ?: return null
+        if (USE.none { it in text }) return null
+        return normalize(m.value)
+    }
+
+    /** "국민카드" → "KB국민카드", "비씨 카드" → "BC카드" */
+    fun normalize(name: String): String {
+        val n = name.replace(" ", "")
+        val alias = mapOf("국민카드" to "KB국민카드", "비씨카드" to "BC카드", "농협카드" to "NH농협카드", "기업카드" to "IBK기업카드")
+        return alias[n] ?: Institutions.of(InstitutionKind.CARD).firstOrNull { it.name == n }?.name ?: n
+    }
+
+    /** 카드사 이름에서 자산 이름과 견줄 말 ("KB국민카드" → "국민") */
+    fun key(company: String): String = company.removeSuffix("카드").removePrefix("KB").removePrefix("NH").removePrefix("IBK").ifBlank { company }
 }

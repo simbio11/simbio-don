@@ -43,15 +43,22 @@ import com.simbio.don.game.PetFur
  * 그림은 assets/pets (import_pets.py 가 res 로 옮긴다).
  */
 object PetRenderer {
-    private val cache = LruCache<String, ImageBitmap>(40)
+    /** 털색 입힌 그림 (품종·털색·그림마다). 동작 프레임까지 담으니 크기(바이트)로 센다 — 약 40MB */
+    private val cache = object : LruCache<String, ImageBitmap>(40 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
+    }
 
     /** 그림 한 장 (표정: joy smile calm worry sad angry tease sleep) */
     fun bitmap(context: Context, look: CharacterLook, expr: String): ImageBitmap {
-        val species = look.kind
+        val res = PetArt.byKey["${look.kind.id}/$expr"] ?: PetArt.byKey.getValue("shiba_mix/calm")
+        return frame(context, look, res)
+    }
+
+    /** 그림 파일 하나에 털색을 입힌 것 (표정 그림·동작 프레임 모두) */
+    fun frame(context: Context, look: CharacterLook, res: Int): ImageBitmap {
         val tone = look.furName
-        val key = "${species.id}|$tone|$expr"
+        val key = "${look.kind.id}|$tone|$res"
         cache.get(key)?.let { return it }
-        val res = PetArt.byKey["${species.id}/$expr"] ?: PetArt.byKey.getValue("shiba_mix/calm")
         val src = BitmapFactory.decodeResource(
             context.resources, res,
             BitmapFactory.Options().apply { inScaled = false; inPreferredConfig = Bitmap.Config.ARGB_8888 },

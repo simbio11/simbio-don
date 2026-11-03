@@ -230,7 +230,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun explainIncome(e: EntryEntity, kind: DonRepository.IncomeKind, targetId: Long? = null) =
         viewModelScope.launch { repo.explainIncome(e.id, kind, targetId) }
     val pet = repo.pet.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.simbio.don.game.PetState())
-    fun petAct(a: com.simbio.don.game.PetCare.Action, done: (String?) -> Unit) = viewModelScope.launch { done(repo.petAct(a)) }
+    fun petAct(actionId: String, done: (Result<com.simbio.don.game.CareAction>) -> Unit) = viewModelScope.launch { done(repo.petAct(actionId)) }
     fun confirmAutoLink(e: EntryEntity) = viewModelScope.launch { repo.confirmAutoLink(e.id) }
     fun forgiveSplit(target: EntryEntity) = viewModelScope.launch { repo.forgiveSplit(target) }
     fun unsettle(receipt: EntryEntity) = viewModelScope.launch { repo.unsettle(receipt) }

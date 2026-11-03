@@ -557,7 +557,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             wallet = wallet,
             house = HouseLayout.of(enumOr(house?.level, HouseLevel.ONE_ROOM), items, HouseSetup.decode(house?.setup).bonus()),
             look = CharacterLook.decode(house?.look),
-            pet = com.simbio.don.game.PetState.decode(house?.pet),
+            pet = com.simbio.don.game.PetCare.passTime(com.simbio.don.game.PetState.decode(house?.pet), now),
             setup = HouseSetup.decode(house?.setup),
             owned = house?.owned.orEmpty().split(',').filter { it.isNotBlank() }.toSet(),
             freeMakeover = house?.freeMakeover ?: true,
@@ -572,7 +572,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun buyMock(name: String, price: Long, kind: ItemKind, store: String?, date: LocalDate, now: LocalDateTime) {
         // 반려동물 용품은 바로 와서 집 친구를 돌보는 데 쓴다 (사료·간식은 쌓이고, 장난감·잠자리·하네스는 생긴다)
         com.simbio.don.game.Dex.productOf(name)?.let { p ->
-            if (com.simbio.don.game.PetCare.effects.containsKey(p.id)) locked { savePetLocked(com.simbio.don.game.PetCare.bought(petLocked(date), p.id)) }
+            if (com.simbio.don.game.PetCare.effects.containsKey(p.id)) locked { savePetLocked(com.simbio.don.game.PetCare.bought(petLocked(now), p.id)) }
         }
         dao.insertMock(
             MockPurchaseEntity(
@@ -1108,30 +1108,43 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     // ── 집 친구(동물) 돌보기 ───────────────────────────────────
 
-    /** 돌보기 상태 (그날까지 배고파진 것은 앱을 열 때 센다) */
-    val pet: Flow<com.simbio.don.game.PetState> = dao.house().map { com.simbio.don.game.PetState.decode(it?.pet) }
-
-    private suspend fun petLocked(today: LocalDate): com.simbio.don.game.PetState {
-        val raw = houseLocked().pet
-        val s = if (raw.isBlank()) com.simbio.don.game.PetState(day = today.toEpochDay()) else com.simbio.don.game.PetState.decode(raw)
-        return com.simbio.don.game.PetCare.passDays(s, today)
+    /** 돌보기 상태: 저장된 값에서 지금까지 배고파지고 심심해진 만큼 (1분마다 다시 센다, 저장은 돌봐 줄 때) */
+    val pet: Flow<com.simbio.don.game.PetState> = combine(dao.house(), minuteClock()) { h, now ->
+        com.simbio.don.game.PetCare.passTime(com.simbio.don.game.PetState.decode(h?.pet), now)
     }
+
+    private fun minuteClock(): Flow<LocalDateTime> = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(LocalDateTime.now())
+            kotlinx.coroutines.delay(60_000)
+        }
+    }
+
+    private suspend fun petLocked(now: LocalDateTime): com.simbio.don.game.PetState =
+        com.simbio.don.game.PetCare.passTime(com.simbio.don.game.PetState.decode(houseLocked().pet), now)
 
     private suspend fun savePetLocked(s: com.simbio.don.game.PetState) {
         dao.saveHouse(houseLocked().copy(pet = s.encode()))
     }
 
-    private suspend fun passPetDaysLocked(today: LocalDate) {
+    private suspend fun passPetDaysLocked(now: LocalDateTime) {
         if (!CharacterLook.decode(houseLocked().look).isPet) return
-        savePetLocked(petLocked(today))
+        savePetLocked(petLocked(now))
     }
 
-    /** 밥 주기·간식·놀아 주기·산책·쓰다듬기. 못 하면 그 까닭 */
-    suspend fun petAct(action: com.simbio.don.game.PetCare.Action, today: LocalDate = LocalDate.now()): String? = locked {
-        val s = petLocked(today)
-        com.simbio.don.game.PetCare.blocked(s, action, today)?.let { return@locked it }
-        savePetLocked(com.simbio.don.game.PetCare.act(s, action, today))
-        null
+    /** 시험용: 돌보기 상태를 바로 바꾼다 */
+    @androidx.annotation.VisibleForTesting
+    suspend fun debugSetPet(f: (com.simbio.don.game.PetState) -> com.simbio.don.game.PetState) = locked { savePetLocked(f(petLocked(LocalDateTime.now()))) }
+
+    /** 돌보기 행동 ([com.simbio.don.game.CareAction.id]). 해 줬으면 그 행동, 못 하면 그 까닭 */
+    suspend fun petAct(actionId: String, now: LocalDateTime = LocalDateTime.now()): Result<com.simbio.don.game.CareAction> = locked {
+        val s = petLocked(now)
+        val kind = CharacterLook.decode(houseLocked().look).kind.kind
+        val a = com.simbio.don.game.PetCare.action(s, kind, actionId)
+            ?: return@locked Result.failure(IllegalStateException("지금은 할 수 없어요"))
+        com.simbio.don.game.PetCare.blocked(s, a, now)?.let { return@locked Result.failure(IllegalStateException(it)) }
+        savePetLocked(com.simbio.don.game.PetCare.act(s, a, now))
+        Result.success(a)
     }
 
     /** 이사 (더 큰 집으로만) */
@@ -1417,7 +1430,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun dailyUpkeep(now: LocalDateTime) = locked {
         rollOverLocked(now)
-        passPetDaysLocked(now.toLocalDate())
+        passPetDaysLocked(now)
         recordDueFixedLocked(now.toLocalDate())
         recordDueIncomeLocked(now.toLocalDate())
         seedSubcategoriesLocked()
@@ -1638,8 +1651,42 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         return (shown.firstOrNull { it.type == AccountType.BANK.name } ?: shown.firstOrNull { it.type == AccountType.CASH.name })?.id
     }
 
-    /** 이 앱의 결제를 적을 자산 (이은 자산 → 기본 통장) */
-    private suspend fun spendAccount(pkg: String?): Long? = accountFor(pkg) ?: mainAccount()
+    /**
+     * 이 결제를 적을 자산. 신용카드 결제는 통장이 아니라 카드 자산 (카드값을 낼 때 통장 → 카드로 옮긴다) —
+     * 예전엔 카드 앱을 자산과 안 이었으면 기본 통장(생활비 통장)에서 나간 것으로 적혀 통장 잔액이 줄었다.
+     * 체크카드·페이·은행 앱은 이은 자산 → 기본 통장.
+     */
+    private suspend fun spendAccount(p: ParsedPayment): Long? {
+        val linked = dao.accountsNow().firstOrNull { it.packageName == p.packageName && !it.hidden }
+        val text = p.rawText.ifBlank { p.label }
+        val card = com.simbio.don.notify.CreditCards.company(p.packageName, text)
+        if (card == null) {
+            // 체크카드는 통장에서 바로 나간다 (카드 앱이 카드 자산과 이어져 있어도)
+            if (linked?.type == AccountType.CARD.name && "체크" in text) return mainAccount() ?: linked.id
+            return linked?.id ?: mainAccount()
+        }
+        if (linked != null && linked.type != AccountType.BANK.name && linked.type != AccountType.CASH.name) return linked.id
+        return cardAccount(card, p.packageName)
+    }
+
+    /** 카드사 이름에 맞는 카드 자산 (없으면 만든다: 처음 잔액 0, 쓴 만큼 갚을 돈이 쌓인다) */
+    private suspend fun cardAccount(company: String, pkg: String?): Long {
+        val all = dao.accountsNow()
+        val cards = all.filter { it.type == AccountType.CARD.name && !it.hidden }
+        val key = com.simbio.don.notify.CreditCards.key(company)
+        cards.firstOrNull { it.packageName != null && it.packageName == pkg }?.let { return it.id }
+        cards.firstOrNull { key in it.name }?.let { return it.id }
+        // 카드가 하나뿐이고 이름에 다른 카드사가 안 적혀 있으면 그 카드
+        cards.singleOrNull()?.takeIf { c -> com.simbio.don.notify.CreditCards.company(null, c.name + " 승인") == null }?.let { return it.id }
+        val usedPkg = pkg != null && all.any { it.packageName == pkg }
+        return dao.saveAccount(
+            AccountEntity(
+                name = company, type = AccountType.CARD.name, opening = 0,
+                sortOrder = (all.maxOfOrNull { it.sortOrder } ?: 0) + 1,
+                packageName = if (usedPkg) null else pkg,
+            ),
+        )
+    }
 
     /** 어느 자산에서 나갔는지 없는 수입·지출 (자산 잔액에 안 들어간 것). 외화 지갑·보낼 돈·정산은 일부러 비워 둔 것이라 뺌 */
     private fun unassigned(e: EntryEntity): Boolean =
@@ -2279,7 +2326,25 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             }
             if (twin) dao.deleteEntry(u)
         }
+        fixCardSpendsLocked(recent)
         autoMatchLocked(today)
+    }
+
+    /**
+     * 신용카드 결제가 통장에 적혀 통장 잔액이 줄어 있던 것 고치기: 알림으로 적힌 결제 중 신용카드인데
+     * 은행·현금 자산에 들어간 것을 카드 자산으로 옮긴다.
+     */
+    private suspend fun fixCardSpendsLocked(recent: List<EntryEntity>) {
+        val accounts = dao.accountsNow().associateBy { it.id }
+        recent.filter {
+            it.source == EntrySource.NOTIFICATION.name && it.accountId != null && it.installmentId == null &&
+                (it.type == EntryType.SPEND.name || it.type == EntryType.REFUND.name)
+        }.forEach { e ->
+            val a = accounts[e.accountId] ?: return@forEach
+            if (a.type != AccountType.BANK.name && a.type != AccountType.CASH.name) return@forEach
+            val card = com.simbio.don.notify.CreditCards.company(e.packageName, e.rawText ?: "") ?: return@forEach
+            dao.updateEntry(e.copy(accountId = cardAccount(card, e.packageName)))
+        }
     }
 
     /** 저절로 이은 짝이 맞아요 */
@@ -2564,12 +2629,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val f = p.foreign
         val fromWallet = f != null && type == EntryType.SPEND && NotificationParser.extractAmount(p.rawText) == null &&
             boughtForeign(p.packageName, f.currency, p.postedAt.toLocalDate())
-        val account = if (fromWallet) null else spendAccount(p.packageName)
+        val account = if (fromWallet) null else spendAccount(p)
         // 할부 결제 알림 ("3개월")이면 달마다 나눠 적는다
         val months = if (type == EntryType.SPEND) Installments.monthsIn(p.rawText) else null
         if (months != null && p.amount >= months) {
             addInstallmentLocked(
-                p.postedAt.toLocalDate(), p.amount, months, p.label, category, null, "", spendAccount(p.packageName),
+                p.postedAt.toLocalDate(), p.amount, months, p.label, category, null, "", spendAccount(p),
                 p.postedAt.hour * 60 + p.postedAt.minute, p,
             )
             return category

@@ -16,7 +16,7 @@ data class PetFeeling(val expr: String, val bubble: PetBubble?, val energy: PetE
  * 진짜 반려동물처럼: 밤늦게는 자고, 밥을 안 주면 배고파하고, 안 놀아 주면 심심해하고,
  * 내가 돈을 막 쓰면(가계부 기분) 같이 걱정하거나 화낸다. 다 괜찮으면 기분 좋게 돌아다닌다.
  *
- * 우선순위: 잠 > 많이 배고픔 > 지갑이 바닥(화남) > 배고픔 > 돈 걱정 > 심심함 > 기분 좋음 > 평온.
+ * 우선순위: 잠 > 많이 배고픔 > 지갑이 바닥(화남) > 배고픔 > 돈 걱정 > 심심함 > 지저분함 > 기분 좋음 > 평온.
  */
 object PetFeelings {
     /** 23시~6시는 잔다 */
@@ -38,6 +38,7 @@ object PetFeelings {
             mood == Mood.SAD -> PetFeeling("sad", PetBubble.SWEAT, PetEnergy.LOW, "$ga 줄어드는 지갑에 시무룩해요")
             mood == Mood.WORRIED -> PetFeeling("worry", PetBubble.SWEAT, calmEnergy(PetEnergy.NORMAL), "$ga 쓰는 속도가 빨라서 조마조마해요")
             s.bored -> PetFeeling("worry", PetBubble.BORED, PetEnergy.LOW, "$ga 심심해서 놀아 달래요")
+            s.dirty -> PetFeeling("worry", PetBubble.SWEAT, calmEnergy(PetEnergy.NORMAL), "$ga 꼬질꼬질해서 씻고 싶대요")
             mood == Mood.CHEER -> PetFeeling("tease", PetBubble.NOTE, calmEnergy(PetEnergy.NORMAL), "$ga 다시 해 보재요")
             mood == Mood.JOYFUL -> PetFeeling("joy", PetBubble.HEART, calmEnergy(PetEnergy.HIGH), "$ga 신나서 꼬리를 흔들어요")
             mood == Mood.HAPPY || (s.full >= 70 && s.joy >= 70) ->

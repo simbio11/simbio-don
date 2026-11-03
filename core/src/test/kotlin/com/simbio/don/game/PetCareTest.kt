@@ -1,6 +1,7 @@
 package com.simbio.don.game
 
 import java.time.LocalDate
+import java.time.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -11,39 +12,74 @@ class PetCareTest {
     private val d0 = LocalDate.of(2026, 11, 2)
 
     @Test
-    fun 날마다_배고프고_심심해진다_용품이_있으면_덜() {
-        val s = PetState(full = 80, joy = 80, day = d0.toEpochDay())
-        val after = PetCare.passDays(s, d0.plusDays(2))
-        assertEquals(40, after.full)
-        assertEquals(56, after.joy)
-        val geared = PetCare.passDays(s.copy(gear = setOf(CareKind.FEEDER, CareKind.BED)), d0.plusDays(2))
-        assertEquals(56, geared.full)
-        assertEquals(64, geared.joy)
-        assertTrue(PetCare.passDays(s, d0.plusDays(5)).hungry)
+    fun 시간이_지나면_배고프고_심심하고_꼬질꼬질해진다_잘_때는_천천히() {
+        val noon = LocalDateTime.of(2026, 11, 2, 12, 0)
+        // 처음이면 지금부터 센다
+        val s0 = PetCare.passTime(PetState(full = 80, joy = 80, clean = 80), noon)
+        assertEquals(PetCare.sec(noon), s0.at)
+        // 낮 8시간: 배부름 -36, 기분 -24, 청결 -10
+        val day = PetCare.passTime(s0, noon.plusHours(8))
+        assertEquals(44, day.full)
+        assertEquals(56, day.joy)
+        assertEquals(70, day.clean)
+        // 밤(23시~6시)에는 천천히
+        val night0 = PetState(full = 80, joy = 80, clean = 80, at = PetCare.sec(LocalDateTime.of(2026, 11, 2, 23, 0)))
+        val night = PetCare.passTime(night0, LocalDateTime.of(2026, 11, 3, 5, 0))
+        assertEquals(71, night.full)
+        assertEquals(74, night.joy)
+        // 급식기·잠자리가 있으면 덜
+        val geared = PetCare.passTime(s0.copy(gear = setOf(CareKind.FEEDER, CareKind.BED)), noon.plusHours(8))
+        assertTrue(geared.full > day.full && geared.joy > day.joy)
+        // 하루 굶으면 배고프고, 배고프면 기분이 더 빨리 떨어진다
+        val starving = PetCare.passTime(s0.copy(full = 20), noon.plusHours(8))
+        assertTrue(starving.hungry)
+        assertTrue(starving.joy < day.joy)
+        // 1분마다 다시 세도 같은 만큼 떨어진다 (저장은 할 때만)
+        assertEquals(day, PetCare.passTime(s0, noon.plusHours(8)))
     }
 
     @Test
-    fun 사료를_사서_밥을_주고_장난감은_하루에_한_번() {
-        var s = PetState(full = 20, joy = 20, food = 0, treats = 0, day = d0.toEpochDay())
-        assertEquals("사료가 없어요", PetCare.blocked(s, PetCare.Action.FEED, d0))
-        s = PetCare.bought(s, "pf1")
-        assertEquals(10, s.food)
-        s = PetCare.act(s, PetCare.Action.FEED, d0)
-        assertEquals(55, s.full)
-        assertEquals(9, s.food)
-        assertNotNull(PetCare.blocked(s, PetCare.Action.PLAY, d0))
+    fun 묶음별_행동_사료마다_효과가_다르고_자주는_못_한다() {
+        val now = LocalDateTime.of(2026, 11, 2, 12, 0)
+        var s = PetState(full = 20, joy = 20, food = 0, treats = 0, at = PetCare.sec(now))
+        fun a(id: String) = PetCare.action(s, PetKind.DOG, id)!!
+        assertEquals("사료가 없어요", PetCare.blocked(s, a("feed:food"), now))
+        // 프리미엄 사료를 사면 밥 묶음에 그 사료가 생기고 더 든든하다
+        s = PetCare.bought(s, "pf8")
+        assertEquals(25, s.stock["pf8"])
+        s = PetCare.act(s, a("feed:pf8"), now)
+        assertEquals(65, s.full)
+        assertEquals(24, s.stock["pf8"])
+        // 간식마다 다르다: 츄르는 기분, 덴탈 껌은 청결
+        s = PetCare.bought(PetCare.bought(s, "pf4"), "pf7")
+        assertTrue(a("treat:pf7").clean > 0)
+        // 강아지에게 고양이 간식은 덜 좋아한다
+        assertTrue(a("treat:pf4").joy < PetCare.action(s, PetKind.CAT, "treat:pf4")!!.joy)
+        // 장난감은 하나하나 다른 놀이, 두 시간에 한 번
+        assertNull(PetCare.action(s, PetKind.DOG, "toy:pt1"))
         s = PetCare.bought(s, "pt1")
-        assertNull(PetCare.blocked(s, PetCare.Action.PLAY, d0))
-        s = PetCare.act(s, PetCare.Action.PLAY, d0)
-        assertEquals(40, s.joy)
-        assertEquals("오늘 놀았어요", PetCare.blocked(s, PetCare.Action.PLAY, d0))
-        assertNull(PetCare.blocked(s, PetCare.Action.PLAY, d0.plusDays(1)))
+        s = PetCare.act(s, a("toy:pt1"), now)
+        assertEquals("2시간 뒤에", PetCare.blocked(s, a("toy:pt1"), now))
+        assertNull(PetCare.blocked(s, a("toy:pt1"), now.plusHours(2)))
+        // 맨손 놀이는 언제나 있다
+        listOf("pet", "rub", "peekaboo", "water", "potty", "sleep").forEach { assertNotNull(PetCare.action(s, PetKind.DOG, it), it) }
+        CareGroup.entries.forEach { g -> assertTrue(PetCare.actions(s, PetKind.CAT).any { it.group == g }, g.name) }
+        // 쓰다듬기는 30분에 한 번
+        s = PetCare.act(s, a("pet"), now)
+        assertEquals("30분 뒤에", PetCare.blocked(s, a("pet"), now))
+        // 재우기는 밤에만
+        assertEquals("밤에 재워요", PetCare.blocked(s, a("sleep"), now))
+        assertNull(PetCare.blocked(s, a("sleep"), now.withHour(22)))
     }
 
     @Test
     fun 저장하고_읽기_그리고_말투() {
-        val s = PetState(full = 10, joy = 90, food = 4, treats = 1, gear = setOf(CareKind.TOY), day = 5, played = 5)
+        val s = PetState(full = 10, joy = 90, clean = 40, food = 4, treats = 1, stock = mapOf("pf8" to 3), owned = setOf("pt1"), gear = setOf(CareKind.TOY), last = mapOf("toy:pt1" to 99L), at = 1234L)
         assertEquals(s, PetState.decode(s.encode()))
+        // 예전 저장 (하루 한 번 기록)도 읽는다
+        val old = PetState.decode("full=50;joy=60;food=4;treats=1;gear=TOY;day=5;played=5;walked=;petted=;groomed=")
+        assertEquals(50, old.full)
+        assertTrue("toy" in old.last)
         assertEquals("콩이가 많이 배고파해요", PetCare.line("콩이", s))
         assertEquals("별이 많이 배고파해요", PetCare.line("별", s))
     }
@@ -109,22 +145,25 @@ class PetCareTest {
 
     @Test
     fun 새_용품_밥그릇_빗_화장실_꾸밈_효과() {
-        val base = PetState(full = 20, joy = 20, food = 5, day = d0.toEpochDay())
+        val now = LocalDateTime.of(2026, 11, 2, 12, 0)
+        val base = PetState(full = 20, joy = 20, clean = 20, food = 5, at = PetCare.sec(now))
         // 밥그릇이 있으면 밥이 더 든든
         val bowl = PetCare.bought(base, "pg9")
-        assertEquals(base.full + PetCare.FEED + PetCare.BOWL_BONUS, PetCare.act(bowl, PetCare.Action.FEED, d0).full)
-        // 빗: 하루 한 번
-        assertEquals("빗이 없어요", PetCare.blocked(base, PetCare.Action.GROOM, d0))
-        var s = PetCare.bought(base, "pc1")
-        s = PetCare.act(s, PetCare.Action.GROOM, d0)
-        assertEquals(20 + PetCare.GROOM, s.joy)
-        assertEquals("오늘 빗었어요", PetCare.blocked(s, PetCare.Action.GROOM, d0))
-        // 화장실이 있으면 덜 심심해함, 꾸밈 용품은 쓰다듬기가 더 좋음
-        assertEquals(PetCare.passDays(base, d0.plusDays(1)).joy + 3, PetCare.passDays(PetCare.bought(base, "pg8"), d0.plusDays(1)).joy)
-        assertEquals(20 + PetCare.PET + PetCare.DECOR_BONUS, PetCare.act(PetCare.bought(base, "pa5"), PetCare.Action.PET, d0).joy)
-        // 프리미엄 사료는 25번분, 덴탈 스틱은 간식 8개
-        assertEquals(30, PetCare.bought(base, "pf8").food)
-        assertEquals(8, PetCare.bought(base, "pf7").treats - base.treats)
+        assertTrue(PetCare.action(bowl, PetKind.DOG, "feed:food")!!.full > PetCare.action(base, PetKind.DOG, "feed:food")!!.full)
+        // 미용 용품마다 다른 돌봄: 목욕은 싫어하지만 아주 깨끗해진다
+        var s = PetCare.bought(PetCare.bought(base, "pc1"), "pc2")
+        val bath = PetCare.action(s, PetKind.CAT, "groom:pc2")!!
+        assertTrue(bath.joy < 0 && bath.clean >= 40)
+        s = PetCare.act(s, PetCare.action(s, PetKind.DOG, "groom:pc1")!!, now)
+        assertEquals(30, s.clean)
+        // 화장실이 있으면 덜 지저분해지고 치우기가 더 깨끗
+        assertTrue(PetCare.passTime(PetCare.bought(base, "pg8"), now.plusHours(10)).clean > PetCare.passTime(base, now.plusHours(10)).clean)
+        // 꾸밈 용품은 쓰다듬기가 더 좋음
+        assertTrue(PetCare.action(PetCare.bought(base, "pa5"), PetKind.DOG, "pet")!!.joy > PetCare.action(base, PetKind.DOG, "pet")!!.joy)
+        // 하네스가 있어야 산책, 고양이는 산책 없음
+        assertNull(PetCare.action(base, PetKind.DOG, "walk"))
+        assertNotNull(PetCare.action(PetCare.bought(base, "pa1"), PetKind.DOG, "walk"))
+        assertNull(PetCare.action(PetCare.bought(base, "pa1"), PetKind.CAT, "walk"))
         // 카탈로그의 모든 반려동물 용품이 하는 일이 정해져 있다
         Catalog.products.filter { it.kind == ItemKind.PET }.forEach { assertNotNull(PetCare.effects[it.id], it.id) }
     }
@@ -169,12 +208,6 @@ class PetCareTest {
         assertEquals("calm", PetFeelings.of(Mood.CALM, ok.copy(full = 50, joy = 50), 12, "콩이").expr)
         // 밤 9~10시는 졸려서 덜 움직인다
         assertEquals(PetEnergy.LOW, PetFeelings.of(Mood.JOYFUL, ok, 21, "콩이").energy)
-    }
-
-    @Test
-    fun 고양이는_산책_대신_집에서_논다() {
-        assertTrue(PetCare.Action.WALK !in PetCare.actionsFor(PetKind.CAT))
-        assertTrue(PetCare.Action.WALK in PetCare.actionsFor(PetKind.DOG))
     }
 
     @Test

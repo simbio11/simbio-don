@@ -581,21 +581,11 @@ class MainActivity : ComponentActivity() {
                         weather = weather,
                         city = WeatherService.city(this@MainActivity)?.name,
                         pet = vm.pet.collectAsStateWithLifecycle().value,
-                        onPetAct = { a ->
-                            vm.petAct(a) { why ->
+                        onPetAct = { id ->
+                            vm.petAct(id) { r ->
                                 val name = home.look.callName
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    why ?: when (a) {
-                                        com.simbio.don.game.PetCare.Action.FEED -> "$name 맛있게 먹었어요"
-                                        com.simbio.don.game.PetCare.Action.TREAT -> "$name 간식에 신났어요"
-                                        com.simbio.don.game.PetCare.Action.PLAY -> "$name 신나게 놀았어요"
-                                        com.simbio.don.game.PetCare.Action.WALK -> "$name 산책 다녀왔어요"
-                                        com.simbio.don.game.PetCare.Action.GROOM -> "$name 보송보송해졌어요"
-                                        com.simbio.don.game.PetCare.Action.PET -> "$name 기분 좋아해요"
-                                    },
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                val msg = r.fold({ com.simbio.don.game.PetCare.say(it.done, name) }, { it.message ?: "지금은 할 수 없어요" })
+                                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                             }
                         },
                     )

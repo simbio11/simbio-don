@@ -102,15 +102,23 @@ class PetFlowTest {
         waitText("콩이 돌보기")
         rule.onNodeWithText("콩이 돌보기").performScrollTo()
         shot("p1_house_pet")
+        // 처음엔 배가 덜 불러야 밥을 먹는다
+        bg { repo.debugSetPet { it.copy(full = 40) } }
         val before = petNow().food
-        rule.onNodeWithText("밥 주기").performScrollTo().performClick()
+        rule.onNodeWithText("밥").performScrollTo().performClick()
+        waitText("사료 주기")
+        shot("p1b_care_food")
+        rule.onNodeWithText("사료 주기").performScrollTo().performClick()
         rule.waitUntil(5_000) { petNow().food == before - 1 }
+        rule.onNodeWithText("놀이").performScrollTo().performClick()
+        waitText("쓰다듬기")
         rule.onNodeWithText("쓰다듬기").performScrollTo().performClick()
-        rule.waitUntil(5_000) { petNow().petted != null }
+        rule.waitUntil(5_000) { "pet" in petNow().last }
         // 몰에서 사료를 사면 바로 쌓인다
         bg { repo.buyMock("[멍멍배송] 로얄캔딘 독 어덜트 2kg", 29_000, com.simbio.don.game.ItemKind.PET, "돈't 몰", LocalDate.now(), LocalDateTime.now()) }
-        rule.waitUntil(5_000) { petNow().food == before - 1 + 10 }
-        waitText("사료 ${before + 9}번", substring = true)
+        rule.waitUntil(5_000) { petNow().stock["pf1"] == 10 }
+        rule.onNodeWithText("밥").performScrollTo().performClick()
+        waitText("로얄캔딘 독 어덜트 2kg")
         shot("p2_house_pet_fed")
 
         // 몰의 반려동물 용품: 분류 칩과 패러디 상품명
