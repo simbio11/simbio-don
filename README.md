@@ -65,3 +65,11 @@
 - [docs/idea.md](docs/idea.md) — 원안·실존 확인·채택안 (2026-10-07)
 - [docs/decisions.md](docs/decisions.md) — 확정 결정·마일스톤·미결 사항
 - [docs/m0-install.md](docs/m0-install.md) — M0 설치와 1~2주 실사용 체크리스트
+- [docs/pet-animation.md](docs/pet-animation.md) — 반려동물 모션(걷기·자기 등) 프레임 사양 (2026-11-03)
+- [docs/pet-animation-prompts.md](docs/pet-animation-prompts.md) — 11종 제미나이 프롬프트(기준컷·걷기·앉기·자기·먹기·장난)
+
+## 에셋
+
+- `assets/pets/` — 반려동물 표정 도트 세트 11종. 캐릭터마다 2×4 표정 시트(`sheet.*`)와
+  마젠타 배경을 투명으로 바꾼 스프라이트 8장(`sprites/01_joy.png`~`08_sleep.png`)이 들어 있습니다.
+  목록·표정 순서는 [assets/pets/README.md](assets/pets/README.md) 참고.
