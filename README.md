@@ -17,6 +17,7 @@
 
 - [docs/idea.md](docs/idea.md) — 원안·실존 확인·채택안 (2026-10-07)
 - [docs/decisions.md](docs/decisions.md) — 확정 결정과 미결 사항
+- [docs/pet-animation.md](docs/pet-animation.md) — 반려동물 모션(걷기·자기 등) 프레임 사양과 생성 프롬프트 (2026-11-03)
 
 ## 에셋
 
