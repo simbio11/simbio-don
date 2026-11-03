@@ -1,0 +1,552 @@
+{
+  "tabby_cat": {
+    "walk_cells": 8,
+    "walk_pick": [
+      4,
+      5,
+      6,
+      7
+    ],
+    "walk_score": 0.5526,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        213,
+        254
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        232,
+        256
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        395,
+        254
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        227,
+        256
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        233,
+        256
+      ]
+    }
+  },
+  "longhair_cat": {
+    "walk_cells": 8,
+    "walk_pick": [
+      0,
+      5,
+      4,
+      7
+    ],
+    "walk_score": 0.2435,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        272,
+        255
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        275,
+        254
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        458,
+        254
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        258,
+        256
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        283,
+        258
+      ]
+    }
+  },
+  "pomeranian": {
+    "walk_cells": 8,
+    "walk_pick": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "walk_score": 0.3929,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        261,
+        254
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        265,
+        255
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        419,
+        255
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        253,
+        256
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        276,
+        255
+      ]
+    }
+  },
+  "shiba_mix": {
+    "walk_cells": 8,
+    "walk_pick": [
+      0,
+      2,
+      6,
+      7
+    ],
+    "walk_score": 0.1878,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        226,
+        258
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        236,
+        254
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        422,
+        255
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        222,
+        255
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        234,
+        256
+      ]
+    }
+  },
+  "shiba": {
+    "walk_cells": 8,
+    "walk_pick": [
+      0,
+      4,
+      1,
+      7
+    ],
+    "walk_score": 0.1442,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        243,
+        257
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        241,
+        254
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        298,
+        291
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        235,
+        255
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        251,
+        255
+      ]
+    }
+  },
+  "bulldog": {
+    "walk_cells": 8,
+    "walk_pick": [
+      0,
+      2,
+      3,
+      6
+    ],
+    "walk_score": 0.1756,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        258,
+        255
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        256,
+        254
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        414,
+        259
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        251,
+        254
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        261,
+        254
+      ]
+    }
+  },
+  "poodle": {
+    "walk_cells": 8,
+    "walk_pick": [
+      0,
+      5,
+      4,
+      6
+    ],
+    "walk_score": 0.1378,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        238,
+        255
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        238,
+        255
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        316,
+        290
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        232,
+        254
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        230,
+        254
+      ]
+    }
+  },
+  "corgi": {
+    "walk_cells": 8,
+    "walk_pick": [
+      0,
+      2,
+      4,
+      6
+    ],
+    "walk_score": 0.0879,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        222,
+        256
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        224,
+        254
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        290,
+        289
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        226,
+        255
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        235,
+        255
+      ]
+    }
+  },
+  "beagle": {
+    "walk_cells": 8,
+    "walk_pick": [
+      2,
+      0,
+      6,
+      7
+    ],
+    "walk_score": 0.1178,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        258,
+        254
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        261,
+        255
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        258,
+        254
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        262,
+        254
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        259,
+        255
+      ]
+    }
+  },
+  "pomeranian_alt": {
+    "walk_cells": 8,
+    "walk_pick": [
+      3,
+      7,
+      1,
+      4
+    ],
+    "walk_score": 0.28,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        289,
+        260
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        265,
+        255
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        433,
+        255
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        261,
+        254
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        311,
+        255
+      ]
+    }
+  },
+  "longhair_tabby_cat": {
+    "walk_cells": 8,
+    "walk_pick": [
+      0,
+      2,
+      6,
+      3
+    ],
+    "walk_score": 0.1948,
+    "walk": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        273,
+        260
+      ]
+    },
+    "sit": {
+      "frames": 2,
+      "fps": 4,
+      "canvas": [
+        278,
+        255
+      ]
+    },
+    "sleep": {
+      "frames": 2,
+      "fps": 2,
+      "canvas": [
+        344,
+        294
+      ]
+    },
+    "idle": {
+      "frames": 4,
+      "fps": 5,
+      "canvas": [
+        268,
+        255
+      ]
+    },
+    "play": {
+      "frames": 4,
+      "fps": 8,
+      "canvas": [
+        288,
+        257
+      ]
+    }
+  }
+}
