@@ -55,6 +55,8 @@
 
 ## 4. 생성 규격 (제미나이)
 
+> 실제로 붙여넣을 프롬프트 전문은 [pet-animation-prompts.md](pet-animation-prompts.md) 에 있다(11종 · 동작별).
+
 ### 4.1 시트 규격
 - **한 장에 3×2 격자(6프레임)**, 4:3 비율(`gemini-3-pro-image-preview`, 2K = 1536×1152).
   칸당 512×576 → 스프라이트 210px에 충분.

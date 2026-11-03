@@ -17,7 +17,8 @@
 
 - [docs/idea.md](docs/idea.md) — 원안·실존 확인·채택안 (2026-10-07)
 - [docs/decisions.md](docs/decisions.md) — 확정 결정과 미결 사항
-- [docs/pet-animation.md](docs/pet-animation.md) — 반려동물 모션(걷기·자기 등) 프레임 사양과 생성 프롬프트 (2026-11-03)
+- [docs/pet-animation.md](docs/pet-animation.md) — 반려동물 모션(걷기·자기 등) 프레임 사양 (2026-11-03)
+- [docs/pet-animation-prompts.md](docs/pet-animation-prompts.md) — 11종 제미나이 프롬프트(기준컷·걷기·앉기·자기·먹기·장난)
 
 ## 에셋
 
