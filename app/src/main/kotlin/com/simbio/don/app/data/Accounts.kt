@@ -141,3 +141,47 @@ object AccountBalances {
     /** 부채 (갚을 돈, 양수로) */
     fun debts(list: List<AccountBalance>): Long = list.filter { !it.account.hidden && it.balance < 0 }.sumOf { -it.balance }
 }
+
+/**
+ * 생활비 통장 잔액과 "이번 달 남은 생활비"가 왜 다른지.
+ *
+ * 둘은 원래 다른 숫자다: 통장 잔액은 실제로 통장에 있는 돈이고, 남은 생활비는 예산에서 내 몫 지출만 뺀 것.
+ * 그래도 이 항목들을 맞춰 보면 거의 같아져야 한다 — 남는 [rest]가 크면 놓친 알림이나 잘못 적힌 기록이 있다는 뜻.
+ */
+data class LivingGap(
+    val account: AccountEntity,
+    /** 통장 잔액 */
+    val bank: Long,
+    /** 현금·페이 머니 잔액 (통장에서 뽑거나 충전한 생활비) */
+    val cash: Long,
+    /** 카드로 쓰고 아직 안 낸 카드값 (생활비엔 들어갔지만 통장에선 아직 안 나감) */
+    val cardDue: Long,
+    /** 나눠 낸 돈 중 아직 못 받은 것 (통장에선 나갔지만 생활비엔 내 몫만) */
+    val receivable: Long,
+    /** 남이 내서 아직 안 보낸 돈 (생활비엔 들어갔지만 통장에선 아직 안 나감) */
+    val payable: Long,
+    /** 어느 통장인지 없이 적힌 지출 (생활비엔 들어갔지만 통장 잔액엔 빠짐) */
+    val unassigned: Long,
+    /** 이번 달 남은 생활비 */
+    val remaining: Long,
+) {
+    /** 통장 잔액에 위 항목을 맞춰 본 실제로 쓸 수 있는 돈 */
+    val usable: Long get() = bank + cash - cardDue + receivable - payable - unassigned
+
+    /** 그래도 남는 차이 (처음 통장에 있던 생활비 밖의 돈이거나, 놓친 알림·잘못 적힌 기록) */
+    val rest: Long get() = usable - remaining
+
+    /** 보여 줄 만큼 설명할 항목이 있는지 */
+    val hasItems: Boolean get() = cash != 0L || cardDue != 0L || receivable != 0L || payable != 0L || unassigned != 0L
+
+    companion object {
+        /** 생활비 통장 = 첫 번째 은행 통장 (없으면 현금). 없으면 null */
+        fun of(balances: List<AccountBalance>, book: SplitBook, unassignedSpend: Long, remaining: Long): LivingGap? {
+            val shown = balances.filter { !it.account.hidden }.sortedBy { it.account.sortOrder }
+            val main = shown.firstOrNull { it.type == AccountType.BANK } ?: shown.firstOrNull { it.type == AccountType.CASH } ?: return null
+            val cardDue = shown.filter { it.type == AccountType.CARD && it.balance < 0 }.sumOf { -it.balance }
+            val cash = shown.filter { it.account.id != main.account.id && (it.type == AccountType.CASH || it.type == AccountType.ETC) }.sumOf { it.balance }
+            return LivingGap(main.account, main.balance, cash, cardDue, book.toReceive, book.toSend, unassignedSpend, remaining)
+        }
+    }
+}

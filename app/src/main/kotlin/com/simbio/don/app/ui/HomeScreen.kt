@@ -81,9 +81,12 @@ fun HomeScreen(
     onFixGap: (com.simbio.don.app.data.BalanceGapEntity, com.simbio.don.app.data.DonRepository.BalanceFix) -> Unit = { _, _ -> },
     onDismissGap: (com.simbio.don.app.data.BalanceGapEntity) -> Unit = {},
     onBalanceFix: () -> Unit = {},
-    /** 통장 없이 적힌 지출 합 · 통장에 넣기 */
+    /** 통장 없이 적힌 지출 합 */
     unassignedSpend: Long = 0,
-    onAssign: () -> Unit = {},
+    /** 어느 통장·카드인지 골라 줄 기록 */
+    accountQuestions: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
+    onChooseAccount: (com.simbio.don.app.data.EntryEntity, Long, Boolean) -> Unit = { _, _, _ -> },
+    onOpenAssets: () -> Unit = {},
     /** 계획과 맞을 것 같은 결제 */
     hints: List<com.simbio.don.app.data.PlanHint> = emptyList(),
     onConfirmHint: (com.simbio.don.app.data.PlanHint, Int?) -> Unit = { _, _ -> },
@@ -96,18 +99,22 @@ fun HomeScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
+    // 생활비 통장 잔액과 남은 생활비가 왜 다른지
+    val livingGap = remember(home.accounts, splits, unassignedSpend, home.plan.disposable, home.monthLiving) {
+        com.simbio.don.app.data.LivingGap.of(home.accounts, splits, unassignedSpend, home.plan.disposable - home.monthLiving)
+    }
     var dismissed by remember { mutableStateOf(0) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(Modifier.padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 AppName(24.sp)
                 Text(shortDate(home.today), fontSize = 13.sp, color = DonColors.InkMuted)
             }
-            Box(Modifier.size(48.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
-                CharacterSprite(home.mood, 34.dp)
+            Box(Modifier.size(40.dp).clip(CircleShape).background(DonColors.GameSurface), contentAlignment = Alignment.Center) {
+                CharacterSprite(home.mood, 30.dp)
             }
             Spacer(Modifier.width(4.dp))
             RoundIconButton(UiIcon.GEAR, "설정", true, onSettings)
@@ -120,8 +127,10 @@ fun HomeScreen(
         // 알림 잔액이 앱과 다르면 (놓친 결제 알림 등) 바로 맞추기
         gaps.forEach { g ->
             val name = home.accounts.firstOrNull { it.account.id == g.accountId }?.account?.name ?: "통장"
-            BalanceGapCard(g, name, { how -> onFixGap(g, how) }, { onDismissGap(g) }, unassignedSpend, onAssign)
+            BalanceGapCard(g, name, { how -> onFixGap(g, how) }, { onDismissGap(g) }, unassignedSpend)
         }
+        // 어느 통장에서 나갔는지 모르는 결제·입금: 자산 목록에서 고른다
+        AccountQuestionCard(accountQuestions, home.accounts.map { it.account }, onChooseAccount, limit = 2, onMore = onOpenAssets)
         // 계획과 맞을 것 같은 결제 (두 번 세지 않게)
         hints.take(2).forEach { h -> PlanHintCard(h, { people -> onConfirmHint(h, people) }, { onRejectHint(h) }) }
         // 들어온 돈이 정말 수입인지 (정산·내 돈 옮김·맡은 돈)
@@ -167,7 +176,7 @@ fun HomeScreen(
 
         HomeCards.layout.shown.forEach { card ->
             when (card) {
-                HomeCard.WEEK -> TodayWeekCard(home, onBalanceFix)
+                HomeCard.WEEK -> TodayWeekCard(home, onBalanceFix, livingGap)
                 HomeCard.FORECAST -> home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay, calendar.events)
                 HomeCard.UPCOMING -> UpcomingCard(
@@ -262,14 +271,14 @@ fun Banner(
     tint: Color = DonColors.Warn,
 ) {
     Row(
-        Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().card().padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBubble(icon, tint)
-        Spacer(Modifier.width(12.dp))
+        IconBubble(icon, tint, size = 32.dp)
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = DonColors.Ink)
-            Text(body, fontSize = 12.sp, color = DonColors.InkMuted)
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = DonColors.Ink, maxLines = 1)
+            Text(body, fontSize = 11.sp, color = DonColors.InkMuted, maxLines = 2)
         }
         Spacer(Modifier.width(8.dp))
         SmallButton(onClick = onAction, containerColor = tint) { Text(action) }
@@ -321,78 +330,76 @@ fun ListDivider() = Divider(Modifier.padding(vertical = 2.dp))
  * 이번 주: 큰 지출(경조사·쇼핑 같은 분류)과 이번 주 계획은 여기서 빠지고 남은 날의 오늘 몫으로 나뉜다.
  */
 @Composable
-fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}) {
+fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}, gap: com.simbio.don.app.data.LivingGap? = null) {
     val week = home.currentWeek
     val day = home.day
-    RealCard("실제 내 돈 · 오늘과 이번 주") {
+    Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("실제 내 돈 · 오늘과 이번 주", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
         if (week == null) {
-            Text("이번 주기 밖의 날짜예요. 월급을 확인해 주세요.")
-            return@RealCard
+            Text("이번 주기 밖의 날짜예요. 월급을 확인해 주세요.", fontSize = 13.sp, color = DonColors.InkSoft)
+            return@Column
         }
-        // 오늘
-        Text(if (day.over) "오늘 몫을 넘었어요" else "오늘 남은 돈", fontSize = 13.sp, color = if (day.over) DonColors.Warn else DonColors.InkMuted)
-        Text(
-            if (day.over) "+" + won(-day.left) else won(day.left),
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (day.over) DonColors.Warn else DonColors.Ink,
+        // 오늘: 오늘 몫(아침 기준) − 그날 쓴 돈(식비·카페 같은 분류). 큰 지출·계획은 이번 주 남은 날에 나뉜다
+        BudgetRow(
+            label = if (day.over) "오늘 몫을 넘었어요" else "오늘 남은 돈",
+            value = if (day.over) "+" + won(-day.left) else won(day.left),
+            over = day.over,
+            spent = day.spentDaily,
+            budget = day.allowance,
+            left = "쓴 돈 ${won(day.spentDaily)}",
+            right = "오늘 몫 ${won(day.allowance)}",
+            big = true,
         )
-        Spacer(Modifier.height(6.dp))
-        Meter(day.spentDaily, day.allowance)
-        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-            Text("오늘 쓴 돈 ${won(day.spentDaily)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
-            Text("오늘 몫 ${won(day.allowance)}", fontSize = 12.sp, color = DonColors.InkMuted)
-        }
-        if (day.spentBig > 0) {
-            Text("오늘 큰 지출·계획한 지출 ${won(day.spentBig)}은 이번 주 남은 ${day.daysLeft}일에 나눴어요", fontSize = 12.sp, color = DonColors.InkMuted)
-        }
-        if (day.reserved > 0) {
-            Text("이번 주 계획·일정 예산 ${won(day.reserved)}은 미리 빼 뒀어요", fontSize = 12.sp, color = DonColors.InkMuted)
-        }
-        if (home.today == week.week.end && week.available > 0) {
-            Text("오늘이 이번 주 마지막 날 · 남기면 아낀 돈이 돼요", fontSize = 12.sp, color = DonColors.Real, fontWeight = FontWeight.SemiBold)
-        }
-        Divider(Modifier.padding(vertical = 10.dp))
+        val notes = listOfNotNull(
+            day.spentBig.takeIf { it > 0 }?.let { "큰 지출·계획 ${won(it)}은 이번 주 남은 ${day.daysLeft}일에 나눔" },
+            day.reserved.takeIf { it > 0 }?.let { "계획·일정 예산 ${won(it)} 미리 뺌" },
+            "오늘이 이번 주 마지막 날 · 남기면 아낀 돈".takeIf { home.today == week.week.end && week.available > 0 },
+        )
+        if (notes.isNotEmpty()) Text(notes.joinToString(" · "), fontSize = 11.sp, color = DonColors.InkMuted)
+        Divider()
         // 이번 주
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text("이번 주 남은 돈", fontSize = 13.sp, color = DonColors.InkMuted, modifier = Modifier.weight(1f))
-            Text(
-                won(week.available),
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (week.available >= 0) DonColors.Ink else DonColors.Warn,
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Meter(week.spent, week.budget)
-        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-            Text("쓴 돈 ${won(week.spent)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
-            Text("기본 예산 ${won(week.budget)}", fontSize = 12.sp, color = DonColors.InkMuted)
-        }
-        if (week.overspent > 0) WarnLine("기본 예산보다 ${won(week.overspent)} 더 썼어요", fontSize = 12)
-        if (week.carryIn != 0L) Text("지난주에서 넘어온 돈 ${won(week.carryIn)} 포함", fontSize = 12.sp, color = DonColors.InkMuted)
-        Text("${shortDate(week.week.start)} ~ ${shortDate(week.week.end)} · ${week.week.days}일", fontSize = 12.sp, color = DonColors.InkMuted)
-        Divider(Modifier.padding(vertical = 10.dp))
-        // 이번 달 (월급날 기준) 생활비: 남은 돈과 남은 날 하루에
+        BudgetRow(
+            label = "이번 주 남은 돈 · ${shortDate(week.week.start)}~${shortDate(week.week.end)}",
+            value = won(week.available),
+            over = week.available < 0,
+            spent = week.spent,
+            budget = week.budget,
+            left = "쓴 돈 ${won(week.spent)}" + if (week.carryIn != 0L) " · 지난주 ${won(week.carryIn)} 포함" else "",
+            right = "기본 예산 ${won(week.budget)}",
+        )
+        if (week.overspent > 0) WarnLine("기본 예산보다 ${won(week.overspent)} 더 썼어요", fontSize = 11)
+        Divider()
+        // 이번 달 (월급날 기준) 생활비
         val monthLeft = home.plan.disposable - home.monthLiving
         val daysLeft = (java.time.temporal.ChronoUnit.DAYS.between(home.today, home.cycle.end) + 1).coerceAtLeast(1)
+        BudgetRow(
+            label = "이번 달 남은 생활비",
+            value = won(monthLeft),
+            over = monthLeft < 0,
+            spent = home.monthLiving,
+            budget = home.plan.disposable,
+            left = "쓴 돈 ${won(home.monthLiving)} / ${won(home.plan.disposable)}",
+            right = "${shortDate(home.cycle.end)}까지 ${daysLeft}일",
+        )
+        if (monthLeft < 0) WarnLine("이번 달 생활비를 ${won(-monthLeft)} 넘었어요", fontSize = 11)
+        // 통장 잔액과 왜 다른지 · 놓친 알림이 있으면 잔액 맞추기
+        if (gap != null) LivingGapRow(gap, onBalanceFix)
+        else TextButton(onClick = onBalanceFix) { Text("통장 잔액이 실제와 다르면 · 잔액 맞추기", fontSize = 12.sp) }
+    }
+}
+
+/** 남은 돈 한 줄 묶음: 이름 · 큰 금액 / 얇은 막대 / 쓴 돈 · 기준 */
+@Composable
+private fun BudgetRow(label: String, value: String, over: Boolean, spent: Long, budget: Long, left: String, right: String, big: Boolean = false) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text("이번 달 남은 생활비", fontSize = 13.sp, color = DonColors.InkMuted, modifier = Modifier.weight(1f))
-            Text(
-                won(monthLeft),
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (monthLeft >= 0) DonColors.Ink else DonColors.Warn,
-            )
+            Text(label, fontSize = 12.sp, color = if (over && big) DonColors.Warn else DonColors.InkMuted, modifier = Modifier.weight(1f), maxLines = 1)
+            Text(value, fontSize = if (big) 24.sp else 18.sp, fontWeight = FontWeight.Bold, color = if (over) DonColors.Warn else DonColors.Ink, maxLines = 1)
         }
-        Spacer(Modifier.height(6.dp))
-        Meter(home.monthLiving, home.plan.disposable)
-        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-            Text("쓴 돈 ${won(home.monthLiving)} / 생활비 ${won(home.plan.disposable)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
-            Text("${shortDate(home.cycle.end)}까지 ${daysLeft}일", fontSize = 12.sp, color = DonColors.InkMuted)
+        com.simbio.don.app.ui.Meter(spent, budget, Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Text(left, fontSize = 11.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f), maxLines = 1)
+            Text(right, fontSize = 11.sp, color = DonColors.InkMuted, maxLines = 1)
         }
-        if (monthLeft < 0) WarnLine("이번 달 생활비를 ${won(-monthLeft)} 넘었어요", fontSize = 12)
-        // 결제 알림을 놓쳐 통장 잔액과 안 맞을 때 바로 고치기
-        TextButton(onClick = onBalanceFix) { Text("통장 잔액이 실제와 다르면 · 잔액 맞추기", fontSize = 12.sp) }
     }
 }

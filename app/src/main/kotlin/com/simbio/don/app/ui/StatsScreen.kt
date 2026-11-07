@@ -69,7 +69,7 @@ fun StatsScreen(
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         MonthSwitcher(view, hasPrev, hasNext, onPrev, onNext)
         SegmentedToggle(listOf("월간", "연간"), 0) { if (it == 1) yearly = true }
@@ -174,7 +174,7 @@ private fun YearStats(year: com.simbio.don.app.data.YearView, onPickYear: (Int) 
     val i = year.years.indexOf(year.year)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIconButton(UiIcon.CHEVRON_LEFT, "지난해", enabled = i in 0 until year.years.lastIndex) { onPickYear(year.years[i + 1]) }

@@ -73,7 +73,7 @@ fun HouseScreen(
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(Modifier.padding(top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -154,7 +154,7 @@ fun HouseScreen(
 
         if (house.wouldHaveCost > 0) {
             Row(
-                Modifier.fillMaxWidth().card().padding(18.dp),
+                Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {

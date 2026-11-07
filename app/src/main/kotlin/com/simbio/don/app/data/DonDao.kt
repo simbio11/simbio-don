@@ -110,6 +110,10 @@ interface DonDao {
     @Query("SELECT * FROM entry WHERE accountId IS NULL AND type != 'TRANSFER' ORDER BY epochDay, id")
     fun entriesWithoutAccount(): Flow<List<EntryEntity>>
 
+    /** 어느 통장인지 고를 기록 후보: 자산 없이 적힌 것 + 앱이 짐작해 넣은 것 (최근 것 먼저) */
+    @Query("SELECT * FROM entry WHERE (accountId IS NULL AND type != 'TRANSFER') OR acctGuess = 1 ORDER BY epochDay DESC, id DESC")
+    fun entriesNeedingAccount(): Flow<List<EntryEntity>>
+
     @Query("SELECT * FROM entry WHERE label IN (:labels) ORDER BY epochDay, id")
     fun entriesLabeled(labels: List<String>): Flow<List<EntryEntity>>
 

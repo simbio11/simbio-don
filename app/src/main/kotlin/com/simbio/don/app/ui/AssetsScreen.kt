@@ -86,32 +86,22 @@ fun AssetsScreen(
     onAddPot: () -> Unit = {},
     /** 실제 잔액 맞추기 (결제 알림을 놓쳐 안 맞을 때) */
     onBalanceFix: () -> Unit = {},
-    /** 어느 자산인지 없이 적힌 수입·지출 (잔액에 안 들어간 것) */
-    unassigned: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
-    onAssign: () -> Unit = {},
+    /** 어느 통장·카드인지 골라 줄 기록 (자산 없이 적힌 것 + 앱이 짐작해 넣은 것) */
+    questions: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
+    onChooseAccount: (com.simbio.don.app.data.EntryEntity, Long, Boolean) -> Unit = { _, _, _ -> },
 ) {
     val shown = balances.filter { !it.account.hidden }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ScreenTitle("자산", trailing = { SmallButton(onClick = onAdd) { Text("+ 자산 추가") } })
         NetWorthCard(balances, shown.size >= 2, onTransfer)
-        if (unassigned.isNotEmpty() && shown.any(::fixable)) {
-            val spent = unassigned.filter { it.type != com.simbio.don.budget.EntryType.INCOME.name && it.type != com.simbio.don.budget.EntryType.REFUND.name }.sumOf { it.amount }
-            val main = shown.filter { it.type == AccountType.BANK }.minByOrNull { it.account.sortOrder } ?: shown.firstOrNull { it.type == AccountType.CASH }
-            SectionCard("잔액에 안 들어간 기록 ${unassigned.size}건") {
-                Text(
-                    "어느 통장에서 나갔는지 없이 적힌 기록이라 자산 잔액에 빠져 있어요 (지출 ${won(spent)}). 생활비는 이미 들어가 있어요.",
-                    fontSize = 13.sp,
-                    color = DonColors.InkSoft,
-                )
-                Spacer(Modifier.height(8.dp))
-                main?.let { m -> Button(onClick = onAssign, modifier = Modifier.fillMaxWidth()) { Text("'${m.account.name}'에서 나간 걸로 넣기") } }
-            }
-        }
+        AccountQuestionCard(questions, balances.map { it.account }, onChoose = onChooseAccount, limit = 50)
         if (shown.any(::fixable)) {
-            SubButton(onClick = onBalanceFix, modifier = Modifier.fillMaxWidth(), containerColor = DonColors.Surface) { Text("실제 잔액과 다르면 · 잔액 맞추기") }
+            com.simbio.don.app.ui.kit.TextButton(onClick = onBalanceFix, modifier = Modifier.align(Alignment.CenterHorizontally), color = DonColors.InkMuted) {
+                Text("실제 잔액과 다르면 · 잔액 맞추기", fontSize = 12.sp)
+            }
         }
         WealthCard(wealth, checkDue, onCheck, onAddPot)
         if (shown.isEmpty()) {
@@ -186,7 +176,7 @@ fun AccountDetailScreen(
         BackBar(balance.account.name, onBack, trailing = { TextButton(onClick = onEdit) { Text("수정") } })
         LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp)) {
             item {
-                Column(Modifier.fillMaxWidth().card().padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconBubble(balance.type.icon(), balance.type.tint(), 36.dp)
                         Spacer(Modifier.width(10.dp))

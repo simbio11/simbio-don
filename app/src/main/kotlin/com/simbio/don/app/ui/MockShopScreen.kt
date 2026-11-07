@@ -309,7 +309,7 @@ fun MockShopScreen(
 /** 흰 카드 + 굵은 소제목 */
 @Composable
 private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = DonColors.Ink)
         content()
     }

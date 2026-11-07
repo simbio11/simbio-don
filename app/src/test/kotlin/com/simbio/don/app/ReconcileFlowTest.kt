@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -121,7 +122,11 @@ class ReconcileFlowTest {
         assertTrue(bg { db().allEntriesNow() }.any { it.label == "빠진 지출 (잔액 맞춤)" && it.amount == 20_000L })
 
         // 실제 잔액 맞추기 화면: 실제가 1만 원 많다 → 잔액만
-        rule.onNodeWithText("통장 잔액이 실제와 다르면 · 잔액 맞추기").performScrollTo().performClick()
+        // 통장 잔액과 남은 생활비 차이 한 줄 → 펼치면 항목과 "실제 잔액으로 맞추기"
+        rule.onNodeWithContentDescription("통장 잔액과 남은 생활비 차이").performScrollTo().performClick()
+        waitText("이번 달 남은 생활비")
+        shot("r1b_living_gap")
+        rule.onNodeWithText("실제 잔액으로 맞추기").performScrollTo().performClick()
         waitText("실제 잔액 맞추기")
         val app = bg { repo.balanceNow(db().accountsNow().single().id)!! }
         rule.onNodeWithText("앱 잔액 ${"%,d".format(app)}원", substring = true)

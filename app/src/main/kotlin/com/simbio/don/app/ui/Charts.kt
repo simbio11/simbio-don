@@ -48,6 +48,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import com.simbio.don.app.ui.kit.CategoryIcon
+import com.simbio.don.app.ui.kit.tint
 import com.simbio.don.app.ui.kit.WarnLine
 import com.simbio.don.app.ui.kit.card
 import com.simbio.don.budget.CategoryTotal
@@ -248,14 +249,14 @@ fun CategoryBars(
     onClick: ((com.simbio.don.budget.Category) -> Unit)? = null,
 ) {
     val max = totals.maxOfOrNull { it.amount } ?: 0
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         totals.take(limit).forEach { t ->
             Row(
                 Modifier.fillMaxWidth().let { if (onClick != null) it.clickable { onClick(t.category) } else it },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CategoryIcon(t.category, 36.dp)
-                Spacer(Modifier.width(12.dp))
+                CategoryIcon(t.category, 32.dp)
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(t.category.label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DonColors.Ink)
@@ -266,7 +267,7 @@ fun CategoryBars(
                 Spacer(Modifier.height(6.dp))
                 Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(ChartColors.Track)) {
                     val frac = if (max == 0L) 0f else t.amount.toFloat() / max
-                    Box(Modifier.fillMaxWidth(frac.coerceAtLeast(0.01f)).height(6.dp).clip(RoundedCornerShape(3.dp)).background(ChartColors.Series))
+                    Box(Modifier.fillMaxWidth(frac.coerceAtLeast(0.01f)).height(6.dp).clip(RoundedCornerShape(3.dp)).background(t.category.tint))
                 }
                 previous[t.category]?.let { p ->
                     val diff = t.amount - p
@@ -344,17 +345,17 @@ fun StatTile(label: String, value: String, sub: String? = null, modifier: Modifi
     }
 }
 
-/** 도넛 조각 색: 큰 순서대로 이 차례 (색약 검증한 순서), 나머지는 회색 "그 밖" */
-val DonutSlots = listOf(Color(0xFF2A78D6), Color(0xFFEB6834), Color(0xFF1BAF7A), Color(0xFFEDA100), Color(0xFFE87BA4))
+/** 도넛에서 따로 그리는 카테고리 수 (나머지는 회색 "그 밖") */
+const val DonutMax = 8
 val DonutOther = Color(0xFFC4CAD1)
 
 /** 도넛 한 조각 */
 data class DonutPart(val label: String, val amount: Long, val color: Color)
 
-/** 카테고리 합계 → 도넛 조각 (5개 + 그 밖) */
+/** 카테고리 합계 → 도넛 조각. 색은 아이콘과 같은 카테고리 색 (큰 8개 + 그 밖) */
 fun donutParts(totals: List<CategoryTotal>): List<DonutPart> {
-    val top = totals.take(DonutSlots.size).mapIndexed { i, t -> DonutPart(t.category.label, t.amount, DonutSlots[i]) }
-    val rest = totals.drop(DonutSlots.size).sumOf { it.amount }
+    val top = totals.take(DonutMax).map { DonutPart(it.category.label, it.amount, it.category.tint) }
+    val rest = totals.drop(DonutMax).sumOf { it.amount }
     return if (rest > 0) top + DonutPart("그 밖", rest, DonutOther) else top
 }
 
@@ -440,17 +441,15 @@ fun DonutLegend(
     subs: (com.simbio.don.budget.Category) -> List<com.simbio.don.budget.SubTotal> = { emptyList() },
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        totals.forEachIndexed { i, t ->
+        totals.forEach { t ->
             val subTotals = subs(t.category).filter { it.sub != null }
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                     .let { if (onClick != null) it.clickable { onClick(t.category) } else it }
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(DonutSlots.getOrNull(i) ?: DonutOther))
-                Spacer(Modifier.width(10.dp))
-                CategoryIcon(t.category, 32.dp)
+                CategoryIcon(t.category, 30.dp)
                 Spacer(Modifier.width(10.dp))
                 Text(t.category.label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DonColors.Ink, modifier = Modifier.weight(1f))
                 Text("${t.shareBps / 100}%", fontSize = 13.sp, color = ChartColors.InkMuted)
@@ -460,7 +459,7 @@ fun DonutLegend(
             if (subTotals.isNotEmpty()) {
                 // 소분류: 들여 쓴 작은 줄 (안 고른 것은 '그 밖')
                 val rest = t.amount - subTotals.sumOf { it.amount }
-                Column(Modifier.padding(start = 62.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(Modifier.padding(start = 40.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     (subTotals.map { it.sub!! to it.amount } + listOfNotNull(("그 밖" to rest).takeIf { rest > 0 })).forEach { (name, amount) ->
                         Row(Modifier.fillMaxWidth()) {
                             Text(name, fontSize = 12.sp, color = ChartColors.InkSecondary, modifier = Modifier.weight(1f))

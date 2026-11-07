@@ -16,10 +16,12 @@ import com.simbio.don.notify.AppRule
 import com.simbio.don.notify.CreditCards
 import com.simbio.don.notify.Institutions
 import com.simbio.don.notify.RawNotification
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -102,5 +104,41 @@ class CardSpendTest {
         val shinhan = Institutions.named("신한은행")!!
         assertNull(Institutions.appFor(shinhan, mapOf(cardApp to "신한 SOL페이")))
         assertEquals("my.sol", Institutions.appFor(shinhan, mapOf(cardApp to "신한 SOL페이", "my.sol" to "신한 SOL뱅크")))
+    }
+
+    @Test
+    fun `알림 앱이 자산과 안 이어졌으면 짐작 표시, 골라 주면 반영되고 앱도 기억한다`() = runTest {
+        val samsung = repo.saveAccount(AccountEntity(name = "삼성 체크", type = AccountType.BANK.name, opening = 0, sortOrder = 5))
+        repo.saveRule(AppRule("pay.app", "OO페이"))
+        repo.handleNotification(RawNotification("pay.app", "결제", "GS25 3,000원 결제", at(9)))
+        repo.handleNotification(RawNotification("pay.app", "결제", "스타벅스 4,000원 결제", at(10)))
+        // 통장 없이 직접 적은 지출도 같이 묻는다
+        repo.addManual(day, 5_000, "분식", EntryType.SPEND, Category.FOOD)
+        val q = repo.accountQuestions.first()
+        assertEquals(3, q.size)
+        assertEquals(2, q.count { it.acctGuess && it.accountId == bank })
+        // 하나 골라 주면서 "이 앱은 앞으로 이 통장" → 같은 앱의 다른 짐작도 같이 정해진다
+        val first = q.first { it.label == "GS25" }
+        repo.chooseAccount(first.id, samsung, rememberApp = true)
+        assertEquals(1, repo.accountQuestions.first().size)
+        assertEquals("pay.app", db.dao().accountsNow().first { it.id == samsung }.packageName)
+        assertEquals(listOf(samsung, samsung), db.dao().allEntriesNow().filter { it.packageName == "pay.app" }.map { it.accountId })
+        // 다음 결제는 묻지 않고 그 통장으로
+        repo.handleNotification(RawNotification("pay.app", "결제", "CU 2,000원 결제", at(11)))
+        val cu = db.dao().allEntriesNow().first { it.label == "CU" }
+        assertEquals(samsung, cu.accountId)
+        assertTrue(!cu.acctGuess)
+        // 통장 없이 적은 것도 골라 주면 잔액에 들어간다
+        repo.chooseAccount(repo.accountQuestions.first().single().id, bank)
+        assertTrue(repo.accountQuestions.first().isEmpty())
+        assertEquals(1_000_000L - 5_000, balances().getValue("생활비 통장"))
+        assertEquals(-9_000L, balances().getValue("삼성 체크"))
+    }
+
+    @Test
+    fun `자산이 하나뿐이면 어느 통장인지 묻지 않는다`() = runTest {
+        repo.saveRule(AppRule("pay.app", "OO페이"))
+        repo.handleNotification(RawNotification("pay.app", "결제", "GS25 3,000원 결제", at(9)))
+        assertTrue(repo.accountQuestions.first().isEmpty())
     }
 }

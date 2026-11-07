@@ -236,7 +236,7 @@ private fun QuizGame(seed: Long, qs: List<PriceQuiz.Question>, salary: Long, onD
     Text("${i + 1} / ${qs.size} · 맞힌 문제 $right", fontSize = 13.sp, color = DonColors.InkSoft)
     ProgressLine((i + if (picked != null) 1 else 0).toFloat() / qs.size)
     Column(
-        Modifier.fillMaxWidth().card().padding(20.dp),
+        Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

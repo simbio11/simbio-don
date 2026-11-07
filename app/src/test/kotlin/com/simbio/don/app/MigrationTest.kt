@@ -197,4 +197,23 @@ class MigrationTest {
         }
         db.query("SELECT pet FROM house").use { c -> c.moveToNext(); assertEquals("", c.getString(0)) }
     }
+
+    @Test
+    fun v18에서_v19로_짐작한_통장_표시는_이은_앱이_아닌_최근_알림_기록에만() {
+        val today = java.time.LocalDate.now().toEpochDay()
+        helper.createDatabase("m18.db", 18).use { db ->
+            db.execSQL("INSERT INTO account (id, name, type, opening, sortOrder, hidden, packageName) VALUES (1, '생활비 통장', 'BANK', 0, 0, 0, 'bank.app')")
+            db.execSQL("INSERT INTO account (id, name, type, opening, sortOrder, hidden, packageName) VALUES (2, '신한카드', 'CARD', 0, 1, 0, NULL)")
+            // 1: 통장에 이은 앱 → 확실, 2: 안 이은 앱인데 통장에 → 짐작, 3: 직접 적음, 4: 오래된 알림 기록
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, packageName, accountId) VALUES (1, $today, 1000, 'a', 'SPEND', 'NOTIFICATION', 'bank.app', 1)")
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, packageName, accountId) VALUES (2, $today, 2000, 'b', 'SPEND', 'NOTIFICATION', 'pay.app', 1)")
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, packageName, accountId) VALUES (3, $today, 3000, 'c', 'SPEND', 'MANUAL', NULL, 1)")
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, packageName, accountId) VALUES (4, ${today - 100}, 4000, 'd', 'SPEND', 'NOTIFICATION', 'pay.app', 1)")
+        }
+        val db = helper.runMigrationsAndValidate("m18.db", 19, true, DonDatabase.MIGRATION_18_19)
+        db.query("SELECT id, acctGuess FROM entry ORDER BY id").use { c ->
+            val got = buildList { while (c.moveToNext()) add(c.getInt(0) to c.getInt(1)) }
+            assertEquals(listOf(1 to 0, 2 to 1, 3 to 0, 4 to 0), got)
+        }
+    }
 }

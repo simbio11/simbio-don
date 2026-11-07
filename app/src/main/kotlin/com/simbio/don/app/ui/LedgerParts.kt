@@ -133,9 +133,9 @@ fun MonthSummaryRow(income: Long, spent: Long) {
 /** 흰 카드 + 제목 (+ 오른쪽 더보기) */
 @Composable
 fun SectionCard(title: String, trailing: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().card().padding(horizontal = 20.dp, vertical = 18.dp)) {
+    Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 12.dp)) {
         PanelTitle(title, trailing = trailing)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
         content()
     }
 }

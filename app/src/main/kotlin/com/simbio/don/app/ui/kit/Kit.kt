@@ -503,6 +503,9 @@ private fun Category.look(): CategoryLook = when (this) {
     else -> CategoryLook(categoryIconRes(icon), Color(color ?: 0xFF8B95A1))
 }
 
+/** 카테고리 대표 색 — 아이콘·도넛 조각·막대·범례가 모두 이 한 색을 쓴다 */
+val Category.tint: Color get() = look().tint
+
 /** 카테고리 동그라미 아이콘 */
 @Composable
 fun CategoryIcon(c: Category, size: Dp = 36.dp, modifier: Modifier = Modifier) {

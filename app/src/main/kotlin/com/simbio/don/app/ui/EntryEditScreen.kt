@@ -608,7 +608,7 @@ fun SegmentedToggle(options: List<String>, selected: Int, onSelect: (Int) -> Uni
 /** 흰 카드 (+ 선택 소제목) */
 @Composable
 fun FormCard(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         title?.let { Text(it, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DonColors.Ink) }
         content()
     }

@@ -100,7 +100,7 @@ fun EventDetailScreen(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(14.dp).clip(CircleShape).background(Color(e.color or 0xFF000000.toInt())))
                     Spacer(Modifier.width(10.dp))
@@ -154,7 +154,7 @@ private fun EventMoneyCard(
 ) {
     var editing by remember(plan?.id) { mutableStateOf(plan == null) }
     var amount by remember(plan?.id) { mutableStateOf(plan?.amount?.toString() ?: "") }
-    Column(Modifier.fillMaxWidth().card().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("이 일정에 쓸 돈", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
         if (plan != null && !editing) {
             val (line, color) = budgetLine(plan)

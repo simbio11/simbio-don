@@ -69,7 +69,7 @@ object Backup {
             o.putOpt("fixedId", x.fixedId); o.putOpt("sub", x.sub); o.putOpt("installmentId", x.installmentId)
             o.putOpt("installmentNo", x.installmentNo); o.putOpt("incomeId", x.incomeId)
             o.putOpt("share", x.share); o.putOpt("people", x.people); o.putOpt("settleFor", x.settleFor); o.put("owe", x.owe)
-            o.putOpt("fxText", x.fxText); o.put("fxGuess", x.fxGuess); o.put("linkState", x.linkState)
+            o.putOpt("fxText", x.fxText); o.put("fxGuess", x.fxGuess); o.put("linkState", x.linkState); o.put("acctGuess", x.acctGuess)
         })
         put("reviews", arr(d.reviews) { o, x ->
             o.put("id", x.id); o.put("packageName", x.packageName); o.put("action", x.action); o.put("amount", x.amount)
@@ -186,7 +186,7 @@ object Backup {
                         o.intOrNull("minuteOfDay"), o.longOrNull("fixedId"), o.strOrNull("sub"), o.longOrNull("installmentId"),
                         o.strOrNull("installmentNo"), o.longOrNull("incomeId"), share = o.longOrNull("share"),
                         people = o.intOrNull("people"), settleFor = o.longOrNull("settleFor"), owe = o.optBoolean("owe", false),
-                        fxText = o.strOrNull("fxText"), fxGuess = o.optBoolean("fxGuess", false), linkState = o.optInt("linkState", 0))
+                        fxText = o.strOrNull("fxText"), fxGuess = o.optBoolean("fxGuess", false), linkState = o.optInt("linkState", 0), acctGuess = o.optBoolean("acctGuess", false))
                 },
                 reviews = list(root, "reviews") { o ->
                     ReviewItemEntity(o.getLong("id"), o.getString("packageName"), o.getString("action"), o.getLong("amount"),

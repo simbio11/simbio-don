@@ -1003,6 +1003,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             postedAtEpochSecond = p.postedAt.epochSecond(),
             category = r.category,
             accountId = accountFor(p.packageName) ?: r.accountId ?: mainAccount(),
+            acctGuess = accountFor(p.packageName) == null && r.accountId == null && ambiguous(),
             minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
             incomeId = r.id,
         )
@@ -1630,6 +1631,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             postedAtEpochSecond = p.postedAt.epochSecond(),
             category = f.category,
             accountId = accountFor(p.packageName) ?: f.accountId ?: mainAccount(),
+            acctGuess = accountFor(p.packageName) == null && f.accountId == null && ambiguous(),
             minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
             fixedId = f.id,
         )
@@ -1651,22 +1653,31 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         return (shown.firstOrNull { it.type == AccountType.BANK.name } ?: shown.firstOrNull { it.type == AccountType.CASH.name })?.id
     }
 
+    /** 결제·입금을 적을 자산과, 앱이 짐작한 것인지 ([guess] — 골라 달라고 보인다) */
+    private data class Routed(val id: Long?, val guess: Boolean)
+
+    /** 돈이 드나드는 자산이 둘 이상이면 어느 쪽인지 헷갈릴 수 있다 */
+    private suspend fun ambiguous(): Boolean =
+        dao.accountsNow().count { !it.hidden && it.type in SPENDABLE } > 1
+
     /**
      * 이 결제를 적을 자산. 신용카드 결제는 통장이 아니라 카드 자산 (카드값을 낼 때 통장 → 카드로 옮긴다) —
      * 예전엔 카드 앱을 자산과 안 이었으면 기본 통장(생활비 통장)에서 나간 것으로 적혀 통장 잔액이 줄었다.
-     * 체크카드·페이·은행 앱은 이은 자산 → 기본 통장.
+     * 이은 자산이 있으면 그것, 없으면 기본 통장으로 두되 짐작한 것이라고 표시해 나중에 고르게 한다.
      */
-    private suspend fun spendAccount(p: ParsedPayment): Long? {
+    private suspend fun route(p: ParsedPayment): Routed {
         val linked = dao.accountsNow().firstOrNull { it.packageName == p.packageName && !it.hidden }
         val text = p.rawText.ifBlank { p.label }
-        val card = com.simbio.don.notify.CreditCards.company(p.packageName, text)
+        val card = if (p.action == RuleAction.INCOME) null else com.simbio.don.notify.CreditCards.company(p.packageName, text)
         if (card == null) {
-            // 체크카드는 통장에서 바로 나간다 (카드 앱이 카드 자산과 이어져 있어도)
-            if (linked?.type == AccountType.CARD.name && "체크" in text) return mainAccount() ?: linked.id
-            return linked?.id ?: mainAccount()
+            // 체크카드는 통장에서 바로 나간다 (카드 앱이 카드 자산과 이어져 있어도) — 어느 통장인지는 모르니 짐작 표시
+            if (linked?.type == AccountType.CARD.name && "체크" in text) return Routed(mainAccount() ?: linked.id, ambiguous())
+            if (linked != null) return Routed(linked.id, false)
+            val main = mainAccount()
+            return Routed(main, main != null && ambiguous())
         }
-        if (linked != null && linked.type != AccountType.BANK.name && linked.type != AccountType.CASH.name) return linked.id
-        return cardAccount(card, p.packageName)
+        if (linked != null && linked.type != AccountType.BANK.name && linked.type != AccountType.CASH.name) return Routed(linked.id, false)
+        return Routed(cardAccount(card, p.packageName), false)
     }
 
     /** 카드사 이름에 맞는 카드 자산 (없으면 만든다: 처음 잔액 0, 쓴 만큼 갚을 돈이 쌓인다) */
@@ -1695,11 +1706,27 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     val unassignedEntries: Flow<List<EntryEntity>> = dao.entriesWithoutAccount().map { l -> l.filter(::unassigned) }
 
-    /** 자산 없이 적힌 기록을 기본 통장으로 (자산 탭 잔액에 생활비가 반영되게). 옮긴 수 */
-    suspend fun assignUnassigned(accountId: Long): Int = locked {
-        val list = dao.allEntriesNow().filter(::unassigned)
-        dao.updateEntries(list.map { it.copy(accountId = accountId) })
-        list.size
+    /** 어느 통장인지 골라 줄 기록: 자산 없이 적힌 것 + 앱이 짐작해 넣은 것 (최근 것 먼저, 이체·정산·보낼 돈은 뺌) */
+    val accountQuestions: Flow<List<EntryEntity>> = dao.entriesNeedingAccount().map { l ->
+        l.filter { e -> unassigned(e) || (e.acctGuess && e.type != EntryType.TRANSFER.name && !e.owe && e.settleFor == null) }
+    }
+
+    /**
+     * 이 기록은 [accountId] 통장(카드)에서 나갔다·들어왔다. [rememberApp]이면 그 알림 앱을 그 자산에 이어,
+     * 같은 앱에서 온 다른 짐작 기록도 같이 정하고 앞으로 그 앱 알림은 그 자산으로 적는다.
+     */
+    suspend fun chooseAccount(entryId: Long, accountId: Long, rememberApp: Boolean = false): Int = locked {
+        val e = dao.entryNow(entryId) ?: return@locked 0
+        val pkg = e.packageName
+        var n = 0
+        dao.updateEntry(e.copy(accountId = accountId, acctGuess = false)); n++
+        if (rememberApp && pkg != null) {
+            dao.accountsNow().filter { it.id != accountId && it.packageName == pkg }.forEach { dao.saveAccount(it.copy(packageName = null)) }
+            dao.accountsNow().firstOrNull { it.id == accountId && it.packageName == null }?.let { dao.saveAccount(it.copy(packageName = pkg)) }
+            dao.allEntriesNow().filter { it.id != entryId && it.packageName == pkg && (it.acctGuess || unassigned(it)) && it.type != EntryType.TRANSFER.name }
+                .forEach { dao.updateEntry(it.copy(accountId = accountId, acctGuess = false)); n++ }
+        }
+        n
     }
 
     private suspend fun accountFor(pkg: String?): Long? =
@@ -2343,7 +2370,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             val a = accounts[e.accountId] ?: return@forEach
             if (a.type != AccountType.BANK.name && a.type != AccountType.CASH.name) return@forEach
             val card = com.simbio.don.notify.CreditCards.company(e.packageName, e.rawText ?: "") ?: return@forEach
-            dao.updateEntry(e.copy(accountId = cardAccount(card, e.packageName)))
+            dao.updateEntry(e.copy(accountId = cardAccount(card, e.packageName), acctGuess = false))
         }
     }
 
@@ -2629,12 +2656,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val f = p.foreign
         val fromWallet = f != null && type == EntryType.SPEND && NotificationParser.extractAmount(p.rawText) == null &&
             boughtForeign(p.packageName, f.currency, p.postedAt.toLocalDate())
-        val account = if (fromWallet) null else spendAccount(p)
+        val routed = if (fromWallet) Routed(null, false) else route(p)
+        val account = routed.id
         // 할부 결제 알림 ("3개월")이면 달마다 나눠 적는다
         val months = if (type == EntryType.SPEND) Installments.monthsIn(p.rawText) else null
         if (months != null && p.amount >= months) {
             addInstallmentLocked(
-                p.postedAt.toLocalDate(), p.amount, months, p.label, category, null, "", spendAccount(p),
+                p.postedAt.toLocalDate(), p.amount, months, p.label, category, null, "", account,
                 p.postedAt.hour * 60 + p.postedAt.minute, p,
             )
             return category
@@ -2656,6 +2684,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 nameUnknown = p.nameUnknown,
                 fxText = p.foreign?.text(),
                 fxGuess = p.rateGuess,
+                acctGuess = routed.guess,
             ),
         )
         return category
@@ -2701,6 +2730,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 postedAtEpochSecond = p.postedAt.epochSecond(),
                 category = f?.category ?: Category.BILLS.name,
                 accountId = accountFor(p.packageName) ?: f?.accountId ?: mainAccount(),
+                acctGuess = accountFor(p.packageName) == null && f?.accountId == null && ambiguous(),
                 minuteOfDay = p.postedAt.hour * 60 + p.postedAt.minute,
                 fixedId = f?.id,
             ),
@@ -3109,6 +3139,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     companion object {
         /** 뷰티샵 예약 내용 앞에 붙는 글자 */
         const val LOOK_PAYLOAD = "look:"
+
+        /** 돈이 나가고 들어오는 자산 종류 (모으는 통장·투자 빼고) */
+        private val SPENDABLE = setOf(AccountType.BANK.name, AccountType.CASH.name, AccountType.CARD.name, AccountType.ETC.name)
 
         /** 내 계좌끼리 옮긴 돈 기록 이름 */
         const val SELF_TRANSFER_LABEL = "내 계좌 이체"

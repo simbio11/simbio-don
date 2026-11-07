@@ -39,7 +39,7 @@ import com.simbio.don.budget.CategoryGuesser
         BalanceGapEntity::class,
         AppEventEntity::class,
     ],
-    version = 18,
+    version = 19,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -57,7 +57,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                 }
                 ).build().also { instance = it }
         }
@@ -67,6 +67,20 @@ abstract class DonDatabase : RoomDatabase() {
             // 메모리 DB는 닫지 않고 놓기만 한다: 앞 테스트의 화면 밖 계산이 닫힌 DB를 읽어 다음 테스트를 깨지 않게
             if (!inMemoryForTests) instance?.close()
             instance = null
+        }
+
+        /** v19: 어느 통장에서 나갔는지 앱이 짐작한 기록 표시 (최근 45일 알림 기록 중 앱이 자산과 안 이어진 것) */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entry ADD COLUMN acctGuess INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "UPDATE entry SET acctGuess = 1 WHERE source = 'NOTIFICATION' AND accountId IS NOT NULL " +
+                        "AND type IN ('SPEND','EXCEPTION','INCOME','REFUND') " +
+                        "AND epochDay >= CAST(julianday('now', 'localtime') - 2440587.5 AS INTEGER) - 45 " +
+                        "AND (SELECT packageName FROM account WHERE account.id = entry.accountId) IS NOT entry.packageName " +
+                        "AND (SELECT COUNT(*) FROM account WHERE hidden = 0 AND type IN ('BANK','CASH','CARD','ETC')) > 1",
+                )
+            }
         }
 
         /** v18: 동물 돌보기 상태, 계획을 한 달에 나눠서 (경조사는 처음부터 그렇게) */

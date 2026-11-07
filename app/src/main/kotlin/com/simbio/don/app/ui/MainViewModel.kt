@@ -397,9 +397,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 어느 자산인지 없이 적힌 수입·지출 (자산 잔액에 안 들어감) */
     val unassigned = repo.unassignedEntries.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun assignUnassigned(done: (Int) -> Unit = {}) = viewModelScope.launch {
-        val id = repo.mainAccount() ?: return@launch done(0)
-        done(repo.assignUnassigned(id))
+    /** 어느 통장에서 나갔는지·들어왔는지 골라 줄 기록 (자산 없이 적힌 것 + 앱이 짐작해 넣은 것) */
+    val accountQuestions = repo.accountQuestions.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun chooseAccount(entryId: Long, accountId: Long, rememberApp: Boolean, done: (Int) -> Unit = {}) = viewModelScope.launch {
+        done(repo.chooseAccount(entryId, accountId, rememberApp))
     }
 
     val balanceFixEntries = repo.balanceFixEntries.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

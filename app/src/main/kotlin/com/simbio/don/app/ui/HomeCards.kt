@@ -66,7 +66,11 @@ data class HomeLayout(val order: List<HomeCard>, val hidden: Set<HomeCard>) {
     fun encode(): String = order.joinToString(",") { (if (it in hidden) "-" else "") + it.name }
 
     companion object {
-        val Default = HomeLayout(HomeCard.entries, emptySet())
+        /**
+         * 처음엔 핵심만: 이번 달 요약 세 칸(위 카드와 숫자가 겹침)과 한 줄 분석은 숨겨 둔다 — 홈 꾸미기에서 켤 수 있다.
+         * 꾸민 적이 있으면 저장된 차례를 그대로 쓴다.
+         */
+        val Default = HomeLayout(HomeCard.entries, setOf(HomeCard.TILES, HomeCard.INSIGHTS))
 
         /** 저장된 글 → 차례. 모르는 이름은 빼고, 새로 생긴 카드는 끝에 보이게 */
         fun decode(s: String?): HomeLayout {

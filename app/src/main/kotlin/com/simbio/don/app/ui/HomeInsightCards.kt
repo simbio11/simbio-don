@@ -168,7 +168,7 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit, events: Map<Lo
                         else -> com.simbio.don.budget.Grasses.level(spent, plan)
                     }
                     Column(
-                        Modifier.weight(1f).aspectRatio(0.82f).padding(1.dp).clip(RoundedCornerShape(8.dp))
+                        Modifier.weight(1f).aspectRatio(1.05f).padding(1.dp).clip(RoundedCornerShape(8.dp))
                             .background(level?.let { Color(tint.grassFaint(it)) } ?: Color.Transparent)
                             .let { if (isToday) it.border(1.5.dp, DonColors.Real, RoundedCornerShape(8.dp)) else it }
                             .let { if (!isToday && inside && planned[d] != null && !past) it.dashedBorder(DonColors.InkFaint, 8.dp, 1.dp) else it }
@@ -207,7 +207,7 @@ fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit, events: Map<Lo
             }
         }
         Text(
-            "하루 몫 ${won(plan)} · 덜 쓴 날일수록 진한 초록, 넘긴 날은 빨강, 점선은 계획" + if (events.isNotEmpty()) ", 색 점은 일정" else "",
+            "하루 몫 ${won(plan)} · 진한 초록 = 덜 씀, 빨강 = 넘김, 점선 = 계획",
             fontSize = 11.sp,
             color = DonColors.InkMuted,
         )

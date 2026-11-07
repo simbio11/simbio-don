@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -38,6 +41,7 @@ import com.simbio.don.app.data.FxRateEntity
 import com.simbio.don.app.data.PlanHint
 import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Button
+import com.simbio.don.app.ui.kit.Divider
 import com.simbio.don.app.ui.kit.FilterChip
 import com.simbio.don.app.ui.kit.Icon
 import com.simbio.don.app.ui.kit.SmallButton
@@ -59,7 +63,6 @@ fun BalanceGapCard(
     onDismiss: () -> Unit,
     /** 자산 없이 적힌 지출 (이미 생활비엔 들어갔지만 잔액엔 빠진 것) */
     unassignedSpend: Long = 0,
-    onAssign: () -> Unit = {},
 ) {
     val diff = gap.real - gap.app
     RealCard("$accountName 잔액이 달라요", icon = { Icon(UiIcon.WARN, 18.dp, DonColors.Warn) }) {
@@ -77,11 +80,10 @@ fun BalanceGapCard(
         // 이미 적었는데 통장이 안 정해진 지출이 차이일 수 있다 → 빠진 지출로 넣으면 두 번 세진다
         if (diff < 0 && unassignedSpend > 0) {
             Text(
-                "통장 없이 적힌 지출 ${won(unassignedSpend)}이 잔액에서 빠져 있어요. 이미 생활비에 들어간 돈이라 '빠진 지출'로 넣으면 두 번 세져요. 먼저 그 기록을 통장에 넣어 보세요.",
+                "통장 없이 적힌 지출 ${won(unassignedSpend)}이 잔액에서 빠져 있어요. 이미 생활비에 들어간 돈이라 '빠진 지출'로 넣으면 두 번 세져요. 먼저 그 기록의 통장을 골라 주세요 (자산 탭).",
                 fontSize = 12.sp,
                 color = DonColors.Warn,
             )
-            SmallButton(onClick = onAssign, modifier = Modifier.fillMaxWidth()) { Text("적힌 지출을 $accountName 에 넣기") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             if (diff < 0) {
@@ -239,7 +241,9 @@ fun BalanceFixScreen(
     onFix: (accountId: Long, diff: Long, how: BalanceFix) -> Unit,
     onBack: () -> Unit,
     unassignedSpend: Long = 0,
-    onAssign: () -> Unit = {},
+    /** 어느 통장·카드인지 골라 줄 기록 */
+    questions: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
+    onChooseAccount: (com.simbio.don.app.data.EntryEntity, Long, Boolean) -> Unit = { _, _, _ -> },
     /** 예전에 잔액 맞추기로 넣은 기록 (두 번 센 것이면 생활비에서 뺄 수 있게) */
     fixes: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
     onDropFix: (com.simbio.don.app.data.EntryEntity) -> Unit = {},
@@ -259,12 +263,9 @@ fun BalanceFixScreen(
             if (list.isEmpty()) {
                 Text("맞출 통장이 없어요. 자산 탭에서 통장이나 현금을 넣어 주세요.", fontSize = 14.sp, color = DonColors.InkMuted)
             }
-            if (unassignedSpend > 0) {
-                Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("먼저: 통장 없이 적힌 지출 ${won(unassignedSpend)}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
-                    Text("생활비에는 이미 들어갔지만 통장 잔액에서는 빠져 있어요. 이걸 통장에 넣으면 차이가 줄어요 (생활비는 그대로).", fontSize = 12.sp, color = DonColors.InkMuted)
-                    Button(onClick = onAssign, modifier = Modifier.fillMaxWidth()) { Text("생활비 통장에 넣기") }
-                }
+            if (questions.isNotEmpty()) {
+                Text("먼저 어느 통장에서 나갔는지 골라 주세요. 통장 없이 적힌 지출은 잔액에서 빠져 있어서 잔액이 안 맞아 보일 수 있어요 (생활비는 그대로).", fontSize = 12.sp, color = DonColors.InkMuted)
+                AccountQuestionCard(questions, balances.map { it.account }, onChoose = onChooseAccount, limit = 50)
             }
             list.forEach { b -> BalanceFixRow(b, gaps.firstOrNull { it.accountId == b.account.id }, onFix, unassignedSpend > 0) }
             if (fixes.isNotEmpty()) {
@@ -398,5 +399,64 @@ fun FxRatesCard(rates: List<FxRateEntity>, auto: Boolean, onAuto: (Boolean) -> U
                 }
             }
         }
+    }
+}
+
+/**
+ * "통장 잔액 ↔ 남은 생활비" 한 줄. 누르면 왜 다른지 항목별로 보인다 (카드값 낼 돈·받을 돈·보낼 돈·통장 없는 지출).
+ * 그래도 남는 차이가 크면 잔액 맞추기로.
+ */
+@Composable
+fun LivingGapRow(gap: com.simbio.don.app.data.LivingGap, onBalanceFix: () -> Unit, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { open = !open }.padding(vertical = 6.dp)
+                .semantics(mergeDescendants = true) { contentDescription = "통장 잔액과 남은 생활비 차이" },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("${gap.account.name} ${won(gap.bank)}", fontSize = 12.sp, color = DonColors.InkSoft, modifier = Modifier.weight(1f))
+            Text(
+                if (gap.hasItems) "쓸 수 있는 돈 ${won(gap.usable)}" else "차이 보기",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = DonColors.InkSoft,
+            )
+            Text(if (open) "  ▴" else "  ▾", fontSize = 12.sp, color = DonColors.InkMuted)
+        }
+        if (open) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(DonColors.SurfaceAlt).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                GapLine("${gap.account.name} 잔액", gap.bank)
+                if (gap.cash != 0L) GapLine("현금·페이 잔액", gap.cash)
+                if (gap.cardDue != 0L) GapLine("카드값 낼 돈 (쓴 만큼 아직 안 나감)", -gap.cardDue)
+                if (gap.receivable != 0L) GapLine("받을 돈 (나눠 낸 것)", gap.receivable)
+                if (gap.payable != 0L) GapLine("보낼 돈 (남이 낸 것)", -gap.payable)
+                if (gap.unassigned != 0L) GapLine("통장 없이 적힌 지출", -gap.unassigned)
+                Divider(Modifier.padding(vertical = 2.dp))
+                GapLine("실제로 쓸 수 있는 돈", gap.usable, bold = true)
+                GapLine("이번 달 남은 생활비", gap.remaining)
+                GapLine("그래도 남는 차이", gap.rest, bold = true, warn = kotlin.math.abs(gap.rest) >= 1_000)
+                Text(
+                    if (kotlin.math.abs(gap.rest) < 1_000) "거의 맞아요."
+                    else "통장에 처음부터 있던 생활비 밖의 돈(비상금·월세·저축으로 나갈 돈 등)이거나, 놓친 결제·입금 알림일 수 있어요. 은행 앱 잔액과 다르면 잔액 맞추기로 고쳐요.",
+                    fontSize = 11.sp,
+                    color = DonColors.InkMuted,
+                )
+                TextButton(onClick = onBalanceFix) { Text("실제 잔액으로 맞추기", fontSize = 12.sp) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GapLine(label: String, value: Long, bold: Boolean = false, warn: Boolean = false) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, fontSize = 12.sp, color = if (bold) DonColors.Ink else DonColors.InkSoft, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
+        Text(
+            (if (value > 0 && label != "그래도 남는 차이" && !bold) "+" else "") + won(value),
+            fontSize = 12.sp,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+            color = if (warn) DonColors.Warn else if (bold) DonColors.Ink else DonColors.InkSoft,
+        )
     }
 }

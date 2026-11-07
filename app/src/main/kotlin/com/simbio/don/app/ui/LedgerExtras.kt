@@ -30,6 +30,7 @@ import com.simbio.don.app.data.CycleSummary
 import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Button
 import com.simbio.don.app.ui.kit.CategoryIcon
+import com.simbio.don.app.ui.kit.tint
 import com.simbio.don.budget.Category
 
 // ── 카테고리 예산 ───────────────────────────────────────────
@@ -65,7 +66,7 @@ fun BudgetBars(budgets: Map<Category, Long>, spent: Map<Category, Long>, limit: 
                     Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(ChartColors.Track)) {
                         Box(
                             Modifier.fillMaxWidth(ratio.coerceAtLeast(0.01f)).height(6.dp).clip(RoundedCornerShape(3.dp))
-                                .background(if (over) ChartColors.Critical else ChartColors.Series),
+                                .background(if (over) ChartColors.Critical else c.tint),
                         )
                     }
                     Text("${won(used)} / ${won(budget)} · ${(used * 100 / budget).coerceAtMost(999)}%", fontSize = 11.sp, color = DonColors.InkMuted)

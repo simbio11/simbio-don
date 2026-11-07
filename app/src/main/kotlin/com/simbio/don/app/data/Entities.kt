@@ -162,6 +162,8 @@ data class EntryEntity(
     @ColumnInfo(defaultValue = "0") val fxGuess: Boolean = false,
     /** 정산 짝([settleFor])을 앱이 저절로 이었는지: 0 직접·없음, 1 저절로 (확인 전), 2 "아니에요" (다시 저절로 잇지 않음) */
     @ColumnInfo(defaultValue = "0") val linkState: Int = 0,
+    /** 어느 통장에서 나갔는지 앱이 짐작해서 넣은 것 (알림 앱이 자산과 안 이어져 기본 통장으로 둠) — 골라 달라고 보인다 */
+    @ColumnInfo(defaultValue = "0") val acctGuess: Boolean = false,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */

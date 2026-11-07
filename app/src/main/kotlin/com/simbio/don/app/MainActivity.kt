@@ -542,7 +542,9 @@ class MainActivity : ComponentActivity() {
                         onDismissGap = { vm.dismissBalanceGap(it.accountId) },
                         onBalanceFix = { screens.push(Overlay.BalanceFix) },
                         unassignedSpend = unassignedSpend(vm.unassigned.collectAsStateWithLifecycle().value),
-                        onAssign = { vm.assignUnassigned { n -> Toast.makeText(this@MainActivity, "${n}건을 생활비 통장 잔액에 넣었어요", Toast.LENGTH_SHORT).show() } },
+                        accountQuestions = vm.accountQuestions.collectAsStateWithLifecycle().value,
+                        onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
+                        onOpenAssets = { onTab(Tab.Assets) },
                         hints = vm.planHints.collectAsStateWithLifecycle().value,
                         onConfirmHint = { h, people -> vm.confirmPlanHint(h.plan.id, h.entry.id, people) },
                         incomeQuestions = vm.incomeQuestions.collectAsStateWithLifecycle().value,
@@ -599,8 +601,8 @@ class MainActivity : ComponentActivity() {
                         onCheck = { screens.push(Overlay.AssetCheck) },
                         onAddPot = { screens.push(Overlay.EditAccount(null, com.simbio.don.app.data.AccountType.SAVINGS)) },
                         onBalanceFix = { screens.push(Overlay.BalanceFix) },
-                        unassigned = vm.unassigned.collectAsStateWithLifecycle().value,
-                        onAssign = { vm.assignUnassigned { n -> Toast.makeText(this@MainActivity, "${n}건을 생활비 통장 잔액에 넣었어요", Toast.LENGTH_SHORT).show() } },
+                        questions = vm.accountQuestions.collectAsStateWithLifecycle().value,
+                        onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
                     )
                     Tab.Calendar -> {
                         val month by vm.calendarMonth.collectAsStateWithLifecycle()
@@ -1214,7 +1216,8 @@ class MainActivity : ComponentActivity() {
             }
             Overlay.BalanceFix -> com.simbio.don.app.ui.BalanceFixScreen(
                 unassignedSpend = unassignedSpend(vm.unassigned.collectAsStateWithLifecycle().value),
-                onAssign = { vm.assignUnassigned { n -> Toast.makeText(this, "${n}건을 생활비 통장 잔액에 넣었어요", Toast.LENGTH_SHORT).show() } },
+                questions = vm.accountQuestions.collectAsStateWithLifecycle().value,
+                onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
                 fixes = vm.balanceFixEntries.collectAsStateWithLifecycle().value,
                 onDropFix = { e ->
                     vm.keepBalanceDropFix(e.id)
