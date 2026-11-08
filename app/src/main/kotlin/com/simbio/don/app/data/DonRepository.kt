@@ -1661,30 +1661,51 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         dao.accountsNow().count { !it.hidden && it.type in SPENDABLE } > 1
 
     /**
-     * 이 결제를 적을 자산. 신용카드 결제는 통장이 아니라 카드 자산 (카드값을 낼 때 통장 → 카드로 옮긴다) —
+     * 이 결제를 적을 자산. 순서: ① 알림의 카드·계좌 끝자리가 알려 준 자산 → ② 신용카드면 카드 자산 → ③ 이은 앱의 자산 → ④ 기본 통장(짐작).
+     *
+     * 신용카드 결제는 통장이 아니라 카드 자산 (카드값을 낼 때 통장 → 카드로 옮긴다) —
      * 예전엔 카드 앱을 자산과 안 이었으면 기본 통장(생활비 통장)에서 나간 것으로 적혀 통장 잔액이 줄었다.
-     * 이은 자산이 있으면 그것, 없으면 기본 통장으로 두되 짐작한 것이라고 표시해 나중에 고르게 한다.
+     *
+     * 끝자리는 저절로 배운다: 확실히 정해진 자산(이은 앱·카드사)에 아직 끝자리가 없으면 이 끝자리를 그 자산 것으로 기억하고,
+     * 이미 다른 끝자리를 아는 자산에 새 끝자리가 오면(카드가 여러 장일 수 있어) 짐작으로 표시해 물어본다.
      */
     private suspend fun route(p: ParsedPayment): Routed {
-        val linked = dao.accountsNow().firstOrNull { it.packageName == p.packageName && !it.hidden }
+        val accounts = dao.accountsNow().filter { !it.hidden }
         val text = p.rawText.ifBlank { p.label }
+        val tail = com.simbio.don.notify.AccountHints.tail(text)
+        tail?.let { t -> accounts.firstOrNull { t in com.simbio.don.notify.AccountHints.parse(it.tails) } }?.let { return Routed(it.id, false) }
+
+        suspend fun sure(a: AccountEntity): Routed {
+            if (tail == null) return Routed(a.id, false)
+            val known = com.simbio.don.notify.AccountHints.parse(a.tails)
+            if (known.isEmpty()) {
+                dao.saveAccount(a.copy(tails = com.simbio.don.notify.AccountHints.encode(listOf(tail))))
+                return Routed(a.id, false)
+            }
+            // 다른 끝자리를 이미 아는 자산에 새 끝자리: 같은 앱의 다른 카드일 수 있다
+            return Routed(a.id, true)
+        }
+
+        val linked = accounts.firstOrNull { it.packageName == p.packageName }
         val card = if (p.action == RuleAction.INCOME) null else com.simbio.don.notify.CreditCards.company(p.packageName, text)
         if (card == null) {
             // 체크카드는 통장에서 바로 나간다 (카드 앱이 카드 자산과 이어져 있어도) — 어느 통장인지는 모르니 짐작 표시
             if (linked?.type == AccountType.CARD.name && "체크" in text) return Routed(mainAccount() ?: linked.id, ambiguous())
-            if (linked != null) return Routed(linked.id, false)
+            if (linked != null) return sure(linked)
             val main = mainAccount()
             return Routed(main, main != null && ambiguous())
         }
-        if (linked != null && linked.type != AccountType.BANK.name && linked.type != AccountType.CASH.name) return Routed(linked.id, false)
-        return Routed(cardAccount(card, p.packageName), false)
+        if (linked != null && linked.type != AccountType.BANK.name && linked.type != AccountType.CASH.name) return sure(linked)
+        val cardId = cardAccount(card, p.packageName, tail)
+        return dao.accountsNow().firstOrNull { it.id == cardId }?.let { sure(it) } ?: Routed(cardId, false)
     }
 
     /** 카드사 이름에 맞는 카드 자산 (없으면 만든다: 처음 잔액 0, 쓴 만큼 갚을 돈이 쌓인다) */
-    private suspend fun cardAccount(company: String, pkg: String?): Long {
+    private suspend fun cardAccount(company: String, pkg: String?, tail: String? = null): Long {
         val all = dao.accountsNow()
         val cards = all.filter { it.type == AccountType.CARD.name && !it.hidden }
         val key = com.simbio.don.notify.CreditCards.key(company)
+        tail?.let { t -> cards.firstOrNull { t in com.simbio.don.notify.AccountHints.parse(it.tails) } }?.let { return it.id }
         cards.firstOrNull { it.packageName != null && it.packageName == pkg }?.let { return it.id }
         cards.firstOrNull { key in it.name }?.let { return it.id }
         // 카드가 하나뿐이고 이름에 다른 카드사가 안 적혀 있으면 그 카드
@@ -1720,6 +1741,20 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val pkg = e.packageName
         var n = 0
         dao.updateEntry(e.copy(accountId = accountId, acctGuess = false)); n++
+        // 카드·계좌 끝자리를 기억: 같은 끝자리는 앞으로 이 자산으로, 이미 적힌 같은 끝자리 기록도 같이 정한다
+        val tail = e.rawText?.let { com.simbio.don.notify.AccountHints.tail(it) }
+        if (tail != null) {
+            val all = dao.accountsNow()
+            all.filter { it.id != accountId && tail in com.simbio.don.notify.AccountHints.parse(it.tails) }.forEach {
+                dao.saveAccount(it.copy(tails = com.simbio.don.notify.AccountHints.encode(com.simbio.don.notify.AccountHints.parse(it.tails) - tail)))
+            }
+            all.firstOrNull { it.id == accountId }?.let { a ->
+                val known = com.simbio.don.notify.AccountHints.parse(a.tails)
+                if (tail !in known) dao.saveAccount(a.copy(tails = com.simbio.don.notify.AccountHints.encode(known + tail)))
+            }
+            dao.allEntriesNow().filter { it.id != entryId && (it.acctGuess || unassigned(it)) && it.type != EntryType.TRANSFER.name && it.rawText?.let { r -> com.simbio.don.notify.AccountHints.tail(r) } == tail }
+                .forEach { dao.updateEntry(it.copy(accountId = accountId, acctGuess = false)); n++ }
+        }
         if (rememberApp && pkg != null) {
             dao.accountsNow().filter { it.id != accountId && it.packageName == pkg }.forEach { dao.saveAccount(it.copy(packageName = null)) }
             dao.accountsNow().firstOrNull { it.id == accountId && it.packageName == null }?.let { dao.saveAccount(it.copy(packageName = pkg)) }
@@ -2010,6 +2045,61 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         dao.saveCategoryRule(CategoryRuleEntity(CategoryGuesser.key(label), category.name))
 
     suspend fun resetLearned() = dao.clearCategoryRules()
+
+    // ── 자동 기록 학습: 확신 없는 것만 묻고, 알려 준 만큼 배운다 ──────────────────
+
+    /** 사용자가 확인해 줄 알림 기록 하나와 무엇을 모르는지 */
+    data class AutoCheck(val entry: EntryEntity, val needsCategory: Boolean, val needsName: Boolean, val needsAccount: Boolean)
+
+    /** 최근 알림 기록의 자동화 상태: 확인할 것들과 자동 기록률 */
+    data class AutoState(val checks: List<AutoCheck>, val rate: com.simbio.don.budget.AutoRate) {
+        /** 분류·가게 이름을 물어볼 것 (통장은 따로 "어느 통장이에요?"가 물어본다) */
+        val toAsk: List<AutoCheck> get() = checks.filter { it.needsCategory || it.needsName }
+    }
+
+    /**
+     * 알림으로 적힌 최근 [days]일 기록 중 확신 없는 것: 가게 분류를 키워드로도 못 맞췄고 알려 준 적도 없음(기타),
+     * 가게 이름을 못 뽑음, 어느 통장인지 짐작만 함. 한 번 알려 주면 규칙으로 남아 다음부턴 안 묻는다.
+     */
+    fun autoState(days: Long = 30): Flow<AutoState> =
+        kotlinx.coroutines.flow.combine(dao.entriesSince(LocalDate.now().minusDays(days).toEpochDay()), dao.categoryRules()) { all, rules ->
+            val learned = rules.associate { it.labelKey to Category.of(it.category) }
+            val notif = all.filter { it.source == EntrySource.NOTIFICATION.name && it.type != EntryType.TRANSFER.name && it.type != EntryType.REFUND.name }
+            val checks = notif.mapNotNull { e ->
+                val spend = e.type == EntryType.SPEND.name || e.type == EntryType.EXCEPTION.name
+                val cat = spend && !e.nameUnknown && e.category == Category.ETC.name && CategoryGuesser.basis(e.label, learned) == CategoryGuesser.Basis.UNKNOWN
+                val acct = e.acctGuess || unassigned(e)
+                if (cat || e.nameUnknown || acct) AutoCheck(e, cat, e.nameUnknown, acct) else null
+            }.sortedWith(compareByDescending<AutoCheck> { it.entry.epochDay }.thenByDescending { it.entry.id })
+            AutoState(checks, com.simbio.don.budget.AutoRate(notif.size, checks.size))
+        }
+
+    /** "이 가게는 이 분류예요": 기록과 같은 가게의 다른 기록도 바꾸고, 가게를 기억해 다음부터 저절로 */
+    suspend fun confirmCategory(entryId: Long, category: Category): Int = locked {
+        val e = dao.entryNow(entryId) ?: return@locked 0
+        learn(e.label, category)
+        val key = CategoryGuesser.key(e.label)
+        val same = dao.allEntriesNow().filter { it.type != EntryType.INCOME.name && CategoryGuesser.key(it.label) == key && it.category != category.name }
+        dao.updateEntries(same.map { it.copy(category = category.name) })
+        same.size
+    }
+
+    /** 배운 가게 목록 (가게 이름 → 분류) */
+    val learnedRules: Flow<List<CategoryRuleEntity>> = dao.categoryRules()
+
+    suspend fun forgetLearned(key: String) = dao.deleteCategoryRule(key)
+
+    /** 이 자산에 이은 알림 앱을 푼다 */
+    suspend fun unlinkApp(accountId: Long) = locked {
+        dao.accountsNow().firstOrNull { it.id == accountId }?.let { dao.saveAccount(it.copy(packageName = null)) }
+    }
+
+    /** 이 자산의 카드·계좌 끝자리 하나를 잊는다 */
+    suspend fun forgetTail(accountId: Long, tail: String) = locked {
+        dao.accountsNow().firstOrNull { it.id == accountId }?.let {
+            dao.saveAccount(it.copy(tails = com.simbio.don.notify.AccountHints.encode(com.simbio.don.notify.AccountHints.parse(it.tails) - tail)))
+        }
+    }
 
     val learnedCount: Flow<Int> = dao.categoryRules().map { it.size }
 

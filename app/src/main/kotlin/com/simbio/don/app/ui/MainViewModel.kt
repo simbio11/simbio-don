@@ -397,6 +397,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 어느 자산인지 없이 적힌 수입·지출 (자산 잔액에 안 들어감) */
     val unassigned = repo.unassignedEntries.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** 자동 기록 상태: 확인할 결제들과 자동 기록률 */
+    val autoState = repo.autoState().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DonRepository.AutoState(emptyList(), com.simbio.don.budget.AutoRate(0, 0)))
+
+    fun confirmCategory(entryId: Long, category: com.simbio.don.budget.Category) = viewModelScope.launch { repo.confirmCategory(entryId, category) }
+
+    val learnedRules = repo.learnedRules.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun forgetLearned(key: String) = viewModelScope.launch { repo.forgetLearned(key) }
+    fun unlinkApp(accountId: Long) = viewModelScope.launch { repo.unlinkApp(accountId) }
+    fun forgetTail(accountId: Long, tail: String) = viewModelScope.launch { repo.forgetTail(accountId, tail) }
+
     /** 어느 통장에서 나갔는지·들어왔는지 골라 줄 기록 (자산 없이 적힌 것 + 앱이 짐작해 넣은 것) */
     val accountQuestions = repo.accountQuestions.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

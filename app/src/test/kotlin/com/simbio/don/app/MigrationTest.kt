@@ -216,4 +216,15 @@ class MigrationTest {
             assertEquals(listOf(1 to 0, 2 to 1, 3 to 0, 4 to 0), got)
         }
     }
+
+    @Test
+    fun v19에서_v20으로_자산에_끝자리_칸이_생기고_비어_있다() {
+        helper.createDatabase("m19.db", 19).use { db ->
+            db.execSQL("INSERT INTO account (id, name, type, opening, sortOrder, hidden, packageName) VALUES (1, '생활비 통장', 'BANK', 0, 0, 0, 'bank.app')")
+        }
+        val db = helper.runMigrationsAndValidate("m19.db", 20, true, DonDatabase.MIGRATION_19_20)
+        db.query("SELECT name, tails, packageName FROM account").use { c ->
+            c.moveToNext(); assertEquals("생활비 통장", c.getString(0)); assertEquals("", c.getString(1)); assertEquals("bank.app", c.getString(2))
+        }
+    }
 }

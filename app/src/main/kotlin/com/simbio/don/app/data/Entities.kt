@@ -88,6 +88,8 @@ data class AccountEntity(
     val hidden: Boolean = false,
     /** 이 앱의 결제 알림은 이 자산으로 적는다 */
     val packageName: String? = null,
+    /** 알려 준 카드·계좌 끝자리 ("c1234,a88507" — [com.simbio.don.notify.AccountHints]). 알림에 이 끝자리가 있으면 이 자산으로 적는다 */
+    @ColumnInfo(defaultValue = "") val tails: String = "",
 )
 
 /** 한 주기(월급날 ~ 다음 월급날 전날). 처음 설정 때 만들고, 그다음부터는 월급날마다 자동으로 만든다. */

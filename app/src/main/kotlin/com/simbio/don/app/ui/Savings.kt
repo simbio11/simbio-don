@@ -31,6 +31,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -246,6 +248,8 @@ fun SavingsCard(home: HomeState, onGoals: () -> Unit, onWealth: () -> Unit = {})
             Badge("이번 달 아낀 돈 +${won(home.savedThisMonth)}", DonColors.Good)
             StreakBadge(home.streak)
         }
+        // 모은 돈(저축·목표·아껴서 쌓인 돈)으로 뭘 할 수 있는지
+        WorthLine(sp.savings + sp.goals + sp.unallocated)
         Divider(Modifier.padding(vertical = 6.dp))
         if (home.goals.isNotEmpty()) {
             home.goals.sortedBy { it.done }.take(2).forEach { GoalRow(it, compact = true) }
@@ -539,4 +543,28 @@ private fun LinkDialog(p: GoalProgress, accounts: List<AccountBalance>, onLink: 
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
         containerColor = DonColors.Surface,
     )
+}
+
+/**
+ * "이 돈이면 뭘 할 수 있나": 모은 돈·순자산을 국밥·여행·차 같은 것으로 바꿔 보여 준다. 눌러서 다른 조합을 돌려 본다.
+ * 값은 대략이다. 오늘 날짜가 처음 조합을 정해 날마다 새로 보인다.
+ */
+@Composable
+fun WorthLine(amount: Long, modifier: Modifier = Modifier) {
+    var turn by remember { mutableStateOf(0) }
+    val seed = remember { java.time.LocalDate.now().toEpochDay() }
+    val w = com.simbio.don.budget.Worths.of(amount, seed + turn) ?: return
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(DonColors.SurfaceAlt)
+            .pressable { turn++ }.padding(horizontal = 12.dp, vertical = 8.dp)
+            .semantics { contentDescription = "이 돈이면 ${w.line}" },
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("이 돈이면", fontSize = 11.sp, color = DonColors.InkMuted, modifier = Modifier.weight(1f))
+            Text("눌러서 다른 걸로 ↻", fontSize = 11.sp, color = DonColors.InkMuted)
+        }
+        Text(w.line, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+        w.next?.let { Text("다음 목표 · $it 남았어요", fontSize = 11.sp, color = DonColors.Good, fontWeight = FontWeight.SemiBold) }
+    }
 }

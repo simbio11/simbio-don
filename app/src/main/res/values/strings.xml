@@ -8,7 +8,7 @@
     <string name="widget_description">이번 주 남은 돈과 오늘 쓸 수 있는 돈</string>
     <string name="widget_grass_label">절약 잔디</string>
     <string name="widget_grass_title">절약 잔디</string>
-    <string name="widget_grass_description">하루 예산을 지킨 날마다 초록 한 칸 (안 쓴 날은 더 진하게)</string>
+    <string name="widget_grass_description">7줄 × 12주, 글씨 없이 칸만 — 안 쓴 날일수록 진한 초록</string>
     <string name="widget_calendar_label">이번 달 달력</string>
     <string name="widget_calendar_description">날마다 수입·지출과 다가올 계획</string>
     <string name="widget_saved_label">모은 돈</string>

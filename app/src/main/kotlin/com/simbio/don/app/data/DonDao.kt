@@ -479,6 +479,8 @@ interface DonDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putReviews(x: List<ReviewItemEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putRules(x: List<AppRuleEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSettled(x: List<SettledWeekEntity>)
+    @Query("DELETE FROM category_rule WHERE labelKey = :key") suspend fun deleteCategoryRule(key: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCategoryRules(x: List<CategoryRuleEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putMocks(x: List<MockPurchaseEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putHouses(x: List<HouseEntity>)

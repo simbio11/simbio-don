@@ -105,7 +105,7 @@ object Backup {
         })
         put("accounts", arr(d.accounts) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("type", x.type); o.put("opening", x.opening)
-            o.put("sortOrder", x.sortOrder); o.put("hidden", x.hidden); o.putOpt("packageName", x.packageName)
+            o.put("sortOrder", x.sortOrder); o.put("hidden", x.hidden); o.putOpt("packageName", x.packageName); o.put("tails", x.tails)
         })
         put("categoryDefs", arr(d.categoryDefs) { o, x ->
             o.put("name", x.name); o.put("label", x.label); o.put("income", x.income); o.put("icon", x.icon)
@@ -218,7 +218,7 @@ object Backup {
                 },
                 accounts = list(root, "accounts") { o ->
                     AccountEntity(o.getLong("id"), o.getString("name"), o.getString("type"), o.getLong("opening"), o.getInt("sortOrder"),
-                        o.getBoolean("hidden"), o.strOrNull("packageName"))
+                        o.getBoolean("hidden"), o.strOrNull("packageName"), o.optString("tails"))
                 },
                 categoryDefs = list(root, "categoryDefs") { o ->
                     CategoryDefEntity(o.getString("name"), o.getString("label"), o.getBoolean("income"), o.getString("icon"),

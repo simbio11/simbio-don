@@ -74,6 +74,8 @@ fun SettingsScreen(
     onSaveRule: (AppRule) -> Unit,
     learnedCount: Int,
     onResetLearned: () -> Unit,
+    /** 자동 기록 학습 화면 (배운 가게·앱·카드, 잘못 배운 것 지우기) */
+    onLearned: () -> Unit = {},
     onExport: () -> Unit,
     reminderOn: Boolean = false,
     onReminder: (Boolean) -> Unit = {},
@@ -91,10 +93,6 @@ fun SettingsScreen(
     onWidgetTheme: (ThemeMode) -> Unit = {},
     widgetOpacity: Int = 100,
     onWidgetOpacity: (Int) -> Unit = {},
-    grassWeeks: Int = 0,
-    onGrassWeeks: (Int) -> Unit = {},
-    grassCalendar: Boolean = true,
-    onGrassCalendar: (Boolean) -> Unit = {},
     /** AI 도우미: 켰으면 가린 키 (끝 네 글자) */
     aiKey: String? = null,
     aiModel: com.simbio.don.app.ai.AiModel = com.simbio.don.app.ai.AiModel.OPUS,
@@ -369,19 +367,6 @@ fun SettingsScreen(
                 }
             }
             WidgetPreview(widgetTheme, widgetOpacity)
-            Text("달력 + 절약 잔디 위젯: 잔디 기간", fontSize = 15.sp, color = DonColors.Ink)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                com.simbio.don.app.UiPrefs.GRASS_PERIODS.forEach { w ->
-                    FilterChip(selected = grassWeeks == w, onClick = { onGrassWeeks(w) }, label = { Text(com.simbio.don.app.UiPrefs.grassPeriodLabel(w)) })
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("큰 달력과 같이 보기", fontSize = 14.sp, color = DonColors.Ink)
-                    Text("달력에 날마다 수입·지출, 칸 바탕은 그날 잔디 색이에요. 잔디는 오른쪽 아래에 작게. 끄면 잔디만 크게 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
-                }
-                Switch(checked = grassCalendar, onCheckedChange = onGrassCalendar)
-            }
             Text("투명하게 하면 배경화면이 비쳐요. 어두운 배경화면이면 위젯 색을 \"어둡게\"(밝은 글자)로 고르세요.", fontSize = 12.sp, color = DonColors.InkMuted)
         }
 
@@ -485,7 +470,8 @@ fun SettingsScreen(
         RealCard("카테고리 자동 분류") {
             Text("가게 이름으로 카테고리를 정해요. 기록에서 카테고리를 고치면 그 가게는 다음부터 고친 대로 분류해요.", fontSize = 13.sp, color = DonColors.InkSoft)
             Text("기억한 가게 ${learnedCount}곳", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            if (learnedCount > 0) SubButton(onClick = onResetLearned) { Text("기억한 가게 지우기") }
+            SubButton(onClick = onLearned) { Text("자동 기록 학습 보기") }
+            if (learnedCount > 0) SubButton(onClick = onResetLearned) { Text("기억한 가게 모두 지우기") }
             SubButton(onClick = onCategories, modifier = Modifier.fillMaxWidth()) {
                 Icon(UiIcon.TAG, 18.dp, DonColors.InkSoft)
                 Text("분류 관리 (소분류 · 직접 만들기)")

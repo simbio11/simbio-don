@@ -53,31 +53,9 @@ object UiPrefs {
 
     fun setWidgetOpacity(c: Context, v: Int) = prefs(c).edit().putInt("widget_opacity", v.coerceIn(0, 100)).apply()
 
-    /** 잔디 위젯에 보일 주 수 (0 = 위젯 크기에 맞춰 꽉 채움) */
-    fun grassWeeks(c: Context): Int = prefs(c).getInt("grass_weeks", 0).let { if (it in GRASS_PERIODS) it else 0 }
-
-    fun setGrassWeeks(c: Context, weeks: Int) = prefs(c).edit().putInt("grass_weeks", weeks).apply()
-
-    /** 잔디 위젯을 큰 달력 + 작은 잔디로 (끄면 잔디만) */
-    /** 잔디 위젯에 큰 달력도 같이 (0.20부터 기본은 잔디만 깔끔하게) */
-    fun grassCalendar(c: Context): Boolean = prefs(c).getBoolean("grass_calendar_v2", false)
-
-    fun setGrassCalendar(c: Context, on: Boolean) = prefs(c).edit().putBoolean("grass_calendar_v2", on).apply()
-
     /** 캘린더 탭에 가계부(날마다 쓴 돈·그날 기록)도 보이기 */
     fun calendarMoney(c: Context): Boolean = prefs(c).getBoolean("calendar_money", true)
 
     fun setCalendarMoney(c: Context, on: Boolean) = prefs(c).edit().putBoolean("calendar_money", on).apply()
 
-    /** 고를 수 있는 잔디 기간: 한 달·두 달·석 달·반년·크기에 맞춤 */
-    val GRASS_PERIODS = listOf(4, 8, 12, 26, 0)
-
-    fun grassPeriodLabel(weeks: Int) = when (weeks) {
-        0 -> "자동"
-        4 -> "4주"
-        8 -> "8주"
-        12 -> "12주"
-        26 -> "반년"
-        else -> "${weeks}주"
-    }
 }

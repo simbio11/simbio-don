@@ -17,6 +17,7 @@ import com.simbio.don.app.data.toEntry
 import com.simbio.don.app.ui.compactWon
 import com.simbio.don.app.ui.kit.CharacterRenderer
 import com.simbio.don.budget.Grass
+import com.simbio.don.budget.Grasses
 import com.simbio.don.budget.Stats
 import com.simbio.don.budget.Won
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +32,7 @@ import java.time.LocalDateTime
 /** 고를 수 있는 위젯 (설정에서 홈 화면에 바로 놓기) */
 enum class WidgetKind(val label: String, val description: String, val cls: Class<*>) {
     WEEK("이번 주 남은 돈", "남은 돈과 오늘 쓸 수 있는 돈, + 버튼으로 바로 적기", WeekWidget::class.java),
-    GRASS("절약 잔디", "날마다 한 칸 — 하루 예산을 지킨 날은 초록, 안 쓴 날은 더 진하게, 넘긴 날은 빨강 (설정에서 큰 달력도 같이)", GrassWidget::class.java),
+    GRASS("절약 잔디", "7줄 × 12주, 글씨 없이 칸만 — 하루 예산을 지킨 날은 초록, 안 쓴 날은 더 진하게, 넘긴 날은 빨강", GrassWidget::class.java),
     CALENDAR("이번 달 달력", "날마다 수입·지출·다가올 계획, + 버튼으로 바로 적기", CalendarWidget::class.java),
     SAVED("모은 돈", "지금까지 모은 돈과 목표까지 남은 돈", SavedWidget::class.java),
     BUDDY("내 캐릭터", "이번 주 씀씀이에 따라 표정이 바뀌어요", BuddyWidget::class.java),
@@ -148,64 +149,28 @@ abstract class DonWidget : AppWidgetProvider() {
     }
 }
 
-/** 무지출 잔디: 깃허브 잔디처럼 최근 몇 달 — 안 쓴 날일수록 진한 초록, 하루 몫을 넘긴 날은 빨강 */
+/** 절약 잔디: 7줄 × 12주 칸만 (글씨 없이) — 안 쓴 날일수록 진한 초록, 하루 몫을 넘긴 날은 빨강 */
 class GrassWidget : DonWidget() {
-    override val fallbackSize = 320f to 160f
+    override val fallbackSize = 250f to 110f
 
     override suspend fun views(context: Context, id: Int, widthDp: Float, heightDp: Float): RemoteViews {
         val home = Widgets.home(context)
         val st = WidgetStyle.of(context)
         val v = RemoteViews(context.packageName, Widgets.layout(st, R.layout.widget_grass, R.layout.widget_grass_clear))
         Widgets.background(v, st)
-        Widgets.colors(v, R.id.widget_title to st.ink, R.id.widget_sub to st.good)
-        if (st.clear) Widgets.pills(context, v, st, R.id.widget_sub)
-        else v.setInt(R.id.widget_sub, "setBackgroundResource", if (st.dark) R.drawable.widget_chip_good_dark else R.drawable.widget_chip_good)
         v.setOnClickPendingIntent(R.id.widget_root, Widgets.open(context, MainActivity.ACTION_CALENDAR, 10))
-        if (home == null) {
-            v.setTextViewText(R.id.widget_sub, "앱을 열어 처음 설정을 해 주세요")
-            return v
-        }
         val (gw, gh) = imageSize(widthDp, heightDp)
         val density = context.resources.displayMetrics.density
-        val repo = DonRepository.get(context)
-        val plan = Widgets.dailyPlan(home)
-        val chosen = com.simbio.don.app.UiPrefs.grassWeeks(context)
-        if (com.simbio.don.app.UiPrefs.grassCalendar(context)) {
-            // 큰 달력 + (넓으면) 오른쪽 위 이번 달 합계, 오른쪽 아래 작은 잔디
-            val cal = CalendarWidget.cells(home, CalendarWidget.eventColors(context, home))
-            v.setTextViewText(R.id.widget_title, CalendarWidget.range(home))
-            Widgets.pills(context, v, st, R.id.widget_title)
-            if (gw >= WidgetArt.CALENDAR_MIN_WIDTH) {
-                val g = repo.grass(home.today, WidgetArt.miniWeeks(gw, gh, chosen), plan)
-                v.setTextViewText(R.id.widget_sub, subtitle(g))
-                v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendarWithGrass(cal, g, gw, gh, density, st))
-            } else {
-                v.setTextViewText(R.id.widget_sub, subtitle(repo.grass(home.today, 4, plan)))
-                v.setImageViewBitmap(R.id.widget_image, WidgetArt.calendar(cal, gw, gh, density, st))
-            }
-            return v
-        }
-        // 자동이면 앱을 쓰기 전 빈 주는 빼고 (적어도 8주)
-        val g = repo.grass(home.today, weeks(WidgetArt.grassWeeks(gw, gh), chosen), plan).let { if (chosen <= 0) it.trimLeadingEmpty(8) else it }
-        v.setTextViewText(R.id.widget_title, context.getString(R.string.widget_grass_title))
-        Widgets.pills(context, v, st, R.id.widget_title)
-        v.setTextViewText(R.id.widget_sub, subtitle(g))
-        v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(g, gw, gh, density, st))
+        // 처음 설정 전이면 빈 칸 (글씨 없이)
+        val grass = if (home == null) Grasses.of(emptyList(), java.time.LocalDate.now(), WidgetArt.GRASS_WEEKS, 1, null)
+        else DonRepository.get(context).grass(home.today, WidgetArt.GRASS_WEEKS, Widgets.dailyPlan(home))
+        v.setImageViewBitmap(R.id.widget_image, WidgetArt.grass(grass, gw, gh, density, st))
         return v
     }
 
     companion object {
-        /** 바깥 여백 14dp씩, 제목 줄 22dp */
-        fun imageSize(widthDp: Float, heightDp: Float) = (widthDp - 28f).coerceAtLeast(120f) to (heightDp - 28f - 24f).coerceAtLeast(70f)
-
-        /** 고른 기간 (0이면 크기에 맞춤). 위젯이 작으면 들어가는 만큼만 */
-        fun weeks(fit: Int, chosen: Int): Int = if (chosen <= 0) fit else minOf(chosen, fit)
-
-        fun subtitle(g: Grass): String = when {
-            g.streak >= 1 -> "무지출 ${g.streak}일째"
-            g.kept > 0 -> "예산 지킨 날 ${g.kept}일"
-            else -> "오늘부터 한 칸씩"
-        }
+        /** 바깥 여백 10dp씩 */
+        fun imageSize(widthDp: Float, heightDp: Float) = (widthDp - 20f).coerceAtLeast(80f) to (heightDp - 20f).coerceAtLeast(50f)
     }
 }
 

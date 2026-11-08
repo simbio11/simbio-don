@@ -147,6 +147,16 @@ object CategoryGuesser {
     /** 같은 가게로 볼 수 있게 이름을 정리한다 (공백·대소문자 무시). */
     fun key(label: String): String = label.lowercase().filterNot { it.isWhitespace() }.take(40)
 
+    /** 분류를 어떻게 정했는지: 사용자가 알려 준 것 > 키워드로 짐작 > 모름 */
+    enum class Basis { LEARNED, KEYWORD, UNKNOWN }
+
+    /** 이 가게 분류의 근거. 모르는 가게(UNKNOWN)만 사용자에게 물어보면 된다 */
+    fun basis(text: String, learned: Map<String, Category> = emptyMap()): Basis = when {
+        key(text) in learned -> Basis.LEARNED
+        guess(text) != Category.ETC -> Basis.KEYWORD
+        else -> Basis.UNKNOWN
+    }
+
     fun guess(text: String, learned: Map<String, Category> = emptyMap()): Category {
         learned[key(text)]?.let { return it }
         val t = key(text)

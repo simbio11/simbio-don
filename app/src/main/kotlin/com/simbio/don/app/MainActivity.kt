@@ -152,6 +152,9 @@ private sealed interface Overlay {
     /** 실제 잔액 맞추기 */
     data object BalanceFix : Overlay
 
+    /** 자동 기록 학습: 배운 가게·앱·카드, 자동 기록률 */
+    data object Learned : Overlay
+
     /** 캘린더 일정 보기 · 만들기/고치기 */
     data class EventDetail(val event: com.simbio.don.app.calendar.CalEvent) : Overlay
     data class EventEdit(val existing: com.simbio.don.app.calendar.CalEvent?, val date: LocalDate) : Overlay
@@ -545,6 +548,9 @@ class MainActivity : ComponentActivity() {
                         accountQuestions = vm.accountQuestions.collectAsStateWithLifecycle().value,
                         onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
                         onOpenAssets = { onTab(Tab.Assets) },
+                        auto = vm.autoState.collectAsStateWithLifecycle().value,
+                        onConfirmCategory = { e, c -> vm.confirmCategory(e.id, c) },
+                        onLearned = { screens.push(Overlay.Learned) },
                         hints = vm.planHints.collectAsStateWithLifecycle().value,
                         onConfirmHint = { h, people -> vm.confirmPlanHint(h.plan.id, h.entry.id, people) },
                         incomeQuestions = vm.incomeQuestions.collectAsStateWithLifecycle().value,
@@ -724,8 +730,6 @@ class MainActivity : ComponentActivity() {
         var haptics by remember { mutableStateOf(UiPrefs.haptics(this)) }
         var widgetTheme by remember { mutableStateOf(UiPrefs.widgetTheme(this)) }
         var widgetOpacity by remember { mutableStateOf(UiPrefs.widgetOpacity(this)) }
-        var grassWeeks by remember { mutableStateOf(UiPrefs.grassWeeks(this)) }
-        var grassCalendar by remember { mutableStateOf(UiPrefs.grassCalendar(this)) }
         var aiKey by remember { mutableStateOf(com.simbio.don.app.ai.Ai.maskedKey(this)) }
         var aiModel by remember { mutableStateOf(com.simbio.don.app.ai.Ai.model(this)) }
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
@@ -778,6 +782,7 @@ class MainActivity : ComponentActivity() {
                 onSaveRule = { r -> vm.saveRule(r) },
                 learnedCount = learned,
                 onResetLearned = { vm.resetLearned() },
+                onLearned = { open(Overlay.Learned) },
                 onExport = { export.launch("돈트_내역_${LocalDate.now()}.csv") },
                 reminderOn = reminderOn,
                 onReminder = { on ->
@@ -818,12 +823,6 @@ class MainActivity : ComponentActivity() {
                     widgetOpacity = o
                     Widgets.refresh(this)
                 },
-                grassWeeks = grassWeeks,
-                onGrassWeeks = { w ->
-                    UiPrefs.setGrassWeeks(this, w)
-                    grassWeeks = w
-                    Widgets.refresh(this)
-                },
                 aiKey = aiKey,
                 aiModel = aiModel,
                 onAiKey = { k ->
@@ -850,12 +849,6 @@ class MainActivity : ComponentActivity() {
                 onAiOff = {
                     com.simbio.don.app.ai.Ai.clear(this)
                     aiKey = null
-                },
-                grassCalendar = grassCalendar,
-                onGrassCalendar = { on ->
-                    UiPrefs.setGrassCalendar(this, on)
-                    grassCalendar = on
-                    Widgets.refresh(this)
                 },
                 onHomeCards = { open(Overlay.HomeCards) },
                 haptics = haptics,
@@ -1214,6 +1207,16 @@ class MainActivity : ComponentActivity() {
                     onBack = close,
                 )
             }
+            Overlay.Learned -> com.simbio.don.app.ui.AutoLearnScreen(
+                rate = vm.autoState.collectAsStateWithLifecycle().value.rate,
+                accounts = home.accounts.map { it.account },
+                appName = { pkg -> appLabel(pkg) ?: pkg },
+                rules = vm.learnedRules.collectAsStateWithLifecycle().value,
+                onForgetRule = { vm.forgetLearned(it) },
+                onUnlinkApp = { vm.unlinkApp(it) },
+                onForgetTail = { id, t -> vm.forgetTail(id, t) },
+                onBack = close,
+            )
             Overlay.BalanceFix -> com.simbio.don.app.ui.BalanceFixScreen(
                 unassignedSpend = unassignedSpend(vm.unassigned.collectAsStateWithLifecycle().value),
                 questions = vm.accountQuestions.collectAsStateWithLifecycle().value,

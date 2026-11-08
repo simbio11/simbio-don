@@ -410,6 +410,8 @@ private fun NetWorthCard(balances: List<AccountBalance>, canTransfer: Boolean, o
             NetPart("저축·투자", "예금·적금·주식", "+" + won(grow), DonColors.Good)
             NetPart("부채", "카드값 등", "−" + won(debt), DonColors.Expense)
         }
+        // 순자산으로 뭘 할 수 있는지
+        if (net > 0) WorthLine(net)
         if (grow == 0L) {
             Text(
                 "지금은 쓰는 돈만 들어 있어요. 적금·주식·보증금처럼 모아 둔 돈도 아래 \"저축·투자\"에 넣어야 진짜 순자산이에요.",

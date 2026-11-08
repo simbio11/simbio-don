@@ -131,9 +131,9 @@ class WidgetsTest {
             income = com.simbio.don.budget.Stats.dailyIncome(inMonth),
             expense = com.simbio.don.budget.Stats.daily(inMonth),
         )
-        val (gw, gh) = GrassWidget.imageSize(330f, 250f)
-        val grass = com.simbio.don.budget.Grasses.of(entries, day, WidgetArt.miniWeeks(gw, gh, 0), 30_000, since = day.minusDays(400))
-        save("grass", WidgetArt.calendarWithGrass(cal, grass, gw, gh, 2f))
+        val (gw, gh) = GrassWidget.imageSize(250f, 110f)
+        val grass = com.simbio.don.budget.Grasses.of(entries, day, WidgetArt.GRASS_WEEKS, 30_000, since = day.minusDays(400))
+        save("grass", WidgetArt.grass(grass, gw, gh, 2f))
         save("calendar", WidgetArt.calendar(cal, 306f, 256f, 2f))
         val px = com.simbio.don.app.ui.kit.CharacterRenderer.pixels(context, com.simbio.don.game.CharacterLook.MALE, com.simbio.don.game.Mood.HAPPY)
         save("buddy", WidgetArt.pixels(px, com.simbio.don.app.ui.kit.CharacterRenderer.W, com.simbio.don.app.ui.kit.CharacterRenderer.H, 6))
@@ -142,8 +142,7 @@ class WidgetsTest {
     @Test
     fun 위젯_넷을_그린다() {
         val repo = seed()
-        val grassView = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w1_grass")
-        assertTrue(grassView.text(R.id.widget_sub), grassView.text(R.id.widget_sub).isNotBlank())
+        render(runBlocking { GrassWidget().views(context, 1, 250f, 110f) }, 250, 110, "w1_grass")
 
         // 위젯에 그린 잔디는 기록 그대로
         val home = runBlocking { Widgets.home(context) }!!
@@ -166,17 +165,22 @@ class WidgetsTest {
     }
 
     @Test
-    fun 잔디_위젯은_기본으로_스택만_깔끔하게() {
+    fun 잔디_위젯은_7줄_12주_칸만_글씨_없이() {
         seed()
-        assertTrue(!com.simbio.don.app.UiPrefs.grassCalendar(context))
-        val wide = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w1_stack")
-        assertTrue(wide.text(R.id.widget_sub).isNotBlank())
-        render(runBlocking { GrassWidget().views(context, 1, 250f, 110f) }, 250, 110, "w1_stack_small")
-        render(runBlocking { GrassWidget().views(context, 1, 400f, 200f) }, 400, 200, "w1_stack_big")
+        val wide = render(runBlocking { GrassWidget().views(context, 1, 250f, 110f) }, 250, 110, "w1_grass")
+        // 글씨는 하나도 없다 (제목·칩 없음)
+        assertTrue(wide.findViewById<TextView>(R.id.widget_title) == null && wide.findViewById<TextView>(R.id.widget_sub) == null)
+        render(runBlocking { GrassWidget().views(context, 1, 180f, 70f) }, 180, 70, "w1_grass_small")
+        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w1_grass_big")
+        // 12주 × 7일 = 84칸
+        val home = runBlocking { Widgets.home(context) }!!
+        val g = runBlocking { com.simbio.don.app.data.DonRepository.get(context).grass(home.today, WidgetArt.GRASS_WEEKS, Widgets.dailyPlan(home)) }
+        assertEquals(12, g.weeks.size)
+        assertTrue(g.weeks.all { it.size == 7 })
         // 어둡게 · 투명
         com.simbio.don.app.UiPrefs.setWidgetTheme(context, com.simbio.don.app.ui.ThemeMode.DARK)
         com.simbio.don.app.UiPrefs.setWidgetOpacity(context, 0)
-        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w1_stack_clear", busy = true)
+        render(runBlocking { GrassWidget().views(context, 1, 250f, 110f) }, 250, 110, "w1_grass_clear", busy = true)
     }
 
     @Test
@@ -201,49 +205,9 @@ class WidgetsTest {
 
     @Test
     fun 처음_설정_전이면_안내만() {
-        val v = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w0_grass_empty")
-        assertEquals("앱을 열어 처음 설정을 해 주세요", v.text(R.id.widget_sub))
+        // 잔디는 글씨 없이 빈 칸만
+        render(runBlocking { GrassWidget().views(context, 1, 250f, 110f) }, 250, 110, "w0_grass_empty")
         assertEquals("앱을 열어 처음 설정을 해 주세요", render(runBlocking { SavedWidget().views(context, 3, 250f, 160f) }, 250, 160, "w0_saved_empty").text(R.id.widget_sub))
-    }
-
-    @Test
-    fun 잔디_칸_수는_크기에_맞춘다() {
-        assertTrue(WidgetArt.grassWeeks(300f, 120f) in 15..30)
-        assertTrue(WidgetArt.grassWeeks(600f, 120f) > WidgetArt.grassWeeks(300f, 120f))
-        assertEquals(53, WidgetArt.grassWeeks(3000f, 120f))
-        assertEquals(4, WidgetArt.grassWeeks(10f, 120f))
-        // 달력 옆 작은 잔디: 고른 기간(자동은 10주), 너비의 38%까지
-        assertEquals(10, WidgetArt.miniWeeks(400f, 200f, 0))
-        assertEquals(4, WidgetArt.miniWeeks(400f, 200f, 4))
-        assertTrue(WidgetArt.miniWeeks(300f, 120f, 26) < 26)
-    }
-    /** 0.17: 잔디 기간을 고르면 그 주 수만큼만 (위젯이 작으면 들어가는 만큼) */
-    @Test
-    fun 잔디_기간_고르기() {
-        seed()
-        assertEquals(0, UiPrefs.grassWeeks(context))
-        assertEquals(20, GrassWidget.weeks(20, 0))
-        assertEquals(8, GrassWidget.weeks(20, 8))
-        assertEquals(20, GrassWidget.weeks(20, 26))
-        UiPrefs.setGrassWeeks(context, 8)
-        assertEquals(8, UiPrefs.grassWeeks(context))
-        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w11_grass_8weeks")
-        UiPrefs.setGrassWeeks(context, 4)
-        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w12_grass_4weeks")
-        // 달력 없이, 좁은 위젯
-        UiPrefs.setGrassCalendar(context, false)
-        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w13_grass_4weeks_no_calendar")
-        UiPrefs.setGrassCalendar(context, true)
-        UiPrefs.setGrassWeeks(context, 0)
-        render(runBlocking { GrassWidget().views(context, 1, 200f, 170f) }, 200, 170, "w14_grass_narrow")
-        render(runBlocking { GrassWidget().views(context, 1, 420f, 200f) }, 420, 200, "w15_grass_wide")
-        // 새 기본 크기 (4×3)
-        val tall = render(runBlocking { GrassWidget().views(context, 1, 330f, 250f) }, 330, 250, "w16_grass_4x3")
-        assertTrue(tall.text(R.id.widget_title).contains("~"))
-        // 모르는 값은 크기에 맞춤으로
-        UiPrefs.setGrassWeeks(context, 5)
-        assertEquals(0, UiPrefs.grassWeeks(context))
-        UiPrefs.setGrassWeeks(context, 0)
     }
 
     /** 0.15: 위젯 색(어둡게)·바탕 투명 — 배경화면 위에 놓인 모습 */
@@ -255,13 +219,11 @@ class WidgetsTest {
         val st = com.simbio.don.app.widget.WidgetStyle.of(context)
         assertTrue(st.dark)
         assertEquals(0, st.bgAlpha)
-        val grass = render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w5_grass_dark_clear", busy = true)
-        assertEquals(st.ink, grass.findViewById<TextView>(R.id.widget_title).currentTextColor)
+        render(runBlocking { GrassWidget().views(context, 1, 250f, 110f) }, 250, 110, "w5_grass_dark_clear", busy = true)
         render(runBlocking { CalendarWidget().views(context, 2, 330f, 320f) }, 330, 320, "w6_calendar_dark_clear", busy = true)
         // 밝게 + 투명 (글자가 어두워 배경화면에 묻히기 쉬운 경우)
         UiPrefs.setWidgetTheme(context, com.simbio.don.app.ui.ThemeMode.LIGHT)
-        render(runBlocking { GrassWidget().views(context, 1, 330f, 170f) }, 330, 170, "w5b_grass_light_clear", busy = true)
-        render(runBlocking { GrassWidget().views(context, 1, 330f, 250f) }, 330, 250, "w5c_grass_light_clear_4x3", busy = true)
+        render(runBlocking { GrassWidget().views(context, 1, 250f, 110f) }, 250, 110, "w5b_grass_light_clear", busy = true)
         render(runBlocking { com.simbio.don.app.widget.WeekWidget.render(context, runBlocking { Widgets.home(context) }) }, 250, 130, "w5d_week_light_clear", busy = true)
         render(runBlocking { SavedWidget().views(context, 3, 250f, 160f) }, 250, 160, "w5e_saved_light_clear", busy = true)
         UiPrefs.setWidgetTheme(context, com.simbio.don.app.ui.ThemeMode.DARK)
