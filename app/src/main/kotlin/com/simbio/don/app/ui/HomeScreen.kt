@@ -104,8 +104,8 @@ fun HomeScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val celebrations = remember { Celebrations(context) }
     // 생활비 통장 잔액과 남은 생활비가 왜 다른지
-    val livingGap = remember(home.accounts, splits, unassignedSpend, home.plan.disposable, home.monthLiving) {
-        com.simbio.don.app.data.LivingGap.of(home.accounts, splits, unassignedSpend, home.plan.disposable - home.monthLiving)
+    val livingGap = remember(home.accounts, home.entries, splits, unassignedSpend, home.plan.disposable, home.monthLiving) {
+        com.simbio.don.app.data.LivingGap.of(home.accounts, splits, unassignedSpend, home.plan.disposable - home.monthLiving, home.entries)
     }
     var dismissed by remember { mutableStateOf(0) }
     Column(

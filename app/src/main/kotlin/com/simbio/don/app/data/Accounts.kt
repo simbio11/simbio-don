@@ -147,6 +147,9 @@ object AccountBalances {
  *
  * 둘은 원래 다른 숫자다: 통장 잔액은 실제로 통장에 있는 돈이고, 남은 생활비는 예산에서 내 몫 지출만 뺀 것.
  * 그래도 이 항목들을 맞춰 보면 거의 같아져야 한다 — 남는 [rest]가 크면 놓친 알림이나 잘못 적힌 기록이 있다는 뜻.
+ *
+ * 카드로 쓴 돈 중 **고정 지출**로 적은 것은 처음부터 생활비에서 빼고 따로 챙긴 돈이라, 카드값이 남아 있어도
+ * "쓸 수 있는 돈"에서 또 빼지 않는다 ([cardFixed]).
  */
 data class LivingGap(
     val account: AccountEntity,
@@ -154,8 +157,10 @@ data class LivingGap(
     val bank: Long,
     /** 현금·페이 머니 잔액 (통장에서 뽑거나 충전한 생활비) */
     val cash: Long,
-    /** 카드로 쓰고 아직 안 낸 카드값 (생활비엔 들어갔지만 통장에선 아직 안 나감) */
+    /** 카드로 쓰고 아직 안 낸 카드값 중 생활비로 쓴 몫 (생활비엔 들어갔지만 통장에선 아직 안 나감) */
     val cardDue: Long,
+    /** 아직 안 낸 카드값 중 고정 지출로 적은 몫 (생활비가 아니라 따로 챙긴 돈이라 빼지 않는다) */
+    val cardFixed: Long,
     /** 나눠 낸 돈 중 아직 못 받은 것 (통장에선 나갔지만 생활비엔 내 몫만) */
     val receivable: Long,
     /** 남이 내서 아직 안 보낸 돈 (생활비엔 들어갔지만 통장에선 아직 안 나감) */
@@ -172,16 +177,30 @@ data class LivingGap(
     val rest: Long get() = usable - remaining
 
     /** 보여 줄 만큼 설명할 항목이 있는지 */
-    val hasItems: Boolean get() = cash != 0L || cardDue != 0L || receivable != 0L || payable != 0L || unassigned != 0L
+    val hasItems: Boolean get() = cash != 0L || cardDue != 0L || cardFixed != 0L || receivable != 0L || payable != 0L || unassigned != 0L
 
     companion object {
-        /** 생활비 통장 = 첫 번째 은행 통장 (없으면 현금). 없으면 null */
-        fun of(balances: List<AccountBalance>, book: SplitBook, unassignedSpend: Long, remaining: Long): LivingGap? {
+        /**
+         * 생활비 통장 = 첫 번째 은행 통장 (없으면 현금). 없으면 null.
+         * [cycleEntries]는 이번 달 기록 — 카드로 쓴 고정 지출을 찾아 카드값에서 생활비 몫만 남긴다.
+         */
+        fun of(
+            balances: List<AccountBalance>,
+            book: SplitBook,
+            unassignedSpend: Long,
+            remaining: Long,
+            cycleEntries: List<EntryEntity> = emptyList(),
+        ): LivingGap? {
             val shown = balances.filter { !it.account.hidden }.sortedBy { it.account.sortOrder }
             val main = shown.firstOrNull { it.type == AccountType.BANK } ?: shown.firstOrNull { it.type == AccountType.CASH } ?: return null
-            val cardDue = shown.filter { it.type == AccountType.CARD && it.balance < 0 }.sumOf { -it.balance }
+            val cards = shown.filter { it.type == AccountType.CARD }
+            val debt = cards.filter { it.balance < 0 }.sumOf { -it.balance }
+            // 카드로 쓴 고정 지출 (이번 달): 아직 안 낸 카드값 안에서만 센다
+            val cardIds = cards.map { it.account.id }.toSet()
+            val fixedOnCards = cycleEntries.filter { it.type == com.simbio.don.budget.EntryType.FIXED.name && it.accountId in cardIds && !it.owe }.sumOf { it.amount }
+            val cardFixed = minOf(debt, fixedOnCards)
             val cash = shown.filter { it.account.id != main.account.id && (it.type == AccountType.CASH || it.type == AccountType.ETC) }.sumOf { it.balance }
-            return LivingGap(main.account, main.balance, cash, cardDue, book.toReceive, book.toSend, unassignedSpend, remaining)
+            return LivingGap(main.account, main.balance, cash, debt - cardFixed, cardFixed, book.toReceive, book.toSend, unassignedSpend, remaining)
         }
     }
 }

@@ -24,6 +24,7 @@ class LivingGapTest {
         // 월 생활비 100만원 중 카드로 30만원 씀 → 남은 생활비 70만원, 통장은 그대로 100만원, 카드 -30만원
         val g = LivingGap.of(listOf(bal(bank, 1_000_000), bal(card, -300_000)), SplitBook.Empty, 0, 700_000)!!
         assertEquals(300_000L, g.cardDue)
+        assertEquals(0L, g.cardFixed)
         assertEquals(700_000L, g.usable)
         assertEquals(0L, g.rest)
         assertTrue(g.hasItems)

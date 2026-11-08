@@ -429,6 +429,7 @@ fun LivingGapRow(gap: com.simbio.don.app.data.LivingGap, onBalanceFix: () -> Uni
                 GapLine("${gap.account.name} 잔액", gap.bank)
                 if (gap.cash != 0L) GapLine("현금·페이 잔액", gap.cash)
                 if (gap.cardDue != 0L) GapLine("카드값 낼 돈 (쓴 만큼 아직 안 나감)", -gap.cardDue)
+                if (gap.cardFixed != 0L) Text("카드로 쓴 고정 지출 ${won(gap.cardFixed)}은 생활비가 아니라서 빼지 않았어요", fontSize = 11.sp, color = DonColors.InkMuted)
                 if (gap.receivable != 0L) GapLine("받을 돈 (나눠 낸 것)", gap.receivable)
                 if (gap.payable != 0L) GapLine("보낼 돈 (남이 낸 것)", -gap.payable)
                 if (gap.unassigned != 0L) GapLine("통장 없이 적힌 지출", -gap.unassigned)

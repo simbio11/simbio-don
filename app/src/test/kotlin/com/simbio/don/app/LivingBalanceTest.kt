@@ -64,7 +64,7 @@ class LivingBalanceTest {
         val book = repo.splitBook(MutableStateFlow(emptySet()), day).first()
         val bals = AccountBalances.compute(db.dao().accountsNow(), db.dao().allEntriesNow(), db.dao().assetChecksNow())
         val unassigned = repo.unassignedEntries.first().filter { it.type != EntryType.INCOME.name && it.type != EntryType.REFUND.name }.sumOf { it.amount }
-        return LivingGap.of(bals, book, unassigned, h.plan.disposable - h.monthLiving)!!
+        return LivingGap.of(bals, book, unassigned, h.plan.disposable - h.monthLiving, h.entries)!!
     }
 
     private suspend fun step(what: String, remaining: Long? = null) {
@@ -116,5 +116,20 @@ class LivingBalanceTest {
         assertEquals(0L, after.unassigned)
         assertEquals(1_988_000L, after.bank)
         assertEquals(0L, after.rest)
+    }
+
+    @Test
+    fun `카드로 쓴 돈을 고정 지출로 적으면 생활비에서도, 쓸 수 있는 돈 계산에서도 빠진다`() = runTest {
+        val card = db.dao().accountsNow().first { it.type == AccountType.CARD.name }.id
+        // 생활비로 카드 3만 원, 고정 지출로 카드 2만 9천 원 (카드값 낼 돈은 합쳐서 5만 9천 원)
+        repo.handleNotification(RawNotification("card.app", "신한카드 승인", "스타벅스 30,000원 일시불 승인", at(9)))
+        repo.addManual(day, 29_000, "보험료", EntryType.FIXED, Category.BILLS, accountId = card)
+        val g = gap()
+        assertEquals(59_000L, g.cardDue + g.cardFixed)
+        assertEquals(29_000L, g.cardFixed)
+        assertEquals(30_000L, g.cardDue)
+        // 남은 생활비는 생활비로 쓴 3만 원만 줄었고, 쓸 수 있는 돈도 그 3만 원만 뺐다 → 차이 0
+        assertEquals(1_970_000L, g.remaining)
+        assertEquals(0L, g.rest)
     }
 }
