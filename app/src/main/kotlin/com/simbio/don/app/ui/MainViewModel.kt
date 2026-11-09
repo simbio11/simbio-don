@@ -424,6 +424,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun fixBalance(accountId: Long, diff: Long, how: com.simbio.don.app.data.DonRepository.BalanceFix) =
         viewModelScope.launch { repo.fixBalance(accountId, diff, how) }
 
+    fun alignLiving(done: (Long) -> Unit = {}) = viewModelScope.launch { done(repo.alignLivingToBank()) }
+
     fun dismissBalanceGap(accountId: Long) = viewModelScope.launch { repo.dismissBalanceGap(accountId) }
 
     // ── 환율 ──

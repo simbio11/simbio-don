@@ -257,16 +257,17 @@ class DonRepositoryTest {
     }
 
     @Test
-    fun `결제 알림은 자동 반영, 다른 앱의 같은 금액은 중복 의심`() = runTest {
+    fun `결제 알림은 자동 반영, 다른 앱의 같은 금액은 같은 돈으로 한 번만 (0·29부터 묻지 않음)`() = runTest {
         repo.handleNotification(RawNotification("card.app", "OO카드", "승인 23,000원", at(10, 27, 19, 2)))
         repo.handleNotification(RawNotification("pay.app", "OO페이", "결제 23,000원", at(10, 27, 19, 2, 40)))
         repo.handleNotification(RawNotification("other.app", "", "결제 99,000원", at(10, 27, 19, 3)))
 
         val h = home(at(10, 27, 20))
         assertEquals(23_000, h.currentWeek!!.spent)
-        val reviews = db.dao().reviewItemsNow()
-        assertEquals(listOf(ReviewReason.POSSIBLE_DUPLICATE.name), reviews.map { it.reason })
-        assertTrue(reviews.single().relatedEntryId != null)
+        assertEquals(1, db.dao().allEntriesNow().count { it.amount == 23_000L })
+        // 고르지 않은 앱(other.app)의 알림은 안 읽고, 확인함에 갈 것도 없다
+        assertEquals(0, db.dao().allEntriesNow().count { it.amount == 99_000L })
+        assertTrue(db.dao().reviewItemsNow().isEmpty())
     }
 
     @Test
@@ -281,7 +282,9 @@ class DonRepositoryTest {
             }
         }
         assertEquals((0 until 5).sumOf { 10_000L + it * 1_000 }, home(at(10, 27, 20)).currentWeek!!.spent)
-        assertEquals(5, db.dao().reviewItemsNow().count { it.reason == ReviewReason.POSSIBLE_DUPLICATE.name })
+        // 같은 돈은 한 건씩만, 묻지 않는다
+        assertEquals(5, db.dao().allEntriesNow().size)
+        assertTrue(db.dao().reviewItemsNow().isEmpty())
     }
 
     @Test
@@ -298,8 +301,11 @@ class DonRepositoryTest {
         repo.handleNotification(RawNotification("card.app", "", "OO치킨 23,000원", at(10, 27, 19, 3)))
         repo.handleNotification(RawNotification("card.app", "", "승인취소 9,000원", at(10, 28, 12)))
         repo.handleNotification(RawNotification("pay.app", "", "결제 취소 9,000원", at(10, 28, 12, 0, 30)))
+        // 키워드 없는 카드 알림도 페이 결제와 같은 돈이면 한 건 — 가게 이름은 더 나은 쪽(OO치킨)으로
+        assertEquals(listOf("OO치킨"), db.dao().allEntriesNow().filter { it.amount == 23_000L }.map { it.label })
+        // 원래 결제를 못 찾은 취소와, 확인함에 있는 그 취소의 짝은 묻는다
         assertEquals(
-            listOf(ReviewReason.POSSIBLE_DUPLICATE, ReviewReason.REFUND, ReviewReason.POSSIBLE_DUPLICATE).map { it.name },
+            listOf(ReviewReason.REFUND, ReviewReason.POSSIBLE_DUPLICATE).map { it.name },
             db.dao().reviewItemsNow().sortedBy { it.postedAtEpochSecond }.map { it.reason },
         )
         val noon = home(at(11, 2, 12))

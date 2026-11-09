@@ -194,9 +194,9 @@ class ConsistencyRepoTest {
         repo.handleNotification(RawNotification("card.app", "신한카드 승인", "고깃집 100,000원 결제", at(27, 20)))
         val e = entries().single()
         repo.updateEntry(e.copy(share = 20_000, people = 5), e, false)
+        // 원래 결제(같은 금액)가 있으니 확인함에 안 가고 바로 환불
         repo.handleNotification(RawNotification("card.app", "신한카드 승인취소", "고깃집 100,000원 승인취소", at(28, 9)))
-        val item = db.dao().reviewItemsNow().single()
-        repo.resolveReview(item, ReviewResolution.APPLY_REFUND)
+        assertTrue(db.dao().reviewItemsNow().isEmpty())
         val refund = entries().single { it.type == EntryType.REFUND.name }
         assertEquals(20_000L, refund.share)
         assertTrue(book().receivables.isEmpty())

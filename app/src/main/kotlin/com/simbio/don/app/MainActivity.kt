@@ -551,6 +551,11 @@ class MainActivity : ComponentActivity() {
                         auto = vm.autoState.collectAsStateWithLifecycle().value,
                         onConfirmCategory = { e, c -> vm.confirmCategory(e.id, c) },
                         onLearned = { screens.push(Overlay.Learned) },
+                        onAlignLiving = {
+                            vm.alignLiving { v ->
+                                Toast.makeText(this@MainActivity, if (v == 0L) "이미 맞아요" else "남은 생활비를 통장에 맞췄어요 (${if (v > 0) "+" else "−"}${com.simbio.don.app.ui.won(kotlin.math.abs(v))})", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         hints = vm.planHints.collectAsStateWithLifecycle().value,
                         onConfirmHint = { h, people -> vm.confirmPlanHint(h.plan.id, h.entry.id, people) },
                         incomeQuestions = vm.incomeQuestions.collectAsStateWithLifecycle().value,

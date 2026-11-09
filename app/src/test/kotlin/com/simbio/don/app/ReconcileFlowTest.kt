@@ -126,7 +126,7 @@ class ReconcileFlowTest {
         rule.onNodeWithContentDescription("통장 잔액과 남은 생활비 차이").performScrollTo().performClick()
         waitText("이번 달 남은 생활비")
         shot("r1b_living_gap")
-        rule.onNodeWithText("실제 잔액으로 맞추기").performScrollTo().performClick()
+        rule.onNodeWithText("통장 잔액부터 실제와 맞추기").performScrollTo().performClick()
         waitText("실제 잔액 맞추기")
         val app = bg { repo.balanceNow(db().accountsNow().single().id)!! }
         rule.onNodeWithText("앱 잔액 ${"%,d".format(app)}원", substring = true)

@@ -267,7 +267,9 @@ fun BalanceFixScreen(
                 Text("먼저 어느 통장에서 나갔는지 골라 주세요. 통장 없이 적힌 지출은 잔액에서 빠져 있어서 잔액이 안 맞아 보일 수 있어요 (생활비는 그대로).", fontSize = 12.sp, color = DonColors.InkMuted)
                 AccountQuestionCard(questions, balances.map { it.account }, onChoose = onChooseAccount, limit = 50)
             }
-            list.forEach { b -> BalanceFixRow(b, gaps.firstOrNull { it.accountId == b.account.id }, onFix, unassignedSpend > 0) }
+            val livingId = list.filter { it.type == AccountType.BANK }.minByOrNull { it.account.sortOrder }?.account?.id
+                ?: list.filter { it.type == AccountType.CASH }.minByOrNull { it.account.sortOrder }?.account?.id
+            list.forEach { b -> BalanceFixRow(b, gaps.firstOrNull { it.accountId == b.account.id }, onFix, unassignedSpend > 0, living = b.account.id == livingId) }
             if (fixes.isNotEmpty()) {
                 Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("잔액 맞추기로 넣은 기록", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
@@ -293,7 +295,7 @@ fun BalanceFixScreen(
 }
 
 @Composable
-private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Long, Long, BalanceFix) -> Unit, hasUnassigned: Boolean = false) {
+private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Long, Long, BalanceFix) -> Unit, hasUnassigned: Boolean = false, living: Boolean = false) {
     // 알림에서 본 잔액이 있으면 그 차이를 먼저 채워 둔다
     var real by remember(b.account.id, b.balance) { mutableStateOf(gap?.let { (b.balance + (it.real - it.app)).toString() } ?: "") }
     val value = real.toLongOrNull()
@@ -301,6 +303,8 @@ private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Lon
     var how by remember(b.account.id) { mutableStateOf<BalanceFix?>(null) }
     val choice = how ?: when {
         diff == null || diff == 0L -> null
+        // 생활비 통장은 기본으로 남은 생활비도 같이 통장에 맞춘다 (통장 = 생활비)
+        living -> BalanceFix.ALIGN_LIVING
         // 통장 없이 적힌 지출이 남아 있으면 차이가 그것일 수 있어 기본은 잔액만 (두 번 세지 않게)
         diff < 0 -> if (hasUnassigned) BalanceFix.BALANCE_ONLY else BalanceFix.MISSING_SPEND
         else -> BalanceFix.MISSING_INCOME
@@ -319,7 +323,7 @@ private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Lon
                 fontWeight = FontWeight.SemiBold,
                 color = if (diff < 0) DonColors.Warn else DonColors.Good,
             )
-            val options = if (diff < 0) {
+            val options = (if (living) listOf(BalanceFix.ALIGN_LIVING to "남은 생활비도 통장에 맞추기") else emptyList()) + if (diff < 0) {
                 listOf(BalanceFix.MISSING_SPEND to "빠진 지출 (생활비에 넣기)", BalanceFix.BALANCE_ONLY to "잔액만 맞추기")
             } else {
                 listOf(BalanceFix.MISSING_INCOME to "빠진 입금", BalanceFix.OVERCOUNTED to "더 센 지출 (생활비에서 빼기)", BalanceFix.BALANCE_ONLY to "잔액만 맞추기")
@@ -332,7 +336,8 @@ private fun BalanceFixRow(b: AccountBalance, gap: BalanceGapEntity?, onFix: (Lon
                     BalanceFix.MISSING_SPEND -> "오늘 날짜로 '빠진 지출' ${won(-diff)}을 적어요. 이번 주·이번 달 남은 생활비도 그만큼 줄어요. 가계부에 이미 적힌 지출이면 고르지 마세요 (두 번 세져요)."
                     BalanceFix.MISSING_INCOME -> "오늘 날짜로 '빠진 입금' ${won(diff)}을 수입으로 적어요."
                     BalanceFix.OVERCOUNTED -> "오늘 날짜로 ${won(diff)}을 돌려받은 것처럼 적어 생활비에서 빼요 (두 번 센 지출이 있을 때)."
-                    BalanceFix.BALANCE_ONLY -> "기록은 그대로 두고 잔액만 맞춰요 (생활비는 안 바뀌어요)."
+                    BalanceFix.BALANCE_ONLY -> "기록은 그대로 두고 잔액만 맞춰요 (생활비는 안 바뀌어요 — 홈의 남은 생활비와는 계속 다를 수 있어요)."
+                    BalanceFix.ALIGN_LIVING -> "잔액을 맞추고, 이번 달 남은 생활비도 이 통장 기준으로 맞춰요. 차이는 '생활비 맞춤 (통장 기준)' 기록으로 남아요 (나중에 빼면 되돌려져요)."
                     null -> ""
                 },
                 fontSize = 12.sp,
@@ -407,7 +412,7 @@ fun FxRatesCard(rates: List<FxRateEntity>, auto: Boolean, onAuto: (Boolean) -> U
  * 그래도 남는 차이가 크면 잔액 맞추기로.
  */
 @Composable
-fun LivingGapRow(gap: com.simbio.don.app.data.LivingGap, onBalanceFix: () -> Unit, modifier: Modifier = Modifier) {
+fun LivingGapRow(gap: com.simbio.don.app.data.LivingGap, onBalanceFix: () -> Unit, modifier: Modifier = Modifier, onAlign: (() -> Unit)? = null) {
     var open by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth()) {
         Row(
@@ -443,7 +448,13 @@ fun LivingGapRow(gap: com.simbio.don.app.data.LivingGap, onBalanceFix: () -> Uni
                     fontSize = 11.sp,
                     color = DonColors.InkMuted,
                 )
-                TextButton(onClick = onBalanceFix) { Text("실제 잔액으로 맞추기", fontSize = 12.sp) }
+                if (onAlign != null && gap.rest != 0L) {
+                    Button(onClick = onAlign, modifier = Modifier.fillMaxWidth()) {
+                        Text("남은 생활비를 통장에 맞추기 (${if (gap.rest > 0) "+" else "−"}${won(kotlin.math.abs(gap.rest))})", fontSize = 13.sp)
+                    }
+                    Text("통장 잔액이 맞다면 눌러요. 차이는 '생활비 맞춤' 기록으로 남고, 통장 잔액은 그대로예요.", fontSize = 11.sp, color = DonColors.InkMuted)
+                }
+                TextButton(onClick = onBalanceFix) { Text("통장 잔액부터 실제와 맞추기", fontSize = 12.sp) }
             }
         }
     }

@@ -91,6 +91,8 @@ fun HomeScreen(
     auto: com.simbio.don.app.data.DonRepository.AutoState = com.simbio.don.app.data.DonRepository.AutoState(emptyList(), com.simbio.don.budget.AutoRate(0, 0)),
     onConfirmCategory: (EntryEntity, com.simbio.don.budget.Category) -> Unit = { _, _ -> },
     onLearned: () -> Unit = {},
+    /** 남은 생활비를 생활비 통장 기준으로 맞추기 */
+    onAlignLiving: () -> Unit = {},
     /** 계획과 맞을 것 같은 결제 */
     hints: List<com.simbio.don.app.data.PlanHint> = emptyList(),
     onConfirmHint: (com.simbio.don.app.data.PlanHint, Int?) -> Unit = { _, _ -> },
@@ -182,7 +184,7 @@ fun HomeScreen(
 
         HomeCards.layout.shown.forEach { card ->
             when (card) {
-                HomeCard.WEEK -> TodayWeekCard(home, onBalanceFix, livingGap)
+                HomeCard.WEEK -> TodayWeekCard(home, onBalanceFix, livingGap, onAlignLiving)
                 HomeCard.FORECAST -> home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay, calendar.events)
                 HomeCard.UPCOMING -> UpcomingCard(
@@ -336,7 +338,7 @@ fun ListDivider() = Divider(Modifier.padding(vertical = 2.dp))
  * 이번 주: 큰 지출(경조사·쇼핑 같은 분류)과 이번 주 계획은 여기서 빠지고 남은 날의 오늘 몫으로 나뉜다.
  */
 @Composable
-fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}, gap: com.simbio.don.app.data.LivingGap? = null) {
+fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}, gap: com.simbio.don.app.data.LivingGap? = null, onAlign: (() -> Unit)? = null) {
     val week = home.currentWeek
     val day = home.day
     Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -389,7 +391,7 @@ fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}, gap: com.simbi
         )
         if (monthLeft < 0) WarnLine("이번 달 생활비를 ${won(-monthLeft)} 넘었어요", fontSize = 11)
         // 통장 잔액과 왜 다른지 · 놓친 알림이 있으면 잔액 맞추기
-        if (gap != null) LivingGapRow(gap, onBalanceFix)
+        if (gap != null) LivingGapRow(gap, onBalanceFix, onAlign = onAlign)
         else TextButton(onClick = onBalanceFix) { Text("통장 잔액이 실제와 다르면 · 잔액 맞추기", fontSize = 12.sp) }
     }
 }

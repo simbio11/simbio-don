@@ -57,6 +57,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -1690,7 +1691,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val card = if (p.action == RuleAction.INCOME) null else com.simbio.don.notify.CreditCards.company(p.packageName, text)
         if (card == null) {
             // 체크카드는 통장에서 바로 나간다 (카드 앱이 카드 자산과 이어져 있어도) — 어느 통장인지는 모르니 짐작 표시
-            if (linked?.type == AccountType.CARD.name && "체크" in text) return Routed(mainAccount() ?: linked.id, ambiguous())
+            if ("체크" in text && (linked == null || linked.type == AccountType.CARD.name)) {
+                // 은행 통장이 하나뿐이면 그 통장이 확실하다 (끝자리도 그 통장 것으로 기억)
+                val banks = accounts.filter { it.type == AccountType.BANK.name }
+                banks.singleOrNull()?.let { return sure(it) }
+                return Routed(mainAccount() ?: linked?.id, ambiguous())
+            }
             if (linked != null) return sure(linked)
             val main = mainAccount()
             return Routed(main, main != null && ambiguous())
@@ -2197,8 +2203,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 Unit
             } else {
                 dao.insertIncome(IncomeEntity(amount = d.payment.amount, postedAtEpochSecond = d.payment.postedAt.epochSecond()))
-                // 다른 앱에 같은 입금이 막 잡혔으면 한 번만 적는다
-                val dup = recent.any { (p, _) -> ReviewPolicy.isDuplicate(d.payment, p) }
+                // 다른 앱에 같은 입금이 막 잡혔으면 한 번만 적는다 (은행 알림이면 그 통장으로 확실히)
+                val dupId = recent.firstOrNull { (p, _) -> ReviewPolicy.isDuplicate(d.payment, p) }?.second
+                if (dupId != null) mergeDuplicateLocked(d.payment, dupId)
+                val dup = dupId != null
                 if (!dup && !recordIncomeFromPayment(d.payment)) {
                     val category = insertFromPayment(d.payment, EntryType.INCOME)
                     // 월급이 들어오면 이번 달 월급을 맞추고, 월급날 전에 들어왔으면 그날부터 새 달
@@ -2208,7 +2216,15 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                     }
                 }
             }
-            is Decision.NeedsReview -> if (d.reason == ReviewReason.LOOKS_LIKE_FIXED_EXPENSE && recordFixedFromPayment(d.payment)) Unit else dao.insertReview(
+            is Decision.NeedsReview -> if (d.reason == ReviewReason.LOOKS_LIKE_FIXED_EXPENSE && recordFixedFromPayment(d.payment)) {
+                Unit
+            } else if (d.reason == ReviewReason.POSSIBLE_DUPLICATE && d.related?.let { rel -> recent.firstOrNull { it.first == rel }?.second }?.let { mergeDuplicateLocked(d.payment, it) } == true) {
+                // 같은 돈을 두 앱이 알림: 한 건으로 두고 더 확실한 통장을 따랐다
+                d.payment.balanceAfter?.let { checkBalanceLocked(d.payment.packageName, it, d.payment.postedAt) }
+            } else if (d.reason == ReviewReason.REFUND && refundOriginalLocked(d.payment) != null) {
+                // 같은 금액의 원래 결제가 있는 승인취소: 그 결제의 통장·분류로 바로 환불
+                insertRefund(d.payment)
+            } else dao.insertReview(
                 ReviewItemEntity(
                     packageName = d.payment.packageName,
                     action = d.payment.action.name,
@@ -2624,6 +2640,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
         /** 잔액만 맞춤 (기록·생활비는 그대로) */
         BALANCE_ONLY,
+
+        /** 잔액을 맞추고 이번 달 남은 생활비도 통장 기준으로 맞춤 (차이만큼 "생활비 맞춤" 기록) */
+        ALIGN_LIVING,
     }
 
     /**
@@ -2637,8 +2656,33 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             BalanceFix.MISSING_INCOME -> addManual(today, kotlin.math.abs(diff), "빠진 입금 (잔액 맞춤)", EntryType.INCOME, Category.OTHER_INCOME, "실제 잔액과 맞춘 차이", accountId)
             BalanceFix.OVERCOUNTED -> addManual(today, kotlin.math.abs(diff), "더 센 지출 (잔액 맞춤)", EntryType.REFUND, Category.ETC, "실제 잔액과 맞춘 차이", accountId)
             BalanceFix.BALANCE_ONLY -> saveAccount(a, balanceOf(a) + diff)
+            BalanceFix.ALIGN_LIVING -> saveAccount(a, balanceOf(a) + diff)
         }
+        if (how == BalanceFix.ALIGN_LIVING) alignLivingToBank(LocalDateTime.of(today, java.time.LocalTime.now()))
         dao.deleteBalanceGap(accountId)
+    }
+
+    /**
+     * 이번 달 남은 생활비를 생활비 통장 기준으로 맞춘다: 통장 잔액(+현금·페이 − 생활비로 쓴 카드값 + 받을 돈 − 보낼 돈 − 통장 없는 지출)과
+     * 남은 생활비의 차이만큼 오늘 "생활비 맞춤 (통장 기준)" 기록을 남기고, 통장 잔액은 그대로 둔다.
+     * 맞춘 금액 (+면 남은 생활비가 늘었다, 0이면 이미 맞음)을 돌려준다.
+     */
+    suspend fun alignLivingToBank(now: LocalDateTime = LocalDateTime.now()): Long {
+        val h = home(flowOf(now)).first() ?: return 0
+        val book = splitBookNow(today = now.toLocalDate())
+        val unassigned = unassignedEntries.first().filter { it.type != EntryType.INCOME.name && it.type != EntryType.REFUND.name }.sumOf { it.amount }
+        val gap = LivingGap.of(h.accounts, book, unassigned, h.plan.disposable - h.monthLiving, h.entries) ?: return 0
+        val rest = gap.rest
+        if (rest == 0L) return 0
+        val a = dao.accountsNow().firstOrNull { it.id == gap.account.id } ?: return 0
+        val before = balanceOf(a)
+        addManual(
+            now.toLocalDate(), kotlin.math.abs(rest), ALIGN_LABEL,
+            if (rest > 0) EntryType.REFUND else EntryType.SPEND, Category.ETC, "통장 잔액에 남은 생활비를 맞춘 차이", a.id,
+        )
+        // 통장 잔액은 그대로 (생활비만 맞춘다)
+        dao.accountsNow().firstOrNull { it.id == a.id }?.let { saveAccount(it, before) }
+        return rest
     }
 
     suspend fun dismissBalanceGap(accountId: Long) = dao.deleteBalanceGap(accountId)
@@ -2784,20 +2828,104 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 취소·환불: 나눠 낸 결제가 취소되면 생활비에서는 내 몫만큼만 돌려받은 것으로 (전액이면 남은 받을 돈도 닫는다).
      * 원래 결제는 같은 앱·같은 금액(또는 이름이 겹치는) 최근 90일 지출에서 찾는다.
      */
+    /**
+     * 승인취소의 원래 결제: 90일 안, 같은 앱이거나 가게 이름이 닮은 지출 중 금액이 가장 가까운 것.
+     * [exact]면 금액이 같고 아직 취소되지 않은 것만 (자동으로 환불할 때).
+     */
+    private suspend fun refundOriginalLocked(p: ParsedPayment, exact: Boolean = true): EntryEntity? {
+        val date = p.postedAt.toLocalDate()
+        val key = CategoryGuesser.key(p.label)
+        val within = dao.entriesBetweenNow(date.minusDays(90).toEpochDay(), date.toEpochDay())
+        val refunds = within.filter { it.type == EntryType.REFUND.name }
+        return within
+            .filter { enumOr(it.type, EntryType.SPEND).spendLike && it.amount >= p.amount && (!exact || it.amount == p.amount) }
+            .filter { it.packageName == p.packageName || (key.length >= 2 && CategoryGuesser.key(it.label).let { k -> k.isNotEmpty() && (k in key || key in k) }) }
+            // 이미 같은 금액으로 취소된 결제는 빼고
+            .filter { o -> !exact || refunds.none { r -> r.amount == o.amount && r.id > o.id && (r.packageName == o.packageName || CategoryGuesser.key(r.label) == CategoryGuesser.key(o.label)) } }
+            .minWithOrNull(compareBy<EntryEntity>({ kotlin.math.abs(it.amount - p.amount) }, { -it.epochDay }))
+    }
+
     private suspend fun insertRefund(p: ParsedPayment) {
         val before = dao.maxEntryId() ?: 0L
         insertFromPayment(p, EntryType.REFUND)
-        val refund = dao.entryNow(dao.maxEntryId() ?: return).takeIf { it?.id ?: 0 > before } ?: return
-        val date = p.postedAt.toLocalDate()
-        val key = CategoryGuesser.key(p.label)
-        val original = dao.entriesBetweenNow(date.minusDays(90).toEpochDay(), date.toEpochDay())
-            .filter { it.share != null && enumOr(it.type, EntryType.SPEND).spendLike && it.amount >= p.amount }
-            .filter { it.packageName == p.packageName || (key.length >= 2 && CategoryGuesser.key(it.label).let { k -> k.isNotEmpty() && (k in key || key in k) }) }
-            .minByOrNull { kotlin.math.abs(it.amount - p.amount) } ?: return
+        var refund = dao.entryNow(dao.maxEntryId() ?: return).takeIf { it?.id ?: 0 > before } ?: return
+        val original = refundOriginalLocked(p, exact = false) ?: return
+        // 돌려받는 돈은 낸 자산으로, 분류도 원래 결제 그대로
+        refund = refund.copy(accountId = original.accountId ?: refund.accountId, acctGuess = original.accountId == null && refund.acctGuess, category = original.category, label = if (refund.nameUnknown) original.label else refund.label)
+        dao.updateEntry(refund)
         val share = original.share ?: return
         val mine = share * p.amount / original.amount
         val full = p.amount == original.amount && dao.allEntriesNow().none { it.settleFor == original.id }
         dao.updateEntry(refund.copy(share = mine, settleFor = if (full) original.id else null))
+    }
+
+    /** 가게 이름이 아니라 앱·결제 수단 이름이라 더 나은 이름이 오면 바꿀 것 ("카카오페이", "토스", "송금") */
+    private fun genericLabel(e: EntryEntity, displayName: String?): Boolean {
+        if (e.nameUnknown) return true
+        val k = CategoryGuesser.key(e.label)
+        if (displayName != null && CategoryGuesser.key(displayName) == k) return true
+        return listOf("카카오페이", "네이버페이", "토스", "삼성페이", "페이코", "송금", "결제", "출금", "입금", "체크카드", "신용카드").any { CategoryGuesser.key(it) == k }
+    }
+
+    /** [accountId] 자산에 카드·계좌 끝자리를 기억한다 (다른 자산이 이미 가진 끝자리면 그대로 둔다) */
+    private suspend fun learnTailLocked(accountId: Long, tail: String?) {
+        tail ?: return
+        val all = dao.accountsNow()
+        if (all.any { tail in com.simbio.don.notify.AccountHints.parse(it.tails) }) return
+        all.firstOrNull { it.id == accountId }?.let { a ->
+            dao.saveAccount(a.copy(tails = com.simbio.don.notify.AccountHints.encode(com.simbio.don.notify.AccountHints.parse(a.tails) + tail)))
+        }
+    }
+
+    /**
+     * 같은 돈을 두 앱이 알렸을 때 (체크카드 승인 + 은행 출금, 페이 결제 + 카드 승인, 토스 송금 + 은행 출금):
+     * 두 번 적지 않고 이미 적힌 기록 하나로 둔다. 어느 자산인지는 더 확실한 쪽을 따른다 —
+     * 신용카드 승인이면 그 카드, 은행·카드 앱에 이은 자산이면 그 자산 (앞 기록이 짐작이었을 때).
+     * 가게 이름도 더 나은 쪽으로, 끝자리는 그 자산 것으로 기억한다. 합쳤으면 true.
+     * 둘 다 확실한데 서로 다른 자산이면 진짜 두 번 낸 것일 수 있어 합치지 않는다 (확인함으로).
+     */
+    private suspend fun mergeDuplicateLocked(p: ParsedPayment, entryId: Long): Boolean {
+        val e = dao.entryNow(entryId) ?: return false
+        if (e.type == EntryType.TRANSFER.name) return false
+        val accounts = dao.accountsNow().filter { !it.hidden }
+        val newApp = accounts.firstOrNull { it.packageName == p.packageName }
+        val oldApp = accounts.firstOrNull { it.packageName == e.packageName }
+        val oldSure = e.accountId != null && !e.acctGuess && (oldApp?.id == e.accountId || e.rawText?.let { com.simbio.don.notify.AccountHints.tail(it) }?.let { t -> accounts.any { it.id == e.accountId && t in com.simbio.don.notify.AccountHints.parse(it.tails) } } == true)
+        val newTail = com.simbio.don.notify.AccountHints.tail(p.rawText)
+        val credit = if (p.action == RuleAction.INCOME) null else com.simbio.don.notify.CreditCards.company(p.packageName, p.rawText)
+        val newSure: Long? = when {
+            newTail != null -> accounts.firstOrNull { newTail in com.simbio.don.notify.AccountHints.parse(it.tails) }?.id
+            else -> null
+        } ?: when {
+            credit != null -> cardAccount(credit, p.packageName, newTail)
+            // 체크카드 승인은 카드 앱이 알려도 통장 돈이라 앱에 이은 카드를 따르지 않는다
+            "체크" in p.rawText -> null
+            newApp != null -> newApp.id
+            else -> null
+        }
+        var updated = e
+        when {
+            newSure != null && !oldSure -> updated = updated.copy(accountId = newSure, acctGuess = false)
+            newSure != null && oldSure && newSure != e.accountId -> return false
+        }
+        // 이름: 앞 기록이 앱 이름처럼 흐릿하면 새 알림의 가게 이름으로
+        val rules = dao.appRulesNow().associateBy { it.packageName }
+        if (genericLabel(e, rules[e.packageName]?.displayName) && p.label.isNotBlank() && !p.nameUnknown) {
+            val tmp = e.copy(label = p.label, nameUnknown = false)
+            if (!genericLabel(tmp, rules[p.packageName]?.displayName)) {
+                val guess = CategoryGuesser.guess(p.label, learned())
+                updated = updated.copy(label = p.label.take(40), nameUnknown = false, category = if (e.category == Category.ETC.name && guess != Category.ETC && e.type != EntryType.INCOME.name) guess.name else updated.category)
+            }
+        }
+        if (updated != e) dao.updateEntry(updated)
+        // 끝자리 기억: 두 알림의 끝자리 모두 정해진 자산 것으로 (체크카드 끝자리는 그 통장 것)
+        updated.accountId?.let { id ->
+            if (!updated.acctGuess) {
+                learnTailLocked(id, e.rawText?.let { com.simbio.don.notify.AccountHints.tail(it) })
+                learnTailLocked(id, newTail)
+            }
+        }
+        return true
     }
 
     /** 고정 지출과 이름·날짜로 짝을 못 찾았지만 사용자가 고정 지출이라고 한 것: 금액이 가장 가까운 고정 지출로 */
@@ -3243,7 +3371,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         const val FX_MANUAL = "MANUAL"
 
         /** 잔액 맞추기로 남기는 기록 이름 */
-        val FIX_LABELS = setOf("빠진 지출 (잔액 맞춤)", "빠진 입금 (잔액 맞춤)", "더 센 지출 (잔액 맞춤)")
+        const val ALIGN_LABEL = "생활비 맞춤 (통장 기준)"
+        val FIX_LABELS = setOf("빠진 지출 (잔액 맞춤)", "빠진 입금 (잔액 맞춤)", "더 센 지출 (잔액 맞춤)", ALIGN_LABEL)
 
         /** 한 줄 분석·정기 결제 찾기에 보는 날 수 */
         const val RECENT_DAYS = 100L
