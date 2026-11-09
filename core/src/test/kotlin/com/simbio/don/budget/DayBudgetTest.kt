@@ -64,4 +64,24 @@ class DayBudgetTest {
         assertEquals(9_000, b.spentDaily)
         assertEquals(48_600, b.left)
     }
+
+    @Test
+    fun `편의점·마트처럼 그날 분류가 아니어도 오늘 몫보다 작으면 오늘 쓴 돈으로 센다`() {
+        // 아침 350,000 ÷ 5일 = 오늘 몫 70,000. 편의점 18,190원은 작아서 오늘 쓴 돈, 노트북 1,200,000원은 커서 이번 주에서
+        val small = Entry(wed, 18_190, "GS25", category = Category.LIVING)
+        val other = Entry(wed, 9_900, "모르는 가게", category = Category.ETC)
+        val b = DayBudgets.of(result(listOf(small, other)), listOf(small, other), wed, DayBudgets.DEFAULT_DAILY)
+        assertEquals(28_090, b.spentDaily)
+        assertEquals(0, b.spentBig)
+        assertEquals(28_090, b.spentToday)
+        assertEquals(70_000, b.allowance)
+        val laptop = Entry(wed, 300_000, "노트북", category = Category.SHOPPING)
+        val all = listOf(small, laptop)
+        val c = DayBudgets.of(WeekResult(week, 0, 318_190, 0), all, wed, DayBudgets.DEFAULT_DAILY)
+        assertEquals(18_190, c.spentDaily)
+        assertEquals(300_000, c.spentBig)
+        assertEquals(318_190, c.spentToday)
+        // 아침 350,000 − 노트북 300,000 = 50,000 ÷ 5일
+        assertEquals(10_000, c.allowance)
+    }
 }

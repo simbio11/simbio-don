@@ -4,8 +4,9 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 /**
- * 오늘 몫. 그날 쓰는 돈(식비·카페·배달·교통처럼 날마다 나가는 것)은 **오늘 몫에서** 빼고,
- * 큰 지출(경조사·쇼핑처럼 가끔 크게 나가는 것)과 이번 주 남은 계획은 **이번 주에서** 미리 빼 남은 날에 나눈다.
+ * 오늘 몫. 오늘 쓴 돈은 기본으로 **오늘 몫에서** 뺀다. 다만 큰 지출 — 그날 쓰는 분류(식비·카페·배달·교통)가 아니면서
+ * 한 번에 오늘 몫보다 큰 것(경조사·쇼핑 같은 것) — 과 이번 주 남은 계획은 **이번 주에서** 미리 빼 남은 날에 나눈다.
+ * (0.29.1까지는 분류만 보고 나눠서, 편의점 18,000원 같은 작은 지출도 "큰 지출"이 되어 오늘 쓴 돈이 0원으로 보였다.)
  *
  * 오늘 몫 = (오늘 아침 이번 주 남은 돈 − 오늘 큰 지출 − 오늘부터 이번 주 끝까지 잡힌 계획) ÷ 오늘 포함 남은 날.
  * 오늘 남은 돈 = 오늘 몫 − 오늘 그날 지출 (음수면 넘음).
@@ -26,6 +27,9 @@ data class DayBudget(
 ) {
     val left: Long get() = allowance - spentDaily
     val over: Boolean get() = left < 0
+
+    /** 오늘 쓴 돈 전체 (그날 지출 + 큰 지출) */
+    val spentToday: Long get() = spentDaily + spentBig
 
     companion object {
         val Empty = DayBudget(0, 0, 0, 0, 0)
@@ -58,12 +62,15 @@ object DayBudgets {
         if (today !in week.week) return DayBudget.Empty
         val todays = entries.filter { it.date == today }
         val spentToday = todays.sumOf { counted(it) }
-        val spentDaily = todays.filter { it.category.name in daily && !planned(it) }.sumOf { counted(it) }
-        val spentBig = spentToday - spentDaily
         val reserved = plans.filter { (d, _) -> d in today..week.week.end }.sumOf { it.second }
         val daysLeft = (ChronoUnit.DAYS.between(today, week.week.end) + 1).toInt().coerceAtLeast(1)
         // 오늘 아침의 이번 주 남은 돈 = 지금 남은 돈 + 오늘 쓴 돈
         val morning = week.available + spentToday
+        // 큰 지출 없이 본 오늘 몫: 이보다 큰 한 번의 지출(그날 쓰는 분류가 아닌 것)만 이번 주에 나눈다
+        val base = ((morning - reserved) / daysLeft).coerceAtLeast(0)
+        fun big(e: Entry) = planned(e) || (e.category.name !in daily && counted(e) > base)
+        val spentBig = todays.filter(::big).sumOf { counted(it) }
+        val spentDaily = spentToday - spentBig
         val allowance = ((morning - spentBig - reserved) / daysLeft).coerceAtLeast(0)
         return DayBudget(allowance, spentDaily, spentBig, reserved, daysLeft)
     }

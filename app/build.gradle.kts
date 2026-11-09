@@ -13,8 +13,8 @@ android {
         applicationId = "com.simbio.don"
         minSdk = 26
         targetSdk = 35
-        versionCode = 39
-        versionName = "0.29.0"
+        versionCode = 40
+        versionName = "0.29.1"
     }
 
     // CI에서 빌드할 때마다 서명이 바뀌면 폰에 덮어 설치가 안 되고 데이터가 지워진다.

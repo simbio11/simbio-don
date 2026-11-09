@@ -354,12 +354,15 @@ fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}, gap: com.simbi
             over = day.over,
             spent = day.spentDaily,
             budget = day.allowance,
-            left = "쓴 돈 ${won(day.spentDaily)}",
+            left = "쓴 돈 ${won(day.spentToday)}",
             right = "오늘 몫 ${won(day.allowance)}",
             big = true,
         )
+        // 예외 지출은 주 예산 밖 (이번 달 생활비에서만) — 달력에는 들어가니 여기서도 알려 준다
+        val exceptionToday = home.entries.filter { it.epochDay == home.today.toEpochDay() && it.type == com.simbio.don.budget.EntryType.EXCEPTION.name }.sumOf { it.share ?: it.amount }
         val notes = listOfNotNull(
-            day.spentBig.takeIf { it > 0 }?.let { "큰 지출·계획 ${won(it)}은 이번 주 남은 ${day.daysLeft}일에 나눔" },
+            day.spentBig.takeIf { it > 0 }?.let { "그중 큰 지출 ${won(it)}은 오늘 몫이 아니라 이번 주 남은 ${day.daysLeft}일에 나눔" },
+            exceptionToday.takeIf { it > 0 }?.let { "예외 지출 ${won(it)}은 주 예산 밖 (이번 달 생활비에서)" },
             day.reserved.takeIf { it > 0 }?.let { "계획·일정 예산 ${won(it)} 미리 뺌" },
             "오늘이 이번 주 마지막 날 · 남기면 아낀 돈".takeIf { home.today == week.week.end && week.available > 0 },
         )
