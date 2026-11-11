@@ -55,8 +55,11 @@ object AccountBalances {
     /**
      * 잔액. 자산 점검이 있으면 마지막 점검 금액 + 그 다음 날부터의 기록, 없으면 처음 잔액 + 모든 기록.
      * 넣은 돈(원금)은 늘 처음 잔액 + 모든 기록.
+     * [today]를 주면 그날까지의 기록만 센다 — 할부 남은 달처럼 앞으로 적힐 기록은 그날이 와야 잔액에 들어간다
+     * (안 그러면 카드값을 다 내도 카드에 남은 할부가 "낼 돈"으로 남아 생활비와 통장이 안 맞는다).
      */
-    fun compute(accounts: List<AccountEntity>, entries: List<EntryEntity>, checks: List<AssetCheckEntity>): List<AccountBalance> {
+    fun compute(accounts: List<AccountEntity>, all: List<EntryEntity>, checks: List<AssetCheckEntity>, today: java.time.LocalDate? = null): List<AccountBalance> {
+        val entries = today?.toEpochDay()?.let { d -> all.filter { it.epochDay <= d } } ?: all
         val plain = compute(accounts, entries).associateBy { it.account.id }
         val last = checks.groupBy { it.accountId }.mapValues { (_, l) -> l.maxWith(compareBy({ it.epochDay }, { it.id })) }
         return accounts.map { a ->
@@ -190,6 +193,8 @@ data class LivingGap(
             unassignedSpend: Long,
             remaining: Long,
             cycleEntries: List<EntryEntity> = emptyList(),
+            /** 오늘. 주면 이번 달 안에 앞으로 카드로 나갈 기록(할부 다음 몫 등)도 카드값으로 센다 — 남은 생활비에서 이미 뺀 돈이라 */
+            today: java.time.LocalDate? = null,
         ): LivingGap? {
             val shown = balances.filter { !it.account.hidden }.sortedBy { it.account.sortOrder }
             val main = shown.firstOrNull { it.type == AccountType.BANK } ?: shown.firstOrNull { it.type == AccountType.CASH } ?: return null
@@ -198,9 +203,18 @@ data class LivingGap(
             // 카드로 쓴 고정 지출 (이번 달): 아직 안 낸 카드값 안에서만 센다
             val cardIds = cards.map { it.account.id }.toSet()
             val fixedOnCards = cycleEntries.filter { it.type == com.simbio.don.budget.EntryType.FIXED.name && it.accountId in cardIds && !it.owe }.sumOf { it.amount }
+            val upcoming = today?.toEpochDay()?.let { d ->
+                cycleEntries.filter { it.epochDay > d && it.accountId in cardIds && !it.owe }.sumOf { e ->
+                    when (e.type) {
+                        com.simbio.don.budget.EntryType.SPEND.name, com.simbio.don.budget.EntryType.EXCEPTION.name -> e.amount
+                        com.simbio.don.budget.EntryType.REFUND.name -> -e.amount
+                        else -> 0L
+                    }
+                }
+            } ?: 0L
             val cardFixed = minOf(debt, fixedOnCards)
             val cash = shown.filter { it.account.id != main.account.id && (it.type == AccountType.CASH || it.type == AccountType.ETC) }.sumOf { it.balance }
-            return LivingGap(main.account, main.balance, cash, debt - cardFixed, cardFixed, book.toReceive, book.toSend, unassignedSpend, remaining)
+            return LivingGap(main.account, main.balance, cash, debt - cardFixed + upcoming, cardFixed, book.toReceive, book.toSend, unassignedSpend, remaining)
         }
     }
 }

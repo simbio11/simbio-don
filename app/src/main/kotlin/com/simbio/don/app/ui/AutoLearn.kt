@@ -39,10 +39,6 @@ import com.simbio.don.notify.AccountHints
 import java.time.LocalDate
 
 /** 가게 분류로 눌러 알려 줄 수 있는 지출 카테고리 (자주 쓰는 순) */
-private val ASK_CATEGORIES = listOf(
-    Category.FOOD, Category.CAFE, Category.DELIVERY, Category.TRANSPORT, Category.SHOPPING, Category.LIVING,
-    Category.HEALTH, Category.CULTURE, Category.EVENT, Category.EDUCATION, Category.BILLS, Category.ETC,
-)
 
 /**
  * 홈의 "확인해 주세요": 알림으로 적혔지만 가게 분류를 모르거나 가게 이름을 못 뽑은 결제.
@@ -84,7 +80,8 @@ fun CheckCard(
                 } else {
                     Text("무슨 소비예요? 알려 주면 이 가게는 다음부터 저절로 분류해요.", fontSize = 11.sp, color = DonColors.InkMuted)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ASK_CATEGORIES.forEach { cat ->
+                        // 내가 만든 분류·반려동물까지 (기타는 맨 끝)
+                        (Category.spending.filter { it != Category.ETC } + Category.ETC).forEach { cat ->
                             FilterChip(selected = false, onClick = { onConfirm(e, cat) }, label = { Text(cat.label, fontSize = 12.sp) })
                         }
                     }

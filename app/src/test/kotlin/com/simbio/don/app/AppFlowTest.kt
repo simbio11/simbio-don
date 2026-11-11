@@ -469,6 +469,7 @@ class AppFlowTest {
         rule.onNodeWithText("쇼핑").performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithText("전자기기").performSemanticsAction(SemanticsActions.OnClick)
         // 칩이 아래 버튼 줄에 가려질 수 있어 누르기 동작을 바로 보낸다
+        rule.onNodeWithText("더 고르기").performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithText("3개월").performSemanticsAction(SemanticsActions.OnClick)
         waitText("달마다 400,000원씩 3번, 오늘부터 매달 ${today.dayOfMonth}일에 적어요.")
         rule.onNodeWithText("달마다 400,000원씩 3번, 오늘부터 매달 ${today.dayOfMonth}일에 적어요.").performScrollTo()

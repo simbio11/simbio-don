@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -119,6 +120,8 @@ fun EntryEditScreen(
     existing: EntryEntity?,
     accounts: List<AccountEntity> = emptyList(),
     picks: List<QuickPick> = emptyList(),
+    /** 자주 쓴 지출 분류 (앞에 보여 줄 순서) */
+    frequent: List<Category> = emptyList(),
     initial: EntryDraft? = null,
     /** 카테고리 이름 → 소분류 */
     subcategories: Map<String, List<String>> = emptyMap(),
@@ -156,6 +159,13 @@ fun EntryEditScreen(
     var months by remember { mutableStateOf(1) }
     var addingSub by remember { mutableStateOf(false) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
+    // 결제 수단·나눠 내기·할부·종류·메모: 새로 적을 땐 접어 두고, 고칠 때나 미리 채워 온 값이 있으면 편다
+    var more by remember {
+        mutableStateOf(
+            existing != null || initial?.let { it.owe || it.people != null || it.memo.isNotBlank() || it.type in setOf(EntryType.FIXED, EntryType.EXCEPTION, EntryType.REFUND) } == true,
+        )
+    }
+    var allCats by remember { mutableStateOf(false) }
     var splitMode by remember {
         mutableStateOf(
             when {
@@ -298,6 +308,7 @@ fun EntryEditScreen(
                         TextButton(onClick = { onUnsettle(); onBack() }, color = DonColors.Warn) { Text("정산 아니에요 (다시 수입으로)") }
                     }
                 }
+                FormCard { LabelField(label, kind) { label = it }; MemoField(memo) { memo = it } }
             } else if (kind == Kind.TRANSFER) {
                 FormCard("어디서 어디로") {
                     if (shownAccounts.size < 2) {
@@ -307,13 +318,55 @@ fun EntryEditScreen(
                     FormRow("받은 곳") { AccountChips(shownAccounts.filter { it.id != accountId }, toAccountId, allowNone = false) { toAccountId = it } }
                     Text("통장에서 현금을 뽑거나 카드값을 내는 것처럼 내 돈끼리 옮긴 거예요. 수입·지출에는 들어가지 않아요.", fontSize = 12.sp, color = DonColors.InkMuted)
                 }
+                FormCard { LabelField(label, kind) { label = it }; MemoField(memo) { memo = it } }
             } else {
+                // 1) 어디에 썼나요 → 분류는 그 이름으로 먼저 골라 둔다
+                FormCard {
+                    LabelField(label, kind) { label = it }
+                    // 자주 쓰는 곳: 누르면 이름·금액·카테고리를 한 번에
+                    val shown = if (existing != null || kind != Kind.SPEND) emptyList() else picks.filter { p ->
+                        label.isBlank() || (p.label.contains(label.trim(), ignoreCase = true) && !p.label.equals(label.trim(), ignoreCase = true))
+                    }.take(6)
+                    if (shown.isNotEmpty()) {
+                        Text("자주 쓰는 곳", fontSize = 12.sp, color = DonColors.InkMuted)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            shown.forEach { p ->
+                                FilterChip(
+                                    selected = false,
+                                    onClick = {
+                                        label = p.label
+                                        if (amount.isBlank()) amount = p.amount.toString()
+                                        picked = p.category
+                                    },
+                                    label = { Text("${p.label} · ${won(p.amount)}") },
+                                )
+                            }
+                        }
+                    }
+                }
                 FormCard("분류") {
-                    CategoryGrid(category, if (isIncome) Category.incomes else Category.spending) { picked = it; sub = null }
-                    // 소분류: 고르지 않아도 된다, 없으면 바로 더할 수 있다
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        subs.forEach { s -> FilterChip(selected = subNow == s, onClick = { sub = if (subNow == s) null else s }, label = { Text(s) }) }
-                        FilterChip(selected = false, onClick = { addingSub = true }, label = { Text("+ 소분류") })
+                    if (picked == null && label.isNotBlank() && !isIncome) {
+                        val basis = CategoryGuesser.basis(label, learned)
+                        if (basis != CategoryGuesser.Basis.UNKNOWN) {
+                            Text(
+                                if (basis == CategoryGuesser.Basis.LEARNED) "전에 고른 분류로 골라 뒀어요" else "'${label.trim()}' 보고 골라 뒀어요. 다르면 눌러서 바꿔요",
+                                fontSize = 12.sp,
+                                color = DonColors.Good,
+                            )
+                        }
+                    }
+                    val options = if (isIncome) Category.incomes else Category.spending
+                    // 자주 쓴 분류를 앞에, 처음엔 한 줄 반만 (지금 고른 건 꼭 보이게)
+                    val ordered = frequent.filter { it in options } + options.filter { it !in frequent }
+                    val few = ordered.take(7).let { if (category in it || category !in ordered) it else it.take(6) + category }
+                    val shownCats = if (allCats || ordered.size <= 8) ordered else few
+                    CategoryGrid(category, shownCats, onMore = if (shownCats.size < ordered.size) ({ allCats = true }) else null) { picked = it; sub = null }
+                    // 소분류: 만들어 둔 게 있거나 더 고르기를 열었을 때만
+                    if (subs.isNotEmpty() || more) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            subs.forEach { s -> FilterChip(selected = subNow == s, onClick = { sub = if (subNow == s) null else s }, label = { Text(s) }) }
+                            FilterChip(selected = false, onClick = { addingSub = true }, label = { Text("+ 소분류") })
+                        }
                     }
                     if (existing != null && picked != null && picked!!.name != existing.category && !isIncome) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -322,124 +375,101 @@ fun EntryEditScreen(
                         }
                     }
                 }
-                if (splitOk) {
-                    FormCard("나눠 냈나요") {
-                        SegmentedToggle(SplitMode.entries.map { it.label }, splitMode.ordinal) { splitMode = SplitMode.entries[it] }
-                        when (splitMode) {
-                            SplitMode.I_PAID -> {
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                                    (2..8).forEach { n -> FilterChip(selected = people == n, onClick = { people = n; shareEdited = false }, label = { Text("${n}명") }) }
+                // 2) 나머지는 접어 둔다: 지금 정해진 값만 한 줄로
+                val accountName = shownAccounts.firstOrNull { it.id == accountId }?.name
+                val summary = listOfNotNull(
+                    if (split == SplitMode.THEY_PAID) null else accountName ?: if (shownAccounts.isEmpty()) null else "통장 안 고름",
+                    split.takeIf { it != SplitMode.NONE }?.label,
+                    monthsNow.takeIf { it > 1 }?.let { "${it}개월 할부" },
+                    when (type) { EntryType.FIXED -> "고정 지출"; EntryType.EXCEPTION -> "예외 지출"; EntryType.REFUND -> "환불"; else -> null },
+                    memo.takeIf { it.isNotBlank() }?.let { "메모" },
+                ).joinToString(" · ")
+                MoreToggle(more, if (isIncome) "들어온 곳 · 메모" else "결제 수단 · 나눠 내기 · 할부 · 종류 · 메모", summary) { more = !more }
+                if (more) {
+                    if (shownAccounts.isNotEmpty() && split != SplitMode.THEY_PAID) {
+                        FormCard(if (isIncome) "들어온 곳" else "결제 수단") { AccountChips(shownAccounts, accountId, allowNone = true) { accountId = it } }
+                    }
+                    if (splitOk) {
+                        FormCard("나눠 냈나요") {
+                            SegmentedToggle(SplitMode.entries.map { it.label }, splitMode.ordinal) { splitMode = SplitMode.entries[it] }
+                            when (splitMode) {
+                                SplitMode.I_PAID -> {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                        (2..8).forEach { n -> FilterChip(selected = people == n, onClick = { people = n; shareEdited = false }, label = { Text("${n}명") }) }
+                                    }
+                                    MoneyField("내 몫", if (shareEdited) shareText else share.takeIf { total > 0 }?.toString() ?: "", { shareText = it; shareEdited = true })
+                                    Text(
+                                        if (!shareOk) "내 몫은 낸 돈보다 작아야 해요"
+                                        else "받을 돈 ${won((total - share).coerceAtLeast(0))}" +
+                                            (if (!shareEdited && people > 1 && total > 0) " (한 사람 ${won(com.simbio.don.app.data.Splits.perPerson(total, people))})" else "") +
+                                            ". 생활비에는 내 몫만 들어가고, 친구가 보낸 돈은 수입이 아니라 정산으로 묶어요.",
+                                        fontSize = 12.sp,
+                                        color = if (shareOk) DonColors.InkMuted else DonColors.Warn,
+                                    )
                                 }
-                                MoneyField("내 몫", if (shareEdited) shareText else share.takeIf { total > 0 }?.toString() ?: "", { shareText = it; shareEdited = true })
-                                Text(
-                                    if (!shareOk) "내 몫은 낸 돈보다 작아야 해요"
-                                    else "받을 돈 ${won((total - share).coerceAtLeast(0))}" +
-                                        (if (!shareEdited && people > 1 && total > 0) " (한 사람 ${won(com.simbio.don.app.data.Splits.perPerson(total, people))})" else "") +
-                                        ". 생활비에는 내 몫만 들어가고, 친구가 보낸 돈은 수입이 아니라 정산으로 묶어요.",
+                                SplitMode.THEY_PAID -> Text(
+                                    "금액에 내 몫만 적으세요. '보낼 돈'으로 적어 두고, 보내면 그 송금과 묶어요 (통장 잔액은 보낼 때 빠져요).",
                                     fontSize = 12.sp,
-                                    color = if (shareOk) DonColors.InkMuted else DonColors.Warn,
+                                    color = DonColors.InkMuted,
+                                )
+                                SplitMode.NONE -> Unit
+                            }
+                        }
+                    }
+                    if (installmentOk) {
+                        FormCard("할부") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                INSTALLMENT_CHOICES.forEach { m ->
+                                    FilterChip(
+                                        selected = months == m,
+                                        onClick = { months = m },
+                                        label = { Text(if (m == 1) "일시불" else "${m}개월") },
+                                    )
+                                }
+                            }
+                            if (months > 1) {
+                                val total = amount.toLongOrNull() ?: 0
+                                val each = if (total >= months) Installments.split(total, months) else emptyList()
+                                Text(
+                                    if (each.isEmpty()) "금액이 너무 작아요" else "달마다 ${won(each.last())}씩 ${months}번, 오늘부터 매달 ${date.dayOfMonth}일에 적어요.",
+                                    fontSize = 12.sp,
+                                    color = if (each.isEmpty()) DonColors.Warn else DonColors.InkMuted,
                                 )
                             }
-                            SplitMode.THEY_PAID -> Text(
-                                "금액에 내 몫만 적으세요. '보낼 돈'으로 적어 두고, 보내면 그 송금과 묶어요 (통장 잔액은 보낼 때 빠져요).",
-                                fontSize = 12.sp,
-                                color = DonColors.InkMuted,
-                            )
-                            SplitMode.NONE -> Unit
                         }
                     }
-                }
-                if (shownAccounts.isNotEmpty() && split != SplitMode.THEY_PAID) {
-                    FormCard(if (isIncome) "들어온 곳" else "결제 수단") { AccountChips(shownAccounts, accountId, allowNone = true) { accountId = it } }
-                }
-            }
 
-            FormCard {
-                OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it.take(40) },
-                    label = { Text(when (kind) { Kind.INCOME -> "내용 (어디서 들어왔나요)"; Kind.TRANSFER -> "내용 (예: 카드값)"; Kind.SPEND -> "내용 (어디에 썼나요)" }) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                // 자주 쓰는 곳: 누르면 이름·금액·카테고리를 한 번에
-                val shown = if (existing != null || kind != Kind.SPEND) emptyList() else picks.filter { p ->
-                    label.isBlank() || (p.label.contains(label.trim(), ignoreCase = true) && !p.label.equals(label.trim(), ignoreCase = true))
-                }.take(6)
-                if (shown.isNotEmpty()) {
-                    Text("자주 쓰는 곳", fontSize = 12.sp, color = DonColors.InkMuted)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        shown.forEach { p ->
-                            FilterChip(
-                                selected = false,
-                                onClick = {
-                                    label = p.label
-                                    if (amount.isBlank()) amount = p.amount.toString()
-                                    picked = p.category
-                                },
-                                label = { Text("${p.label} · ${won(p.amount)}") },
-                            )
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = memo,
-                    onValueChange = { memo = it.take(100) },
-                    label = { Text("메모 (선택)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            if (installmentOk) {
-                FormCard("할부") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        INSTALLMENT_CHOICES.forEach { m ->
-                            FilterChip(
-                                selected = months == m,
-                                onClick = { months = m },
-                                label = { Text(if (m == 1) "일시불" else "${m}개월") },
-                            )
-                        }
-                    }
-                    if (months > 1) {
-                        val total = amount.toLongOrNull() ?: 0
-                        val each = if (total >= months) Installments.split(total, months) else emptyList()
-                        Text(
-                            if (each.isEmpty()) "금액이 너무 작아요" else "달마다 ${won(each.last())}씩 ${months}번, 오늘부터 매달 ${date.dayOfMonth}일에 적어요.",
-                            fontSize = 12.sp,
-                            color = if (each.isEmpty()) DonColors.Warn else DonColors.InkMuted,
-                        )
-                    }
-                }
-            }
-
-            if (kind == Kind.SPEND) {
-                FormCard("지출 종류") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        FilterChip(selected = type == EntryType.SPEND, onClick = { type = EntryType.SPEND }, label = { Text("생활비") })
-                        FilterChip(selected = type == EntryType.FIXED, onClick = { type = EntryType.FIXED }, label = { Text("고정 지출") })
-                        FilterChip(
-                            selected = type == EntryType.EXCEPTION,
-                            onClick = { if (exceptionAllowed) type = EntryType.EXCEPTION },
-                            enabled = exceptionAllowed,
-                            label = { Text("예외 지출 $exceptionCount/2") },
-                        )
-                        FilterChip(selected = type == EntryType.REFUND, onClick = { type = EntryType.REFUND }, label = { Text("환불") })
-                    }
-                    Text(
-                        when (type) {
-                            EntryType.FIXED -> "월세·통신비처럼 월급에서 미리 뺀 돈이에요. 가계부 지출에는 들어가고 주 예산은 깎지 않아요."
-                            EntryType.EXCEPTION -> "병원비·경조사비처럼 피할 수 없는 큰 지출이에요. 이번 주 결산에는 영향이 없고, 남은 주 예산을 줄여서 다시 나눠요."
-                            EntryType.REFUND -> "취소·환불로 돌려받은 돈이에요. 그날 지출에서 빠져요."
-                            else -> if (category.name in dailyCategories) {
-                                "'${category.label}'은 그날 쓰는 돈이라 오늘 몫에서 빠져요."
-                            } else {
-                                "'${category.label}'은 큰 지출이라 이번 주 남은 날에 나눠서 빠져요."
+                    if (kind == Kind.SPEND) {
+                        FormCard("지출 종류") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                FilterChip(selected = type == EntryType.SPEND, onClick = { type = EntryType.SPEND }, label = { Text("생활비") })
+                                FilterChip(selected = type == EntryType.FIXED, onClick = { type = EntryType.FIXED }, label = { Text("고정 지출") })
+                                FilterChip(
+                                    selected = type == EntryType.EXCEPTION,
+                                    onClick = { if (exceptionAllowed) type = EntryType.EXCEPTION },
+                                    enabled = exceptionAllowed,
+                                    label = { Text("예외 지출 $exceptionCount/2") },
+                                )
+                                FilterChip(selected = type == EntryType.REFUND, onClick = { type = EntryType.REFUND }, label = { Text("환불") })
                             }
-                        },
-                        fontSize = 12.sp,
-                        color = if (type == EntryType.EXCEPTION) DonColors.Warn else DonColors.InkMuted,
-                    )
+                            Text(
+                                when (type) {
+                                    EntryType.FIXED -> "월세·통신비처럼 월급에서 미리 뺀 돈이에요. 가계부 지출에는 들어가고 주 예산은 깎지 않아요."
+                                    EntryType.EXCEPTION -> "병원비·경조사비처럼 피할 수 없는 큰 지출이에요. 이번 주 결산에는 영향이 없고, 남은 주 예산을 줄여서 다시 나눠요."
+                                    EntryType.REFUND -> "취소·환불로 돌려받은 돈이에요. 그날 지출에서 빠져요."
+                                    else -> if (category.name in dailyCategories) {
+                                        "'${category.label}'은 그날 쓰는 돈이라 오늘 몫에서 빠져요."
+                                    } else {
+                                        "'${category.label}'은 하루 몫보다 크면 큰 지출로 보고 이번 주 남은 날에 나눠서 빠져요."
+                                    }
+                                },
+                                fontSize = 12.sp,
+                                color = if (type == EntryType.EXCEPTION) DonColors.Warn else DonColors.InkMuted,
+                            )
+                        }
+                    }
+
+                    FormCard { MemoField(memo) { memo = it } }
                 }
             }
 
@@ -454,7 +484,7 @@ fun EntryEditScreen(
                         onClick = {
                             onSave(draft())
                             savedCount++
-                            amount = ""; label = ""; memo = ""; picked = null; sub = null; months = 1
+                            amount = ""; label = ""; memo = ""; picked = null; sub = null; months = 1; allCats = false
                         },
                         enabled = canSave,
                         modifier = Modifier.weight(1f),
@@ -616,11 +646,27 @@ fun FormCard(title: String? = null, content: @Composable ColumnScope.() -> Unit)
 
 /** 카테고리 고르기: 동그란 아이콘 + 이름, 한 줄에 4개 */
 @Composable
-fun CategoryGrid(selected: Category, options: List<Category> = Category.spending, onSelect: (Category) -> Unit) {
+fun CategoryGrid(selected: Category, options: List<Category> = Category.spending, onMore: (() -> Unit)? = null, onSelect: (Category) -> Unit) {
+    val cells: List<Category?> = options + if (onMore != null) listOf(null) else emptyList()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        options.chunked(4).forEach { row ->
+        cells.chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { c ->
+                    if (c == null) {
+                        // 나머지 분류 펼치기
+                        Column(
+                            Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                                .selectable(selected = false, role = Role.Button, onClick = { onMore?.invoke() })
+                                .padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(Modifier.width(40.dp).height(40.dp).clip(RoundedCornerShape(20.dp)).background(DonColors.SurfaceAlt), contentAlignment = Alignment.Center) {
+                                Text("···", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.InkSoft)
+                            }
+                            Text("전체", fontSize = 12.sp, color = DonColors.InkSoft, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+                        }
+                        return@forEach
+                    }
                     val on = c == selected
                     Column(
                         Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
@@ -643,6 +689,40 @@ fun CategoryGrid(selected: Category, options: List<Category> = Category.spending
                 repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
+    }
+}
+
+/** 내용 칸 */
+@Composable
+private fun LabelField(label: String, kind: Kind, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = label,
+        onValueChange = { onChange(it.take(40)) },
+        label = { Text(when (kind) { Kind.INCOME -> "내용 (어디서 들어왔나요)"; Kind.TRANSFER -> "내용 (예: 카드값)"; Kind.SPEND -> "내용 (어디에 썼나요)" }) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun MemoField(memo: String, onChange: (String) -> Unit) {
+    OutlinedTextField(value = memo, onValueChange = { onChange(it.take(100)) }, label = { Text("메모 (선택)") }, modifier = Modifier.fillMaxWidth())
+}
+
+/** 접힌 옵션 열기: 무엇이 들었는지 + 지금 정해진 값 */
+@Composable
+private fun MoreToggle(open: Boolean, what: String, summary: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(DonColors.SurfaceAlt)
+            .selectable(selected = open, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(if (open) "접기" else "더 고르기", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+            Text(if (open || summary.isBlank()) what else summary, fontSize = 12.sp, color = DonColors.InkMuted, maxLines = 1)
+        }
+        Text(if (open) "▲" else "▼", fontSize = 12.sp, color = DonColors.InkMuted)
     }
 }
 

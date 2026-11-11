@@ -89,6 +89,8 @@ class SplitFlowTest {
     fun 내가_다_낸_밥값을_정산한다() {
         waitText("이대로 쓰면")
         rule.onNodeWithContentDescription("가계부 쓰기").performClick()
+        waitText("더 고르기")
+        rule.onNodeWithText("더 고르기").performScrollTo().performClick()
         waitText("나눠 냈나요")
         rule.onAllNodes(hasSetTextAction() and hasText("금액")).onFirst().performTextReplacement("80000")
         rule.onAllNodes(hasSetTextAction() and hasText("어디에 썼나요", substring = true)).onFirst().performTextReplacement("고깃집")

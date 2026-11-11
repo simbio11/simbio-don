@@ -51,7 +51,7 @@ object NotificationParser {
 
         val action = RuleAction.entries.firstOrNull { action ->
             keywordRules.any { r -> r.action == action && r.keywords.any { it.isNotBlank() && it in body } }
-        }
+        } ?: personToPerson(body)
         if (action == RuleAction.IGNORE) return ParseResult.Ignored
 
         val won = extractAmount(body)
@@ -71,6 +71,17 @@ object NotificationParser {
             balanceAfter = extractBalance(body),
         )
         return if (action == null) ParseResult.Unclassified(payment) else ParseResult.Payment(payment)
+    }
+
+    // 사람끼리 보낸 돈 (토스·카카오뱅크 말투): "김철수님이 50,000원을 보냈어요" = 받음, "김철수님에게 30,000원을 보냈어요" = 보냄
+    private val RECEIVED = Regex("""님이\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*원을?\s*(?:보냈|보내)|(?:받았어요|들어왔어요|받으셨)""")
+    private val SENT = Regex("""님(?:에게|께)\s*(?:\d{1,3}(?:,\d{3})+|\d+)\s*원을?\s*(?:보냈|보내)""")
+
+    /** 키워드에 안 걸린 알림 중 사람끼리 주고받은 돈 */
+    private fun personToPerson(body: String): RuleAction? = when {
+        RECEIVED.containsMatchIn(body) -> RuleAction.INCOME
+        SENT.containsMatchIn(body) -> RuleAction.SPEND
+        else -> null
     }
 
     private val BALANCE = Regex("""(?:잔액|잔고|통장잔액|계좌잔액)(?:\s*\([^)]*\))?\s*[:：]?\s*(-?\d{1,3}(?:,\d{3})+|-?\d+)\s*원?""")

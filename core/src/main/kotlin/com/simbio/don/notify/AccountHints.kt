@@ -10,11 +10,14 @@ object AccountHints {
     // "신한카드(1234)승인", "KB국민카드[1234]"
     private val CARD_BRACKET = Regex("카드\\s*[(\\[]\\s*(\\d{4})\\s*[)\\]]")
 
-    // "KB국민카드 1234 승인", "삼성카드 1234 결제"
-    private val CARD_SPACED = Regex("카드\\s+(\\d{4})\\s+(?:승인|결제|사용|취소|출금)")
+    // "KB국민카드 1234 승인", "삼성카드 1234 결제", 문자에서 붙여 쓴 "KB국민카드1234승인"
+    private val CARD_SPACED = Regex("카드\\s*(\\d{4})\\s*(?:승인|결제|사용|취소|출금)")
+
+    // 가운데를 가린 끝자리: "롯데카드 2*1*승인", "하나(1*2*)승인" — 같은 카드는 늘 같은 모양이라 그대로 기억한다
+    private val CARD_MASKED = Regex("(?:카드|하나|우리|NH|농협|BC|비씨|씨티)\\s*[(\\[]?\\s*([\\d*]{4})\\s*[)\\]]?\\s*(?:승인|결제|사용|취소)")
 
     // "[1234] 승인"처럼 카드사 이름 없이 끝자리만
-    private val TAIL_APPROVAL = Regex("[(\\[]\\s*(\\d{4})\\s*[)\\]]\\s*(?:승인|결제|사용)")
+    private val TAIL_APPROVAL = Regex("[(\\[]\\s*(\\d{4})\\s*[)\\]]\\s*(?:승인|결제|사용)|(?:승인|결제)\\s*[(\\[]\\s*(\\d{4})\\s*[)\\]]")
 
     // "110-***-123456", "240-******-88507": 가린 계좌번호의 끝 (3~6자리)
     private val MASKED = Regex("\\*{2,}[-*]*(\\d{3,6})(?!\\d)")
@@ -23,7 +26,8 @@ object AccountHints {
     fun tail(text: String): String? {
         CARD_BRACKET.find(text)?.let { return "c" + it.groupValues[1] }
         CARD_SPACED.find(text)?.let { return "c" + it.groupValues[1] }
-        TAIL_APPROVAL.find(text)?.let { return "c" + it.groupValues[1] }
+        TAIL_APPROVAL.find(text)?.let { m -> return "c" + m.groupValues.drop(1).first { it.isNotEmpty() } }
+        CARD_MASKED.findAll(text).firstOrNull { m -> m.groupValues[1].count { it.isDigit() } >= 2 }?.let { return "c" + it.groupValues[1] }
         MASKED.find(text)?.let { return "a" + it.groupValues[1] }
         return null
     }

@@ -902,6 +902,7 @@ class MainActivity : ComponentActivity() {
             is Overlay.Edit -> {
                 val learned by produceState<Map<String, Category>?>(null) { value = vm.learnedMap() }
                 val picks by produceState(emptyList<QuickPick>()) { value = vm.quickPicks() }
+                val frequent by produceState(emptyList<Category>()) { value = vm.frequentCategories() }
                 val subs by vm.subcategories.collectAsStateWithLifecycle()
                 val month by vm.month.collectAsStateWithLifecycle()
                 val cycles by vm.cycles.collectAsStateWithLifecycle()
@@ -921,6 +922,7 @@ class MainActivity : ComponentActivity() {
                         existing = o.existing,
                         accounts = home.accounts.map { it.account },
                         picks = picks,
+                        frequent = frequent,
                         // 새로 적을 때 결제 수단은 마지막으로 직접 적은 기록과 같게, 없으면 생활비 통장 (자산 잔액에도 반영되게)
                         initial = if (o.existing == null) {
                             val shown = home.accounts.map { it.account }.filter { !it.hidden }.sortedBy { it.sortOrder }

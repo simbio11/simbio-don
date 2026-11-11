@@ -64,7 +64,7 @@ class LivingBalanceTest {
         val book = repo.splitBook(MutableStateFlow(emptySet()), day).first()
         val bals = AccountBalances.compute(db.dao().accountsNow(), db.dao().allEntriesNow(), db.dao().assetChecksNow())
         val unassigned = repo.unassignedEntries.first().filter { it.type != EntryType.INCOME.name && it.type != EntryType.REFUND.name }.sumOf { it.amount }
-        return LivingGap.of(bals, book, unassigned, h.plan.disposable - h.monthLiving, h.entries)!!
+        return LivingGap.of(bals, book, unassigned, h.plan.disposable - h.monthLiving, h.entries, h.today)!!
     }
 
     private suspend fun step(what: String, remaining: Long? = null) {

@@ -163,7 +163,7 @@ class NotificationMatrixTest {
         repo.fixBalance(bank, -10_000, DonRepository.BalanceFix.ALIGN_LIVING, d)
         assertEquals(983_500L, balance(bank))
         val h = repo.home(kotlinx.coroutines.flow.flowOf(at(21))).first()!!
-        val gap = com.simbio.don.app.data.LivingGap.of(h.accounts, repo.splitBookNow(today = d), 0, h.plan.disposable - h.monthLiving, h.entries)!!
+        val gap = com.simbio.don.app.data.LivingGap.of(h.accounts, repo.splitBookNow(today = d), 0, h.plan.disposable - h.monthLiving, h.entries, h.today)!!
         assertEquals(0L, gap.rest)
         assertTrue(entries().any { it.label == DonRepository.ALIGN_LABEL })
         // 이미 맞으면 다시 눌러도 아무것도 안 남긴다

@@ -361,6 +361,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun quickPicks() = clock.value.toLocalDate().let { d -> withContext(Dispatchers.Default) { repo.quickPicks(d) } }
+    suspend fun frequentCategories() = clock.value.toLocalDate().let { d -> withContext(Dispatchers.Default) { repo.frequentCategories(d) } }
 
     fun resolve(item: ReviewItemEntity, r: ReviewResolution) = viewModelScope.launch { repo.resolveReview(item, r) }
 

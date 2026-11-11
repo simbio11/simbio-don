@@ -326,7 +326,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 자산과 지금 잔액 */
     val accountBalances: Flow<List<AccountBalance>> =
-        combine(dao.accounts(), dao.accountEntries(), dao.assetChecks()) { accounts, entries, checks -> AccountBalances.compute(accounts, entries, checks) }
+        combine(dao.accounts(), dao.accountEntries(), dao.assetChecks()) { accounts, entries, checks -> AccountBalances.compute(accounts, entries, checks, LocalDate.now()) }
 
     /** 모으는 돈 (저축·투자 통장): 지금 금액·넣은 돈·달마다 */
     fun wealth(now: Flow<LocalDateTime>): Flow<Wealth> = balancesAndWealth(now).map { it.second }
@@ -334,7 +334,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 잔액과 모으는 돈을 한 번 읽은 기록으로 같이 (모든 기록을 여러 번 읽지 않게) */
     private fun balancesAndWealth(now: Flow<LocalDateTime>): Flow<Pair<List<AccountBalance>, Wealth>> =
         combine(dao.accounts(), dao.accountEntries(), dao.assetChecks(), dao.goals(), now) { a, e, c, g, t ->
-            val b = AccountBalances.compute(a, e, c)
+            val b = AccountBalances.compute(a, e, c, t.toLocalDate())
             // 목표에 이은 통장은 저축이 아니라 그 목표의 돈
             val forGoals = g.filter { !it.used }.mapNotNull { it.accountId }.toSet()
             b to AccountBalances.wealth(b.filter { it.account.id !in forGoals }, e, c, t.toLocalDate())
@@ -1701,7 +1701,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             val main = mainAccount()
             return Routed(main, main != null && ambiguous())
         }
-        if (linked != null && linked.type != AccountType.BANK.name && linked.type != AccountType.CASH.name) return sure(linked)
+        // 앱이 카드 자산과 이어져 있어도, 알림에 다른 카드사 이름이 있으면 (문자 앱 등) 그 카드사로
+        if (linked != null && linked.type != AccountType.BANK.name && linked.type != AccountType.CASH.name && fitsCompany(linked, card)) return sure(linked)
         val cardId = cardAccount(card, p.packageName, tail)
         return dao.accountsNow().firstOrNull { it.id == cardId }?.let { sure(it) } ?: Routed(cardId, false)
     }
@@ -1711,12 +1712,14 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val all = dao.accountsNow()
         val cards = all.filter { it.type == AccountType.CARD.name && !it.hidden }
         val key = com.simbio.don.notify.CreditCards.key(company)
+        val unknown = company == com.simbio.don.notify.CreditCards.UNKNOWN
         tail?.let { t -> cards.firstOrNull { t in com.simbio.don.notify.AccountHints.parse(it.tails) } }?.let { return it.id }
-        cards.firstOrNull { it.packageName != null && it.packageName == pkg }?.let { return it.id }
-        cards.firstOrNull { key in it.name }?.let { return it.id }
-        // 카드가 하나뿐이고 이름에 다른 카드사가 안 적혀 있으면 그 카드
-        cards.singleOrNull()?.takeIf { c -> com.simbio.don.notify.CreditCards.company(null, c.name + " 승인") == null }?.let { return it.id }
-        val usedPkg = pkg != null && all.any { it.packageName == pkg }
+        if (!unknown) cards.firstOrNull { key in it.name }?.let { return it.id }
+        cards.firstOrNull { it.packageName != null && it.packageName == pkg && fitsCompany(it, company) }?.let { return it.id }
+        // 카드가 하나뿐이고 이름에 다른 카드사가 안 적혀 있으면 그 카드 (카드사를 모르는 결제면 하나뿐인 카드)
+        cards.singleOrNull()?.takeIf { c -> unknown || com.simbio.don.notify.CreditCards.company(null, c.name + " 승인") == null }?.let { return it.id }
+        // 문자 앱은 여러 카드사 알림이 같이 오니 카드 자산과 잇지 않는다
+        val usedPkg = pkg != null && (all.any { it.packageName == pkg } || pkg in com.simbio.don.notify.DefaultApps.messagingPackages)
         return dao.saveAccount(
             AccountEntity(
                 name = company, type = AccountType.CARD.name, opening = 0,
@@ -1724,6 +1727,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 packageName = if (usedPkg) null else pkg,
             ),
         )
+    }
+
+    /** 이 카드 자산이 그 카드사 것일 수 있나: 이름에 그 카드사가 있거나, 이름에 카드사가 없거나, 카드사를 모르는 결제 */
+    private fun fitsCompany(a: AccountEntity, company: String): Boolean {
+        if (company == com.simbio.don.notify.CreditCards.UNKNOWN) return true
+        val named = com.simbio.don.notify.CreditCards.company(null, a.name + " 승인") ?: return true
+        return named == company || com.simbio.don.notify.CreditCards.key(company) in a.name
     }
 
     /** 어느 자산에서 나갔는지 없는 수입·지출 (자산 잔액에 안 들어간 것). 외화 지갑·보낼 돈·정산은 일부러 비워 둔 것이라 뺌 */
@@ -2128,6 +2138,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 최근 90일에서 자주 쓴 곳 */
     suspend fun quickPicks(today: LocalDate): List<QuickPick> =
         QuickPicks.from(dao.entriesBetweenNow(today.minusDays(90).toEpochDay(), today.toEpochDay()))
+
+    /** 최근 90일에 자주 쓴 지출 분류 (입력 화면에서 앞에) */
+    suspend fun frequentCategories(today: LocalDate): List<Category> =
+        QuickPicks.categories(dao.entriesBetweenNow(today.minusDays(90).toEpochDay(), today.toEpochDay()))
 
     fun entries(cycle: PayCycle): Flow<List<EntryEntity>> =
         dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay())
@@ -2620,12 +2634,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 ((e.postedAtEpochSecond ?: Long.MIN_VALUE) > sec || (e.postedAtEpochSecond == null && e.epochDay > at.toLocalDate().toEpochDay()))
         }
         if (later) return
-        val app = balanceOf(account)
+        val app = balanceOf(account, at.toLocalDate())
         if (app == real) dao.deleteBalanceGap(account.id) else dao.saveBalanceGap(BalanceGapEntity(account.id, real, app, sec))
     }
 
-    private suspend fun balanceOf(a: AccountEntity): Long =
-        AccountBalances.compute(listOf(a), dao.allEntriesNow(), dao.assetChecksNow().filter { it.accountId == a.id }).single().balance
+    private suspend fun balanceOf(a: AccountEntity, upTo: LocalDate = LocalDate.now()): Long =
+        AccountBalances.compute(listOf(a), dao.allEntriesNow(), dao.assetChecksNow().filter { it.accountId == a.id }, upTo).single().balance
 
     /** 실제 잔액과 다른 만큼을 어떻게 볼지 */
     enum class BalanceFix {
@@ -2655,8 +2669,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             BalanceFix.MISSING_SPEND -> addManual(today, kotlin.math.abs(diff), "빠진 지출 (잔액 맞춤)", EntryType.SPEND, Category.ETC, "실제 잔액과 맞춘 차이", accountId)
             BalanceFix.MISSING_INCOME -> addManual(today, kotlin.math.abs(diff), "빠진 입금 (잔액 맞춤)", EntryType.INCOME, Category.OTHER_INCOME, "실제 잔액과 맞춘 차이", accountId)
             BalanceFix.OVERCOUNTED -> addManual(today, kotlin.math.abs(diff), "더 센 지출 (잔액 맞춤)", EntryType.REFUND, Category.ETC, "실제 잔액과 맞춘 차이", accountId)
-            BalanceFix.BALANCE_ONLY -> saveAccount(a, balanceOf(a) + diff)
-            BalanceFix.ALIGN_LIVING -> saveAccount(a, balanceOf(a) + diff)
+            BalanceFix.BALANCE_ONLY -> saveAccount(a, balanceOf(a, today) + diff, today)
+            BalanceFix.ALIGN_LIVING -> saveAccount(a, balanceOf(a, today) + diff, today)
         }
         if (how == BalanceFix.ALIGN_LIVING) alignLivingToBank(LocalDateTime.of(today, java.time.LocalTime.now()))
         dao.deleteBalanceGap(accountId)
@@ -2671,17 +2685,17 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val h = home(flowOf(now)).first() ?: return 0
         val book = splitBookNow(today = now.toLocalDate())
         val unassigned = unassignedEntries.first().filter { it.type != EntryType.INCOME.name && it.type != EntryType.REFUND.name }.sumOf { it.amount }
-        val gap = LivingGap.of(h.accounts, book, unassigned, h.plan.disposable - h.monthLiving, h.entries) ?: return 0
+        val gap = LivingGap.of(h.accounts, book, unassigned, h.plan.disposable - h.monthLiving, h.entries, h.today) ?: return 0
         val rest = gap.rest
         if (rest == 0L) return 0
         val a = dao.accountsNow().firstOrNull { it.id == gap.account.id } ?: return 0
-        val before = balanceOf(a)
+        val before = balanceOf(a, now.toLocalDate())
         addManual(
             now.toLocalDate(), kotlin.math.abs(rest), ALIGN_LABEL,
             if (rest > 0) EntryType.REFUND else EntryType.SPEND, Category.ETC, "통장 잔액에 남은 생활비를 맞춘 차이", a.id,
         )
         // 통장 잔액은 그대로 (생활비만 맞춘다)
-        dao.accountsNow().firstOrNull { it.id == a.id }?.let { saveAccount(it, before) }
+        dao.accountsNow().firstOrNull { it.id == a.id }?.let { saveAccount(it, before, now.toLocalDate()) }
         return rest
     }
 
@@ -3208,13 +3222,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 자산 저장. 있던 자산을 고치며 [balance](지금 잔액)를 주면 지금까지 적은 기록은 그대로 두고 잔액만 그 금액으로 맞춘다:
      * 점검한 적 있는 모으는 통장은 오늘 점검으로(넣은 돈은 그대로), 다른 자산은 처음 잔액을 그만큼 옮겨서.
      */
-    suspend fun saveAccount(input: AccountEntity, balance: Long? = null): Long {
+    suspend fun saveAccount(input: AccountEntity, balance: Long? = null, today: LocalDate = LocalDate.now()): Long {
         val stored = if (input.id != 0L) dao.accountsNow().firstOrNull { it.id == input.id } else null
         var a = input
         var checkToday: Long? = null
         if (stored != null && balance != null) {
             val checks = dao.assetChecksNow().filter { it.accountId == stored.id }
-            val current = AccountBalances.compute(listOf(stored), dao.allEntriesNow(), checks).single().balance
+            val current = AccountBalances.compute(listOf(stored), dao.allEntriesNow(), checks, today).single().balance
             val grows = enumOr(input.type, AccountType.ETC).grows
             a = when {
                 current == balance -> input.copy(opening = stored.opening)
@@ -3233,7 +3247,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             dao.insertAssetCheck(AssetCheckEntity(accountId = id, epochDay = LocalDate.now().toEpochDay(), value = a.opening))
         }
         // 고칠 때 upsert는 -1을 돌려주므로 원래 id로
-        checkToday?.let { dao.insertAssetCheck(AssetCheckEntity(accountId = a.id, epochDay = LocalDate.now().toEpochDay(), value = it)) }
+        checkToday?.let { dao.insertAssetCheck(AssetCheckEntity(accountId = a.id, epochDay = today.toEpochDay(), value = it)) }
         return id
     }
 

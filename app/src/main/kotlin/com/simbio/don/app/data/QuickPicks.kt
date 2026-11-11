@@ -21,4 +21,18 @@ object QuickPicks {
             .sortedWith(compareByDescending<Pair<EntryEntity, Int>> { it.second }.thenByDescending { it.first.epochDay })
             .take(limit)
             .map { (e, _) -> QuickPick(e.label.trim(), e.amount, Category.of(e.category)) }
+
+    /**
+     * 자주 쓴 지출 분류 순서 (많이 쓴 순, 같으면 최근 순). 입력 화면에서 이 순서로 앞에 보여 준다.
+     * 고정 지출·이체·수입은 빼고, 내가 고른 생활비·예외 지출만 센다.
+     */
+    fun categories(entries: List<EntryEntity>): List<Category> =
+        entries.asSequence()
+            .filter { (it.type == EntryType.SPEND.name || it.type == EntryType.EXCEPTION.name) && it.amount > 0 }
+            .groupBy { it.category }
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<String, List<EntryEntity>>> { it.value.size }.thenByDescending { e -> e.value.maxOf { it.epochDay } })
+            .map { Category.of(it.key) }
+            .filter { !it.income }
+            .distinct()
 }

@@ -64,23 +64,35 @@ object Institutions {
  * 카드사 앱 알림이거나 "○○카드 승인"처럼 카드사 이름이 있는 결제 알림이면 신용카드 — "체크"가 있으면 통장에서 바로 나가는 체크카드.
  */
 object CreditCards {
-    private val COMPANY = Regex("(신한|삼성|현대|KB국민|국민|롯데|하나|우리|BC|비씨|NH농협|농협|씨티|IBK기업|기업)\\s?카드")
+    private val COMPANY = Regex("(신한|삼성|현대|KB국민|국민|롯데|하나|우리|BC|비씨|NH농협|NH|농협|씨티|IBK기업|기업)\\s?카드")
     private val USE = listOf("승인", "결제", "사용", "일시불", "할부")
+
+    // 문자에서 "카드" 없이 오는 카드사: "하나(1*2*)승인", "우리(1234)승인"
+    private val SHORT = Regex("(하나|우리|NH|농협|BC|비씨|씨티)\\s*[(\\[][\\d*]{4}[)\\]]\\s*승인")
+
+    // 카드사 이름은 없어도 일시불·할부면 신용카드 ("[일시불.승인(1234)]")
+    private val CREDIT_ONLY = Regex("일시불|\\d{1,2}\\s*개월|할부")
+
+    /** 카드사를 모르는 신용카드 결제의 자산 이름 */
+    const val UNKNOWN = "신용카드"
 
     /** 신용카드 결제면 카드사 이름 ("신한카드"), 아니면 null */
     fun company(packageName: String?, text: String): String? {
         if ("체크" in text) return null
         if (MoneyMoves.isCardBillFromBank(text)) return null
         Institutions.of(InstitutionKind.CARD).firstOrNull { packageName != null && packageName in it.packages }?.let { return it.name }
-        val m = COMPANY.find(text) ?: return null
         if (USE.none { it in text }) return null
-        return normalize(m.value)
+        COMPANY.find(text)?.let { return normalize(it.value) }
+        SHORT.find(text)?.let { return normalize(it.groupValues[1] + "카드") }
+        // 통장 알림의 "자동이체"·"출금"은 신용카드가 아니다
+        if (CREDIT_ONLY.containsMatchIn(text) && "승인" in text && listOf("출금", "입금", "이체").none { it in text }) return UNKNOWN
+        return null
     }
 
     /** "국민카드" → "KB국민카드", "비씨 카드" → "BC카드" */
     fun normalize(name: String): String {
         val n = name.replace(" ", "")
-        val alias = mapOf("국민카드" to "KB국민카드", "비씨카드" to "BC카드", "농협카드" to "NH농협카드", "기업카드" to "IBK기업카드")
+        val alias = mapOf("국민카드" to "KB국민카드", "비씨카드" to "BC카드", "농협카드" to "NH농협카드", "NH카드" to "NH농협카드", "기업카드" to "IBK기업카드")
         return alias[n] ?: Institutions.of(InstitutionKind.CARD).firstOrNull { it.name == n }?.name ?: n
     }
 
