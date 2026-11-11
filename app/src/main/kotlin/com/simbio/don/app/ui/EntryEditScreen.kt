@@ -661,9 +661,9 @@ fun CategoryGrid(selected: Category, options: List<Category> = Category.spending
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Box(Modifier.width(40.dp).height(40.dp).clip(RoundedCornerShape(20.dp)).background(DonColors.SurfaceAlt), contentAlignment = Alignment.Center) {
-                                Text("···", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.InkSoft)
+                                Text("▾", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DonColors.InkSoft)
                             }
-                            Text("전체", fontSize = 12.sp, color = DonColors.InkSoft, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+                            Text("전체 보기", fontSize = 12.sp, color = DonColors.InkSoft, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
                         }
                         return@forEach
                     }
