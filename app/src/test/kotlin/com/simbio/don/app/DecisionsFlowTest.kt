@@ -158,7 +158,7 @@ class CanBuyFlowTest {
         rule.waitUntilAtLeastOneExists(hasText("제주 여행", substring = true), 5_000)
         shot("c1_can_buy")
         rule.onNodeWithText("샀어요 · 적기").performScrollTo().performClick()
-        rule.waitUntilAtLeastOneExists(hasText("나눠 냈나요"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasText("더 고르기"), 5_000)
         rule.onNodeWithText("저장").performClick()
         rule.waitUntil(5_000) { db { allEntriesNow() }.any { it.label == "운동화" } }
         assertEquals(89_000L, db { allEntriesNow() }.single { it.label == "운동화" }.amount)

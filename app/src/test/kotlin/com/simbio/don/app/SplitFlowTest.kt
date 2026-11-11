@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -95,7 +96,8 @@ class SplitFlowTest {
         rule.onAllNodes(hasSetTextAction() and hasText("금액")).onFirst().performTextReplacement("80000")
         rule.onAllNodes(hasSetTextAction() and hasText("어디에 썼나요", substring = true)).onFirst().performTextReplacement("고깃집")
         rule.onNodeWithText("내가 다 냄").performScrollTo().performClick()
-        rule.onNodeWithText("4명").performScrollTo().performClick()
+        // 칩이 아래 버튼 줄에 가려질 수 있어 누르기 동작을 바로 보낸다
+        rule.onNodeWithText("4명").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         waitText("받을 돈 60,000원", substring = true)
         rule.onNodeWithText("받을 돈 60,000원", substring = true).performScrollTo()
         shot("s1_entry_split")

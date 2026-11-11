@@ -171,7 +171,7 @@ class UsageTourTest {
         back()
         waitText("이대로 쓰면")
         rule.onNodeWithContentDescription("가계부 쓰기").performClick()
-        waitText("나눠 냈나요")
+        waitText("더 고르기")
         shot("32_entry_new")
         back()
         waitText("이대로 쓰면")
