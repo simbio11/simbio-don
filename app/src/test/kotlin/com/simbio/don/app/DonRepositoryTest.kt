@@ -471,7 +471,9 @@ class DonRepositoryTest {
         val after = home(at(11, 2, 12, 1))
         assertEquals(112_000, after.results[0].spent) // 미분류 → 지출로 반영
         assertTrue(after.settleable.isEmpty())
-        assertEquals(488_000, after.currentWeek!!.carryIn)
+        // 첫 주에 아낀 돈 (기본 주 예산 − 쓴 돈), 남은 주에 날 수대로 나뉘어 이번 주도 그만큼 는다
+        assertEquals(488_000, after.savedSoFar)
+        assertTrue(after.currentWeek!!.carryIn > 0)
     }
 
     @Test

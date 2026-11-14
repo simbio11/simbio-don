@@ -86,6 +86,10 @@ fun HomeScreen(
     /** 어느 통장·카드인지 골라 줄 기록 */
     accountQuestions: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
     onChooseAccount: (com.simbio.don.app.data.EntryEntity, Long, Boolean) -> Unit = { _, _, _ -> },
+    /** 내 계좌끼리 옮긴 돈인지 묻기 */
+    moveQuestions: List<com.simbio.don.app.data.MoveQuestion> = emptyList(),
+    onConfirmMove: (com.simbio.don.app.data.MoveQuestion, Long?, Boolean) -> Unit = { _, _, _ -> },
+    onDismissMove: (com.simbio.don.app.data.MoveQuestion) -> Unit = {},
     onOpenAssets: () -> Unit = {},
     /** 알림으로 적힌 결제 중 확신 없는 것과 자동 기록률 */
     auto: com.simbio.don.app.data.DonRepository.AutoState = com.simbio.don.app.data.DonRepository.AutoState(emptyList(), com.simbio.don.budget.AutoRate(0, 0)),
@@ -136,6 +140,7 @@ fun HomeScreen(
             BalanceGapCard(g, name, { how -> onFixGap(g, how) }, { onDismissGap(g) }, unassignedSpend)
         }
         // 어느 통장에서 나갔는지 모르는 결제·입금: 자산 목록에서 고른다
+        MoveQuestionCard(moveQuestions, home.accounts.map { it.account }, onConfirmMove, onDismissMove)
         AccountQuestionCard(accountQuestions, home.accounts.map { it.account }, onChooseAccount, limit = 2, onMore = onOpenAssets)
         // 가게 분류를 모르는 결제: 알려 주면 다음부터 저절로 (자동 기록률도 여기서)
         CheckCard(auto.checks, auto.rate, onConfirmCategory, onOpenEntry, onLearned)
@@ -393,6 +398,14 @@ fun TodayWeekCard(home: HomeState, onBalanceFix: () -> Unit = {}, gap: com.simbi
             right = "${shortDate(home.cycle.end)}까지 ${daysLeft}일",
         )
         if (monthLeft < 0) WarnLine("이번 달 생활비를 ${won(-monthLeft)} 넘었어요", fontSize = 11)
+        // 생활비가 계획에서 바뀌었으면 왜인지 (쓴 돈이 아니라 예산이 바뀐 것 — 남은 날에 다시 나눴다)
+        val ch = home.budgetChange
+        val why = listOfNotNull(
+            ch.extraSaved.takeIf { it > 0 }?.let { "계획보다 저축 ${won(it)} 더 → 생활비에서 빼고 다시 나눔" },
+            ch.withdrawn.takeIf { it > 0 }?.let { "저축에서 꺼낸 ${won(it)} → 생활비에 더함" },
+            ch.manual.takeIf { it != 0L }?.let { "생활비 직접 고침 ${if (it > 0) "+" else "−"}${won(kotlin.math.abs(it))}" },
+        )
+        if (why.isNotEmpty()) Text(why.joinToString(" · "), fontSize = 11.sp, color = DonColors.InkMuted)
         // 통장 잔액과 왜 다른지 · 놓친 알림이 있으면 잔액 맞추기
         if (gap != null) LivingGapRow(gap, onBalanceFix, onAlign = onAlign)
         else TextButton(onClick = onBalanceFix) { Text("통장 잔액이 실제와 다르면 · 잔액 맞추기", fontSize = 12.sp) }

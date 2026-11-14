@@ -411,6 +411,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 어느 통장에서 나갔는지·들어왔는지 골라 줄 기록 (자산 없이 적힌 것 + 앱이 짐작해 넣은 것) */
     val accountQuestions = repo.accountQuestions.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** 내 계좌끼리 옮긴 것 같은 돈 */
+    val moveQuestions = repo.moveQuestions(clock.value.toLocalDate()).flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun confirmMove(q: com.simbio.don.app.data.MoveQuestion, toAccountId: Long?, savings: Boolean) = viewModelScope.launch {
+        repo.confirmMove(q.out.id, q.into?.id, toAccountId, savings)
+    }
+
+    fun dismissMove(q: com.simbio.don.app.data.MoveQuestion) = viewModelScope.launch { repo.dismissMove(q.out.id, q.into?.id) }
+
     fun chooseAccount(entryId: Long, accountId: Long, rememberApp: Boolean, done: (Int) -> Unit = {}) = viewModelScope.launch {
         done(repo.chooseAccount(entryId, accountId, rememberApp))
     }

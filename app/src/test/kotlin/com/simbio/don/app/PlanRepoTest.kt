@@ -96,15 +96,17 @@ class PlanRepoTest {
 
     @Test
     fun `경조사는 한 달에 나눠서 — 남은 주에 조금씩 빼고, 쓴 돈은 그 주 지출로 다시 안 센다`() = runTest {
-        val before = home(at(10, 23)).results.map { it.budget }
+        // 0.31: 주마다 쓸 수 있는 돈 = 남은 생활비 ÷ 남은 날. 마지막 주의 남은 돈 = 한 달 남은 생활비
+        fun can(r: com.simbio.don.budget.WeekResult) = r.budget + r.carryIn
+        val before = home(at(10, 23)).results
         val id = repo.savePlan(plan(30, 100_000, "지수 결혼식", Category.EVENT).copy(createdEpochDay = d(10, 23).toEpochDay()))
         assertTrue(repo.planNow(id)!!.monthly)
         val h = home(at(10, 23))
-        val after = h.results.map { it.budget }
-        assertEquals(100_000L, before.sum() - after.sum())
-        // 결혼식 주만 10만 원 깎이지 않는다
+        // 한 달 남은 생활비에서 미리 떼어 둔다
+        assertEquals(100_000L, before.last().available - h.results.last().available)
+        // 결혼식 주만 10만 원 깎이지 않는다 (만든 주부터 나눠서)
         val weddingWeek = h.plan.weekIndexOf(d(10, 30))!!
-        assertTrue(before[weddingWeek] - after[weddingWeek] < 100_000)
+        assertTrue(can(before[weddingWeek]) - can(h.results[weddingWeek]) in 1 until 100_000)
         // 하루 몫에서 미리 떼지도 않는다
         assertEquals(0L, h.day.reserved)
 
@@ -113,12 +115,12 @@ class PlanRepoTest {
         repo.completePlan(id, e, 100_000, d(10, 30))
         val h2 = home(at(10, 30))
         assertEquals(0L, h2.results[weddingWeek].spent)
-        assertEquals(100_000L, before.sum() - h2.results.map { it.budget }.sum())
+        assertEquals(100_000L, before.last().available - h2.results.last().available)
 
         // 그 주 예산에서로 바꾸면 그 주 지출로
         repo.setPlanMonthly(id, false)
         val h3 = home(at(10, 30))
         assertEquals(100_000L, h3.results[weddingWeek].spent)
-        assertEquals(before.sum(), h3.results.map { it.budget }.sum())
+        assertEquals(100_000L, before.last().available - h3.results.last().available)
     }
 }

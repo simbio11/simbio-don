@@ -43,8 +43,8 @@ class CycleLedgerTest {
         assertEquals(120_000, results[1].overspent)
         assertEquals(0, results[1].savedBps)
         assertEquals(-83_479, results[1].carryOut)
-        // 더 쓴 만큼 남은 주가 저절로 준다
-        assertTrue(results[2].budget + results[2].carryIn < 420_000)
+        // 1주에 아낀 12만 원과 2주에 더 쓴 12만 원이 맞먹어, 3주는 기본 예산 그대로
+        assertEquals(420_000, results[2].budget + results[2].carryIn)
     }
 
     @Test

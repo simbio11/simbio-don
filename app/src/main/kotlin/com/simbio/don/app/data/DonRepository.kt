@@ -1759,6 +1759,50 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     val unassignedEntries: Flow<List<EntryEntity>> = dao.entriesWithoutAccount().map { l -> l.filter(::unassigned) }
 
+    /** 내 계좌끼리 옮긴 것 같은 돈 (최근 40일): 출금↔입금 짝, 또는 짝 없는 큰 송금 */
+    fun moveQuestions(today: LocalDate = LocalDate.now()): Flow<List<MoveQuestion>> =
+        combine(dao.entriesBetween(today.minusDays(40).toEpochDay(), today.plusDays(1).toEpochDay()), dao.accounts()) { e, a -> Moves.find(e, a) }
+
+    /**
+     * 내 계좌끼리 옮긴 돈이 맞아요: 나간 송금을 [toAccountId]로 옮긴 이체로 바꾼다 (지출에서 빠진다).
+     * 짝이 되는 입금([into])이 있으면 그 입금은 지우고 받은 통장으로 잇고, 금액 차이는 수수료 지출로 남긴다.
+     * 받은 통장이 저축·투자면 저축으로 — 계획한 저축을 넘은 만큼 이번 달 생활비가 줄어 남은 날에 다시 나뉜다.
+     * [toAccountId]가 null이면 앱에 없는 저축([savings])이거나 내 다른 통장으로 나간 것.
+     */
+    suspend fun confirmMove(outId: Long, intoId: Long?, toAccountId: Long?, savings: Boolean = false) = locked {
+        val out = dao.entryNow(outId) ?: return@locked
+        val into = intoId?.let { dao.entryNow(it) }
+        val to = into?.accountId ?: toAccountId
+        val toType = to?.let { id -> dao.accountsNow().firstOrNull { it.id == id } }?.let { enumOr(it.type, AccountType.ETC) }
+        val moved = into?.amount ?: out.amount
+        val label = if (savings || toType?.grows == true) BudgetChange.SAVE_IN else "내 계좌로 옮김"
+        dao.updateEntry(
+            out.copy(
+                type = EntryType.TRANSFER.name, amount = moved, toAccountId = to, label = label,
+                memo = listOf(out.label, out.memo).filter { it.isNotBlank() && it != label }.joinToString(" · ").take(100),
+                category = Category.ETC.name, sentOut = false, acctGuess = false,
+            ),
+        )
+        if (into != null) {
+            dao.deleteEntry(into)
+            val fee = out.amount - into.amount
+            if (fee > 0) {
+                dao.insertEntry(
+                    EntryEntity(
+                        epochDay = out.epochDay, amount = fee, label = "이체 수수료", type = EntryType.SPEND.name,
+                        source = EntrySource.MANUAL.name, category = Category.ETC.name, accountId = out.accountId,
+                    ),
+                )
+            }
+        }
+    }
+
+    /** 내 계좌끼리 옮긴 게 아니에요 — 다시 안 묻는다 */
+    suspend fun dismissMove(outId: Long, intoId: Long?) = locked {
+        dao.entryNow(outId)?.let { dao.updateEntry(it.copy(moveState = 2)) }
+        intoId?.let { dao.entryNow(it) }?.let { dao.updateEntry(it.copy(moveState = 2)) }
+    }
+
     /** 어느 통장인지 골라 줄 기록: 자산 없이 적힌 것 + 앱이 짐작해 넣은 것 (최근 것 먼저, 이체·정산·보낼 돈은 뺌) */
     val accountQuestions: Flow<List<EntryEntity>> = dao.entriesNeedingAccount().map { l ->
         l.filter { e -> unassigned(e) || (e.acctGuess && e.type != EntryType.TRANSFER.name && !e.owe && e.settleFor == null) }

@@ -165,7 +165,9 @@ class NotificationMatrixTest {
         val h = repo.home(kotlinx.coroutines.flow.flowOf(at(21))).first()!!
         val gap = com.simbio.don.app.data.LivingGap.of(h.accounts, repo.splitBookNow(today = d), 0, h.plan.disposable - h.monthLiving, h.entries, h.today)!!
         assertEquals(0L, gap.rest)
-        assertTrue(entries().any { it.label == DonRepository.ALIGN_LABEL })
+        // 0.31: 지출·환불 기록이 아니라 이번 달 생활비를 고친다 (이번 주만 갑자기 커지지 않게)
+        assertTrue(entries().none { it.label == DonRepository.ALIGN_LABEL })
+        assertTrue(h.budgetChange.manual != 0L)
         // 이미 맞으면 다시 눌러도 아무것도 안 남긴다
         assertEquals(0L, repo.alignLivingToBank(at(21, 30)))
         assertEquals(983_500L, balance(bank))
