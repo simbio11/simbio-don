@@ -72,7 +72,8 @@ object Summaries {
                 income = Stats.income(inCycle),
                 saved = (c.savings + leftover).coerceAtLeast(0),
                 isCurrent = i == 0,
-                expense = Stats.total(inCycle),
+                // 고정 지출은 기록만 (지출 합계에 넣지 않는다)
+                expense = Stats.total(inCycle.filter { it.type != com.simbio.don.budget.EntryType.FIXED }),
                 leftover = leftover,
             )
         }

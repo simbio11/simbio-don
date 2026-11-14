@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,7 +71,14 @@ private fun workText(minutes: Long): String = when {
  * 사면 그대로 가계부에 적고, 참으면 그냥 닫는다 (아무것도 저장하지 않음).
  */
 @Composable
-fun CanBuyScreen(home: HomeState, onBought: (EntryDraft) -> Unit, onSkip: (Long) -> Unit, onBack: () -> Unit) {
+fun CanBuyScreen(
+    home: HomeState,
+    onBought: (EntryDraft) -> Unit,
+    onSkip: (Long) -> Unit,
+    onBack: () -> Unit,
+    /** 7일 참아 보기 (이름, 가격) */
+    onWait: (String, Long) -> Unit = { _, _ -> },
+) {
     var price by remember { mutableStateOf("") }
     var label by remember { mutableStateOf("") }
     val v = price.toLongOrNull() ?: 0
@@ -93,12 +101,14 @@ fun CanBuyScreen(home: HomeState, onBought: (EntryDraft) -> Unit, onSkip: (Long)
             if (v > 0) {
                 val r = purchaseImpact(home, v)
                 ImpactCard(home, r)
+                // 부자들의 소비법: 바로 사지 말고 7일 참아 본다. 그래도 사고 싶으면 그때 산다
+                Button(onClick = { onWait(label.trim(), v) }, modifier = Modifier.fillMaxWidth()) { Text("7일 참아 보기 (7일 뒤에 다시 물어봐요)") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SubButton(onClick = { onSkip(v) }, modifier = Modifier.weight(1f)) { Text("참을래요") }
-                    Button(
-                        onClick = { onBought(EntryDraft(home.today, v, label.trim(), EntryType.SPEND, Category.ETC, "", false)) },
+                    SubButton(onClick = { onSkip(v) }, modifier = Modifier.weight(1f)) { Text("안 살래요") }
+                    SubButton(
+                        onClick = { onBought(EntryDraft(home.today, v, label.trim(), EntryType.SPEND, Category.ETC, "", false, want = 1)) },
                         modifier = Modifier.weight(1f),
-                    ) { Text("샀어요 · 적기") }
+                    ) { Text("지금 샀어요 · 적기") }
                 }
             }
         }
@@ -124,6 +134,20 @@ private fun ImpactCard(home: HomeState, r: PurchaseImpact) {
         r.workMinutes?.let { m ->
             Text("월급으로 치면 ${workText(m)} 일한 돈이에요", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
         }
+        // 빠른 보상 → 긴 보상: 최저시급으로 몇 시간, 참으면 1년에 얼마
+        val year = home.today.year
+        Text(
+            "최저시급(${won(com.simbio.don.budget.MinWage.hourly(year))})으로는 ${com.simbio.don.budget.MinWage.text(com.simbio.don.budget.MinWage.minutes(r.price, year))} 일해야 버는 돈",
+            fontSize = 13.sp,
+            color = DonColors.InkSoft,
+        )
+        val yearly = com.simbio.don.budget.MinWage.yearIfSkippedMonthly(r.price)
+        Text(
+            "한 달에 한 번 이만큼 참으면 1년에 ${won(yearly)}" + (com.simbio.don.budget.Worths.of(yearly, home.today.dayOfYear.toLong())?.let { " — ${it.big}" } ?: ""),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = DonColors.Good,
+        )
         home.goals.firstOrNull { !it.done }?.let { g ->
             val left = (g.goal.target - g.filled).coerceAtLeast(1)
             Text(
@@ -147,9 +171,103 @@ private fun ImpactRow(label: String, before: Long, after: Long) {
 
 /** 홈 카드: 이거 사도 될까? */
 @Composable
-fun CanBuyHomeCard(onOpen: () -> Unit) {
+fun CanBuyHomeCard(onOpen: () -> Unit, wishes: List<com.simbio.don.app.data.WishEntity> = emptyList(), today: java.time.LocalDate = java.time.LocalDate.now(), onWishes: () -> Unit = {}) {
     SectionCard("이거 사도 될까?", trailing = { TextButton(onClick = onOpen) { Text("따져 보기") } }) {
-        Text("가격을 넣으면 이번 주 남은 돈·월말 예측·일한 시간으로 바로 보여 줘요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        Text("사고 싶은 게 생기면 가격을 넣고 7일 참아 보세요. 7일 뒤에도 사고 싶으면 그때 사요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        val waiting = wishes.filter { it.status == "WAITING" }
+        val due = waiting.filter { com.simbio.don.budget.WaitRule.due(java.time.LocalDate.ofEpochDay(it.remindEpochDay), today) }
+        if (waiting.isNotEmpty()) {
+            Text(
+                if (due.isNotEmpty()) "7일 참은 것 ${due.size}개 — 아직도 사고 싶나요?" else "참는 중 ${waiting.size}개 · 가장 빠른 것 D-${waiting.minOf { com.simbio.don.budget.WaitRule.daysLeft(java.time.LocalDate.ofEpochDay(it.remindEpochDay), today) }}",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (due.isNotEmpty()) DonColors.Real else DonColors.Ink,
+                modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(8.dp)).background(DonColors.RealSurface).clickable(onClick = onWishes).padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        } else if (wishes.isNotEmpty()) {
+            TextButton(onClick = onWishes) { Text("사고 싶은 것 보기", fontSize = 12.sp) }
+        }
+    }
+}
+
+/**
+ * 사고 싶은 것: 7일 참는 중 · 7일이 지나 물어보는 것 · 끝난 것. 안 산 것은 "참아서 아낀 돈"으로 모인다.
+ */
+@Composable
+fun WishScreen(
+    wishes: List<com.simbio.don.app.data.WishEntity>,
+    today: java.time.LocalDate,
+    onBuy: (com.simbio.don.app.data.WishEntity) -> Unit,
+    onSkip: (com.simbio.don.app.data.WishEntity) -> Unit,
+    onDelete: (com.simbio.don.app.data.WishEntity) -> Unit,
+    onAdd: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val waiting = wishes.filter { it.status == "WAITING" }
+    val (due, notYet) = waiting.partition { com.simbio.don.budget.WaitRule.due(java.time.LocalDate.ofEpochDay(it.remindEpochDay), today) }
+    val skipped = wishes.filter { it.status == "SKIPPED" }
+    val bought = wishes.filter { it.status == "BOUGHT" }
+    Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
+        BackBar("사고 싶은 것 · 7일 참기", onBack)
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            val saved = skipped.sumOf { it.price }
+            FormCard {
+                Text("참아서 아낀 돈", fontSize = 13.sp, color = DonColors.InkMuted)
+                Text(won(saved), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DonColors.Good)
+                if (saved > 0) {
+                    Text(
+                        "최저시급으로 ${com.simbio.don.budget.MinWage.text(com.simbio.don.budget.MinWage.minutes(saved, today.year))} 일한 돈" + (com.simbio.don.budget.Worths.of(saved, today.dayOfYear.toLong())?.let { " · ${it.big}" } ?: ""),
+                        fontSize = 12.sp,
+                        color = DonColors.InkSoft,
+                    )
+                }
+                Text("부자들은 사고 싶은 걸 바로 사지 않아요. 7일 기다리면 진짜 필요한지 보여요.", fontSize = 12.sp, color = DonColors.InkMuted)
+            }
+            if (due.isNotEmpty()) {
+                FormCard("7일 참았어요 — 아직도 사고 싶나요?") {
+                    due.forEach { w ->
+                        WishRow(w, "${(today.toEpochDay() - w.createdEpochDay)}일 참음")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onSkip(w) }, modifier = Modifier.weight(1f)) { Text("안 살래요 (아낀 돈)") }
+                            SubButton(onClick = { onBuy(w) }, modifier = Modifier.weight(1f)) { Text("그래도 살래요") }
+                        }
+                    }
+                }
+            }
+            if (notYet.isNotEmpty()) {
+                FormCard("참는 중") {
+                    notYet.forEach { w ->
+                        val left = com.simbio.don.budget.WaitRule.daysLeft(java.time.LocalDate.ofEpochDay(w.remindEpochDay), today)
+                        WishRow(w, "D-$left")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SubButton(onClick = { onSkip(w) }, modifier = Modifier.weight(1f)) { Text("벌써 안 사고 싶어요") }
+                            TextButton(onClick = { onDelete(w) }) { Text("지우기", fontSize = 12.sp) }
+                        }
+                    }
+                }
+            }
+            if (skipped.isNotEmpty() || bought.isNotEmpty()) {
+                FormCard("끝난 것") {
+                    skipped.forEach { WishRow(it, "참음") }
+                    bought.forEach { WishRow(it, "샀음") }
+                }
+            }
+            if (wishes.isEmpty()) Text("아직 없어요. '이거 사도 될까?'에서 가격을 넣고 '7일 참아 보기'를 눌러 보세요.", fontSize = 13.sp, color = DonColors.InkMuted)
+            TextButton(onClick = onAdd) { Text("+ 사고 싶은 것 담기") }
+        }
+    }
+}
+
+@Composable
+private fun WishRow(w: com.simbio.don.app.data.WishEntity, tag: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(w.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, modifier = Modifier.weight(1f), maxLines = 1)
+        Text(tag, fontSize = 12.sp, color = DonColors.InkMuted)
+        Spacer(Modifier.width(8.dp))
+        Text(won(w.price), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
     }
 }
 

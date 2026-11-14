@@ -224,7 +224,8 @@ fun LedgerScreen(
 ) {
     val monthPlans = plans.filter { it.open && LocalDate.ofEpochDay(it.epochDay) in view.cycle }
     val income = Stats.income(view.entries)
-    val expense = Stats.total(view.entries)
+    // 고정 지출은 기록만 (월급에서 미리 뺀 돈이라 이번 달 지출 합계·달력·통계에 넣지 않는다)
+    val expense = Stats.total(view.entries.filter { it.type != EntryType.FIXED })
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item { LedgerMonthBar(view, hasPrev, hasNext, onPrev, onNext, onSearch) }
         item {
@@ -284,7 +285,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dailyItems(
             fontSize = 14.sp,
         )
     }
-    val groups = filtered.groupBy { it.epochDay }.toSortedMap(compareByDescending { it })
+    // 고정 지출은 날짜별 목록·합계에서 빼고 맨 아래 따로 (기록만)
+    val fixed = filtered.filter { it.type == EntryType.FIXED.name }
+    val groups = filtered.filter { it.type != EntryType.FIXED.name }.groupBy { it.epochDay }.toSortedMap(compareByDescending { it })
     groups.forEach { (day, list) ->
         item(key = "d$day") {
             val d = LocalDate.ofEpochDay(day)
@@ -294,6 +297,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dailyItems(
                 list.sortedWith(compareByDescending<EntryEntity> { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
                     .forEach { e -> LedgerRow(e, accountNames, onOpen) }
             }
+        }
+    }
+    if (fixed.isNotEmpty()) item(key = "fixed") {
+        Column(Modifier.padding(bottom = 10.dp).fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("고정 지출 · 기록만", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink, modifier = Modifier.weight(1f))
+                Text(won(fixed.sumOf { it.amount }), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.InkSoft)
+            }
+            Text("월급에서 미리 뺀 돈이라 생활비·달력·통계에서 빼지 않고 여기 모아 둬요.", fontSize = 11.sp, color = DonColors.InkMuted)
+            fixed.sortedWith(compareByDescending<EntryEntity> { it.epochDay }.thenByDescending { it.id }).forEach { e -> LedgerRow(e, accountNames, onOpen) }
         }
     }
 }
@@ -317,7 +330,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.calendarItems(
         Column(Modifier.fillMaxWidth().card().padding(horizontal = 8.dp, vertical = 12.dp)) {
             LedgerCalendar(
                 view.cycle.start, view.cycle.end,
-                Stats.dailyIncome(view.entries), Stats.daily(view.entries),
+                Stats.dailyIncome(view.entries), Stats.daily(view.entries, livingOnly = true),
                 view.today, selected,
                 planned = open.groupBy { LocalDate.ofEpochDay(it.epochDay) }.mapValues { (_, l) -> l.sumOf { it.amount } },
                 events = calendar.events,

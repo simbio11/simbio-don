@@ -147,6 +147,9 @@ object DailyReminder {
             if (isOn(context)) schedule(context)
             // 앱 안 캘린더 일정 알림도 다시
             EventReminders.reschedule(context)
+            // 7일 참기 알림도 다시
+            val pending = goAsync()
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { try { WishReminders.reschedule(context) } finally { pending.finish() } }
         }
     }
 }

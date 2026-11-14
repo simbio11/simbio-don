@@ -1759,6 +1759,42 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     val unassignedEntries: Flow<List<EntryEntity>> = dao.entriesWithoutAccount().map { l -> l.filter(::unassigned) }
 
+    // ── 사고 싶은 것: 7일 참아 보기 ─────────────────────────────
+
+    val wishes: Flow<List<WishEntity>> = dao.wishes()
+
+    suspend fun wishesNow(): List<WishEntity> = dao.wishesNow()
+
+    /** 사고 싶은 것 담기: 7일 뒤에 "아직도 사고 싶나요?"를 묻는다. 만든 id */
+    suspend fun addWish(name: String, price: Long, note: String = "", today: LocalDate = LocalDate.now()): Long =
+        dao.saveWish(
+            WishEntity(
+                name = name.trim().take(30).ifBlank { "사고 싶은 것" }, price = price.coerceAtLeast(0), note = note.take(100),
+                createdEpochDay = today.toEpochDay(), remindEpochDay = com.simbio.don.budget.WaitRule.remindOn(today).toEpochDay(),
+            ),
+        )
+
+    /** 참았는데도 사고 싶어서 샀다 (가계부에 적은 기록과 잇는다) */
+    suspend fun buyWish(id: Long, entryId: Long?, today: LocalDate = LocalDate.now()) {
+        val w = dao.wishesNow().firstOrNull { it.id == id } ?: return
+        dao.saveWish(w.copy(status = "BOUGHT", doneEpochDay = today.toEpochDay(), entryId = entryId))
+    }
+
+    /** 안 사기로 했다 = 참아서 아낀 돈 */
+    suspend fun skipWish(id: Long, today: LocalDate = LocalDate.now()) {
+        val w = dao.wishesNow().firstOrNull { it.id == id } ?: return
+        dao.saveWish(w.copy(status = "SKIPPED", doneEpochDay = today.toEpochDay()))
+    }
+
+    suspend fun deleteWish(id: Long) = dao.deleteWish(id)
+
+    /** 7일이 다 돼서 알림을 보낼 것 (아직 안 보낸 것) — 보냈다고 표시한다 */
+    suspend fun takeDueWishes(today: LocalDate = LocalDate.now()): List<WishEntity> {
+        val due = dao.wishesNow().filter { it.status == "WAITING" && !it.notified && it.remindEpochDay <= today.toEpochDay() }
+        due.forEach { dao.saveWish(it.copy(notified = true)) }
+        return due
+    }
+
     /** 내 계좌끼리 옮긴 것 같은 돈 (최근 40일): 출금↔입금 짝, 또는 짝 없는 큰 송금 */
     fun moveQuestions(today: LocalDate = LocalDate.now()): Flow<List<MoveQuestion>> =
         combine(dao.entriesBetween(today.minusDays(40).toEpochDay(), today.plusDays(1).toEpochDay()), dao.accounts()) { e, a -> Moves.find(e, a) }
@@ -1862,6 +1898,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         share: Long? = null,
         people: Int? = null,
         owe: Boolean = false,
+        /** 필요(0)·욕구(1), null이면 분류대로 */
+        want: Int? = null,
     ) = locked {
         val name = label.ifBlank {
             when (type) {
@@ -1896,6 +1934,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 share = share?.takeIf { type.spendLike && !owe && it in 0 until amount },
                 people = people?.takeIf { type.spendLike && it > 1 },
                 owe = owe && type.spendLike,
+                want = want?.takeIf { type.spendLike },
             ),
         )
         if (type == EntryType.INCOME && cat == Category.SALARY) {

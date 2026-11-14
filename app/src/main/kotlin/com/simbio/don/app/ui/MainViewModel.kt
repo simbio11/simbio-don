@@ -170,7 +170,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val id = repo.addManual(
                 draft.date, draft.amount, draft.label, draft.type, draft.category, draft.memo,
                 draft.accountId, draft.toAccountId, draft.minuteOfDay, LocalDateTime.now(), draft.sub,
-                share = draft.share, people = draft.people, owe = draft.owe,
+                share = draft.share, people = draft.people, owe = draft.owe, want = draft.want,
             )
             // 계획에서 "썼어요"로 적었으면 계획과 잇는다 (계획과 실제를 견줌), 아니면 맞는 계획을 찾아 잇는다
             draft.planId?.let { repo.completePlan(it, id, draft.amount, draft.date) } ?: repo.autoLinkPlans()
@@ -192,6 +192,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     share = draft.share?.takeIf { it in 0 until draft.amount },
                     people = draft.people,
                     owe = draft.owe,
+                    want = draft.want,
                 ),
                 existing,
                 draft.applyToSameLabel,
@@ -410,6 +411,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 어느 통장에서 나갔는지·들어왔는지 골라 줄 기록 (자산 없이 적힌 것 + 앱이 짐작해 넣은 것) */
     val accountQuestions = repo.accountQuestions.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 사고 싶은 것 (7일 참기) */
+    val wishes = repo.wishes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addWish(name: String, price: Long) = viewModelScope.launch {
+        repo.addWish(name, price, today = clock.value.toLocalDate())
+        com.simbio.don.app.notify.WishReminders.reschedule(getApplication())
+    }
+
+    fun buyWish(w: com.simbio.don.app.data.WishEntity) = viewModelScope.launch { repo.buyWish(w.id, null, clock.value.toLocalDate()) }
+    fun skipWish(w: com.simbio.don.app.data.WishEntity) = viewModelScope.launch { repo.skipWish(w.id, clock.value.toLocalDate()) }
+    fun deleteWish(w: com.simbio.don.app.data.WishEntity) = viewModelScope.launch { repo.deleteWish(w.id) }
 
     /** 내 계좌끼리 옮긴 것 같은 돈 */
     val moveQuestions = repo.moveQuestions(clock.value.toLocalDate()).flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

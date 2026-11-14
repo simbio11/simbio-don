@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simbio.don.app.data.MonthView
+import com.simbio.don.app.data.toEntry
 import com.simbio.don.app.ui.kit.TextButton
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.budget.Category
@@ -132,6 +133,10 @@ fun StatsScreen(
         if (view.isCurrent && summaries.size >= 2) {
             SectionCard("월별 추이") { MonthTrendChart(summaries) }
         }
+
+        // 부자들의 소비법: 필요와 욕구를 나눠 본다
+        val ws = com.simbio.don.budget.Wants.split(view.entities.mapNotNull { e -> runCatching { e.toEntry() to e.want }.getOrNull() })
+        if (ws.total > 0) SectionCard("필요 vs 욕구") { NeedWantBar(ws, view.today.year) }
 
         SectionCard(
             "카테고리 예산",
@@ -258,5 +263,26 @@ private fun Legend(color: androidx.compose.ui.graphics.Color, label: String) {
         Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(color))
         Spacer(Modifier.width(6.dp))
         Text(label, fontSize = 12.sp, color = ChartColors.InkSecondary)
+    }
+}
+
+/** 필요·욕구 막대와 욕구 소비를 최저시급으로 몇 시간 일한 돈인지 */
+@Composable
+fun NeedWantBar(ws: com.simbio.don.budget.Wants.Split, year: Int) {
+    androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+        androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().height(14.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(7.dp))) {
+            if (ws.need > 0) androidx.compose.foundation.layout.Box(Modifier.weight(ws.need.toFloat()).fillMaxSize().background(DonColors.Real))
+            if (ws.want > 0) androidx.compose.foundation.layout.Box(Modifier.weight(ws.want.toFloat()).fillMaxSize().background(DonColors.Highlight))
+        }
+        Line("필요해서 쓴 돈", won(ws.need))
+        Line("갖고 싶어서 쓴 돈 (${ws.wantPercent}%)", won(ws.want))
+        if (ws.want > 0) {
+            val m = com.simbio.don.budget.MinWage.minutes(ws.want, year)
+            Text(
+                "욕구 소비는 최저시급(${won(com.simbio.don.budget.MinWage.hourly(year))})으로 ${com.simbio.don.budget.MinWage.text(m)} 일한 돈이에요.",
+                fontSize = 12.sp,
+                color = DonColors.InkSoft,
+            )
+        }
     }
 }

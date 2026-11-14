@@ -141,6 +141,7 @@ private sealed interface Overlay {
     data object Goals : Overlay
     data object Splits : Overlay
     data object CanBuy : Overlay
+    data object Wishes : Overlay
     data class Ai(val mode: com.simbio.don.app.ui.AiMode) : Overlay
     data object Settings : Overlay
     data object Search : Overlay
@@ -539,6 +540,8 @@ class MainActivity : ComponentActivity() {
                         onAi = { m -> screens.push(Overlay.Ai(m)) },
                         report = produceState<com.simbio.don.budget.MonthReport?>(null, home.cycle.start) { value = vm.lastMonthReport() }.value,
                         onCanBuy = { screens.push(Overlay.CanBuy) },
+                        wishes = vm.wishes.collectAsStateWithLifecycle().value,
+                        onWishes = { screens.push(Overlay.Wishes) },
                         calendar = calendar,
                         gaps = vm.balanceGaps.collectAsStateWithLifecycle().value,
                         onFixGap = { g, how -> vm.fixBalance(g.accountId, g.real - g.app, how) },
@@ -1307,6 +1310,12 @@ class MainActivity : ComponentActivity() {
             Overlay.CanBuy -> com.simbio.don.app.ui.CanBuyScreen(
                 home = home,
                 onBought = { d -> open(Overlay.Edit(null, d)) },
+                onWait = { name, price ->
+                    vm.addWish(name, price)
+                    Toast.makeText(this, "7일 뒤(${com.simbio.don.app.ui.shortDate(home.today.plusDays(7))})에 다시 물어볼게요", Toast.LENGTH_SHORT).show()
+                    close()
+                    open(Overlay.Wishes)
+                },
                 onSkip = { v ->
                     Toast.makeText(this, "${"%,d".format(v)}원 참았어요. 잘했어요!", Toast.LENGTH_SHORT).show()
                     close()
@@ -1331,6 +1340,21 @@ class MainActivity : ComponentActivity() {
                     onBack = close,
                 )
             }
+            Overlay.Wishes -> com.simbio.don.app.ui.WishScreen(
+                wishes = vm.wishes.collectAsStateWithLifecycle().value,
+                today = home.today,
+                onBuy = { w ->
+                    vm.buyWish(w)
+                    open(Overlay.Edit(null, EntryDraft(home.today, w.price, w.name, EntryType.SPEND, Category.SHOPPING, "", false, want = 1)))
+                },
+                onSkip = { w ->
+                    vm.skipWish(w)
+                    Toast.makeText(this, "${com.simbio.don.app.ui.won(w.price)} 참았어요!", Toast.LENGTH_SHORT).show()
+                },
+                onDelete = { vm.deleteWish(it) },
+                onAdd = { open(Overlay.CanBuy) },
+                onBack = close,
+            )
             is Overlay.EditRule -> {
                 val rules by vm.appRules.collectAsStateWithLifecycle()
                 rules.firstOrNull { it.packageName == o.packageName }?.let { r ->

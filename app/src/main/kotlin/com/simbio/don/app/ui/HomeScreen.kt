@@ -77,6 +77,8 @@ fun HomeScreen(
     onAi: (AiMode) -> Unit = {},
     report: com.simbio.don.budget.MonthReport? = null,
     onCanBuy: () -> Unit = {},
+    wishes: List<com.simbio.don.app.data.WishEntity> = emptyList(),
+    onWishes: () -> Unit = {},
     calendar: CalendarHooks = CalendarHooks.Off,
     /** 알림 잔액과 다른 자산 */
     gaps: List<com.simbio.don.app.data.BalanceGapEntity> = emptyList(),
@@ -204,11 +206,11 @@ fun HomeScreen(
                 HomeCard.SPLITS -> SplitHomeCard(splits, onSplits, onSettleHint, onDismissHint)
                 // 새 달 첫 두 주만
                 HomeCard.REPORT -> if (report != null && home.today.toEpochDay() - home.cycle.start.toEpochDay() < 14) ReportCard(report)
-                HomeCard.CANBUY -> CanBuyHomeCard(onCanBuy)
+                HomeCard.CANBUY -> CanBuyHomeCard(onCanBuy, wishes, home.today, onWishes)
                 HomeCard.AI -> if (aiOn) AiHomeCard(onAi)
                 HomeCard.TILES -> {
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatTile("이번 달 지출", won(home.monthSpent), "고정 지출 포함", Modifier.weight(1f))
+                    StatTile("이번 달 지출", won(home.monthLiving), "고정 지출은 기록만 (${won((home.monthSpent - home.monthLiving).coerceAtLeast(0))})", Modifier.weight(1f))
                     StatTile("이번 달 수입", won(home.monthIncome), null, Modifier.weight(1f))
                     StatTile("이번 달 아낀 돈", won(home.savedSoFar), "끝난 주들 합계", Modifier.weight(1f))
                 }

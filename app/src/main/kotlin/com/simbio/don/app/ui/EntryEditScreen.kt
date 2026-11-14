@@ -86,6 +86,8 @@ data class EntryDraft(
     val people: Int? = null,
     /** 남이 내서 내가 보낼 돈 (금액 = 내 몫) */
     val owe: Boolean = false,
+    /** 필요(0)·욕구(1), null이면 분류대로 */
+    val want: Int? = null,
 )
 
 /** 나눠 내기: 혼자 냄 · 내가 다 냄 · 남이 냄 */
@@ -166,6 +168,8 @@ fun EntryEditScreen(
         )
     }
     var allCats by remember { mutableStateOf(false) }
+    // 필요·욕구: 고르기 전엔 분류대로
+    var wantPick by remember { mutableStateOf(existing?.want ?: initial?.want) }
     var splitMode by remember {
         mutableStateOf(
             when {
@@ -211,6 +215,7 @@ fun EntryEditScreen(
         share = share.takeIf { split == SplitMode.I_PAID },
         people = people.takeIf { split == SplitMode.I_PAID },
         owe = split == SplitMode.THEY_PAID,
+        want = wantPick.takeIf { kind == Kind.SPEND },
     )
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
@@ -368,6 +373,15 @@ fun EntryEditScreen(
                             FilterChip(selected = false, onClick = { addingSub = true }, label = { Text("+ 소분류") })
                         }
                     }
+                    if (!isIncome) {
+                        // 부자들의 소비법: 필요해서 쓴 돈인지, 갖고 싶어서 쓴 돈인지
+                        val want = com.simbio.don.budget.Wants.isWant(category, wantPick)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("이건", fontSize = 13.sp, color = DonColors.InkMuted)
+                            FilterChip(selected = !want, onClick = { wantPick = 0 }, label = { Text("필요해서") })
+                            FilterChip(selected = want, onClick = { wantPick = 1 }, label = { Text("갖고 싶어서") })
+                        }
+                    }
                     if (existing != null && picked != null && picked!!.name != existing.category && !isIncome) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = applySame, onCheckedChange = { applySame = it })
@@ -454,7 +468,7 @@ fun EntryEditScreen(
                             }
                             Text(
                                 when (type) {
-                                    EntryType.FIXED -> "월세·통신비처럼 월급에서 미리 뺀 돈이에요. 가계부 지출에는 들어가고 주 예산은 깎지 않아요."
+                                    EntryType.FIXED -> "월세·통신비처럼 월급에서 미리 뺀 돈이에요. 기록만 해요 — 생활비·달력·통계에서 빼지 않고 가계부 맨 아래 '고정 지출'에 따로 모아요."
                                     EntryType.EXCEPTION -> "병원비·경조사비처럼 피할 수 없는 큰 지출이에요. 이번 주 결산에는 영향이 없고, 남은 주 예산을 줄여서 다시 나눠요."
                                     EntryType.REFUND -> "취소·환불로 돌려받은 돈이에요. 그날 지출에서 빠져요."
                                     else -> if (category.name in dailyCategories) {
@@ -484,7 +498,7 @@ fun EntryEditScreen(
                         onClick = {
                             onSave(draft())
                             savedCount++
-                            amount = ""; label = ""; memo = ""; picked = null; sub = null; months = 1; allCats = false
+                            amount = ""; label = ""; memo = ""; picked = null; sub = null; months = 1; allCats = false; wantPick = null
                         },
                         enabled = canSave,
                         modifier = Modifier.weight(1f),

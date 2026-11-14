@@ -104,7 +104,8 @@ fun CalendarScreen(
     accountNames: Map<Long, String> = emptyMap(),
 ) {
     val es = remember(entries) { entries.mapNotNull { runCatching { it.toEntry() }.getOrNull() } }
-    val spent = remember(es) { Stats.daily(es) }
+    // 고정 지출은 기록만 — 날마다 쓴 돈에 넣지 않는다
+    val spent = remember(es) { Stats.daily(es, livingOnly = true) }
     val income = remember(es) { Stats.dailyIncome(es) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         item {

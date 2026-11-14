@@ -135,6 +135,9 @@
             android:name=".notify.EventReminders$Receiver"
             android:exported="false" />
         <receiver
+            android:name=".notify.WishReminders$Receiver"
+            android:exported="false" />
+        <receiver
             android:name=".notify.DailyReminder$BootReceiver"
             android:exported="false">
             <intent-filter>
