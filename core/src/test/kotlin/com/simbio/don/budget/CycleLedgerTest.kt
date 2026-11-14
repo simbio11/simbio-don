@@ -18,28 +18,43 @@ class CycleLedgerTest {
     private fun d(month: Int, day: Int) = LocalDate.of(2026, month, day)
 
     @Test
-    fun `남은 돈은 다음 주로 이월된다`() {
+    fun `아낀 돈은 남은 주에 날 수만큼 나뉘어 늘어난다`() {
         val results = ledger
             .add(Entry(d(10, 24), 480_000, "장보기"))
             .add(Entry(d(11, 3), 100_000, "외식"))
             .results()
 
         assertEquals(120_000, results[0].carryOut)
-        assertEquals(120_000, results[1].carryIn)
-        assertEquals(440_000, results[1].available) // 420,000 + 120,000 − 100,000
+        // 2주 시작 때 남은 생활비 1,500,000 × 7일 ÷ 남은 23일
+        assertEquals(36_521, results[1].carryIn)
+        assertEquals(356_521, results[1].available)
+        // 한 달 남은 생활비는 늘 "생활비 − 쓴 돈"
+        assertEquals(1_980_000L - 580_000, results.last().available)
     }
 
     @Test
-    fun `아낀 비율과 초과는 이월을 뺀 기본 주 예산 기준이다`() {
+    fun `아낀 비율과 초과는 기본 주 예산 기준이다`() {
         val results = ledger
             .add(Entry(d(10, 24), 480_000, "장보기")) // 1주: 120,000 아낌 (20%)
-            .add(Entry(d(11, 3), 540_000, "이월분까지 씀")) // 2주: 기본 420,000 기준 120,000 초과
+            .add(Entry(d(11, 3), 540_000, "많이 씀")) // 2주: 기본 420,000 기준 120,000 초과
             .results()
 
         assertEquals(2_000, results[0].savedBps)
         assertEquals(120_000, results[1].overspent)
         assertEquals(0, results[1].savedBps)
-        assertEquals(0, results[1].carryOut)
+        assertEquals(-83_479, results[1].carryOut)
+        // 더 쓴 만큼 남은 주가 저절로 준다
+        assertTrue(results[2].budget + results[2].carryIn < 420_000)
+    }
+
+    @Test
+    fun `생활비를 바꾸면 이번 주부터 다시 나뉜다 — 이월 계산 없이`() {
+        val more = CycleLedger(BudgetEngine.plan(PayCycle.cycleFor(YearMonth.of(2026, 10), 25), salary = 1_980_000, adjust = -230_000))
+            .add(Entry(d(10, 24), 480_000, "장보기"))
+            .results()
+        // 2주 시작 때 남은 생활비 (1,750,000 − 480,000) × 7 ÷ 23
+        assertEquals(386_521, more[1].budget + more[1].carryIn)
+        assertEquals(1_750_000L - 480_000, more.last().available)
     }
 
     @Test
@@ -53,14 +68,14 @@ class CycleLedgerTest {
     }
 
     @Test
-    fun `예외 지출은 그 주를 건드리지 않고 남은 주 예산을 다시 나눈다`() {
+    fun `예외 지출은 그 주를 건드리지 않고 다음 주부터 나뉘어 빠진다`() {
         val after = ledger.add(Entry(d(10, 27), 300_000, "병원비", EntryType.EXCEPTION))
-        val weeks = after.adjustedWeeks()
-
-        assertEquals(600_000, weeks[0].budget)
-        assertEquals(listOf(328_696L, 328_695, 422_609), weeks.drop(1).map { it.budget })
-        assertEquals(1_680_000, weeks.sumOf { it.budget })
-        assertEquals(0, after.results()[0].spent)
+        val r = after.results()
+        assertEquals(0, r[0].spent)
+        assertEquals(600_000, r[0].available)
+        // 2주 시작 때 남은 생활비 1,680,000 × 7 ÷ 23
+        assertEquals(511_304, after.adjustedWeeks()[1].budget)
+        assertEquals(1_680_000, r.last().available)
     }
 
     @Test

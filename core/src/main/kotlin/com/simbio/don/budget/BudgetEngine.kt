@@ -25,9 +25,17 @@ data class CyclePlan(
     val weeks: List<Week>,
     /** 한 달 중간에 시작한 첫 달처럼, 주 예산으로 나눌 금액을 직접 정한 경우 */
     val disposableOverride: Long? = null,
+    /**
+     * 이번 달 안에서 생활비를 늘리거나 줄인 만큼 (계획보다 더 저축으로 옮긴 돈 −, 통장에 맞춘 차이 ± 등).
+     * 쓴 돈이 아니라 예산 자체가 바뀐 것이라 남은 날에 다시 나뉜다.
+     */
+    val adjust: Long = 0,
 ) {
-    /** 월급 − 고정비 − 먼저 떼는 저축 (또는 직접 정한 금액). 주 예산 합계와 같다. 모자라면 0. */
-    val disposable: Long get() = disposableOverride ?: (salary - fixedTotal - savings).coerceAtLeast(0)
+    /** 조정 전 생활비: 월급 − 고정비 − 먼저 떼는 저축 (또는 직접 정한 금액). 모자라면 0. */
+    val baseDisposable: Long get() = disposableOverride ?: (salary - fixedTotal - savings).coerceAtLeast(0)
+
+    /** 이번 달 생활비 = 조정 전 생활비 + 조정. 주 예산 합계와 같다. 모자라면 0. */
+    val disposable: Long get() = (baseDisposable + adjust).coerceAtLeast(0)
 
     /** 고정비 + 저축이 월급을 넘는 금액. 0이면 정상. */
     val shortfall: Long get() = (fixedTotal + savings - salary).coerceAtLeast(0)
@@ -50,17 +58,18 @@ object BudgetEngine {
         savings: Long = 0,
         settlementDay: DayOfWeek = DayOfWeek.MONDAY,
         disposableOverride: Long? = null,
+        adjust: Long = 0,
     ): CyclePlan {
         require(salary >= 0) { "월급은 0원 이상이어야 합니다: $salary" }
         require(savings >= 0) { "저축은 0원 이상이어야 합니다: $savings" }
         require(disposableOverride == null || disposableOverride >= 0) { "예산은 0원 이상이어야 합니다: $disposableOverride" }
         val fixedTotal = fixedExpenses.sumOf { it.amount }
-        val disposable = disposableOverride ?: (salary - fixedTotal - savings).coerceAtLeast(0)
+        val disposable = ((disposableOverride ?: (salary - fixedTotal - savings).coerceAtLeast(0)) + adjust).coerceAtLeast(0)
 
         val ranges = splitIntoWeeks(cycle.start, cycle.end, settlementDay)
         val budgets = distribute(disposable, ranges.map { (s, e) -> e.toEpochDay() - s.toEpochDay() + 1 })
         val weeks = ranges.mapIndexed { i, (s, e) -> Week(i, s, e, budgets[i]) }
-        return CyclePlan(cycle, salary, fixedTotal, savings, weeks, disposableOverride)
+        return CyclePlan(cycle, salary, fixedTotal, savings, weeks, disposableOverride, adjust)
     }
 
     /**

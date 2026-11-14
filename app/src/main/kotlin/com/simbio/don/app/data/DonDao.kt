@@ -449,6 +449,19 @@ interface DonDao {
     @Query("DELETE FROM balance_gap WHERE accountId = :accountId")
     suspend fun deleteBalanceGap(accountId: Long)
 
+    // ── 사고 싶은 것 (7일 참기) ──
+    @Query("SELECT * FROM wish ORDER BY status = 'WAITING' DESC, remindEpochDay, id DESC")
+    fun wishes(): Flow<List<WishEntity>>
+
+    @Query("SELECT * FROM wish ORDER BY id")
+    suspend fun wishesNow(): List<WishEntity>
+
+    @Upsert
+    suspend fun saveWish(w: WishEntity): Long
+
+    @Query("DELETE FROM wish WHERE id = :id")
+    suspend fun deleteWish(id: Long)
+
     // ── 앱 안 캘린더 일정 ──
     @Query("SELECT * FROM app_event ORDER BY startEpochDay, startMinute")
     fun appEvents(): Flow<List<AppEventEntity>>
@@ -498,6 +511,7 @@ interface DonDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putGoalMoves(x: List<GoalMoveEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putFxRates(x: List<FxRateEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putAppEvents(x: List<AppEventEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putWishes(x: List<WishEntity>)
 
     @Query("DELETE FROM settings") suspend fun wipeSettings()
     @Query("DELETE FROM fixed_expense") suspend fun wipeFixed()
@@ -526,4 +540,5 @@ interface DonDao {
     @Query("DELETE FROM fx_rate") suspend fun wipeFxRates()
     @Query("DELETE FROM balance_gap") suspend fun wipeBalanceGaps()
     @Query("DELETE FROM app_event") suspend fun wipeAppEvents()
+    @Query("DELETE FROM wish") suspend fun wipeWishes()
 }

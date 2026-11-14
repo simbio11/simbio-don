@@ -46,21 +46,22 @@ data class Entry(
 }
 
 /**
- * 한 주의 결산 결과.
+ * 한 주의 결과.
  *
- * 남은 돈은 다음 주로 이월되지만([carryIn]), 아낀 비율·초과 판정은 이월을 뺀 **기본 주 예산**([budget]) 기준이다.
- * 이월분을 쓰면 그 주는 초과로 잡힌다 (아끼고 몰아 쓰기로 보상만 쌓는 꼼수 차단).
+ * 0.31부터 주 예산은 "한 달 남은 생활비 ÷ 남은 날"로 정해진다 (Sure의 남은 예산 = 예산 − 쓴 돈 방식).
+ * [budget]은 한 달 생활비를 날 수로 나눈 **기본 주 예산** (아낀 비율·초과 판정 기준),
+ * [carryIn]은 그 주를 시작할 때 지난 주들에서 아끼거나 더 써서 늘거나 준 몫 (= 이번 주 쓸 수 있는 돈 − 기본 주 예산).
  */
 data class WeekResult(
     val week: Week,
     val carryIn: Long,
     val spent: Long,
-    /** 이번 주 이후 남은 주가 없어 다시 나눌 곳이 없는 예외 지출 */
+    /** 마지막 주라 뒤로 미룰 곳이 없는 예외 지출 */
     val exceptionOverflow: Long,
 ) {
     val budget: Long get() = week.budget
 
-    /** 이번 주 쓸 수 있는 돈 = 기본 주 예산 + 이월 − 지출 */
+    /** 이번 주 쓸 수 있는 돈 − 쓴 돈 */
     val available: Long get() = budget + carryIn - spent - exceptionOverflow
     val carryOut: Long get() = available
 
@@ -72,13 +73,20 @@ data class WeekResult(
         get() = if (budget <= 0) 0 else (savedVsBudget * 10_000 / budget).coerceAtMost(10_000).toInt()
 }
 
-/** 한 주기(월급날 ~ 다음 월급날 전날)의 장부. 불변이며 기록할 때마다 새 장부를 돌려준다. */
 /**
- * 한 달에 나눠서 낼 큰돈 (경조사처럼): [from]이 든 주부터 이번 주기 끝까지 주마다 날 수만큼 나눠 그 주 예산에서 미리 뺀다.
+ * 한 달에 나눠서 낼 큰돈 (경조사처럼): [from]이 든 주부터 이번 주기 끝까지 남은 생활비에서 미리 떼어 둔다.
  * 예외 지출과 달리 횟수 한도가 없다. 이 돈으로 쓴 기록은 주 지출로 다시 세지 않는다 (부르는 쪽이 이체로 넘긴다).
  */
 data class Spread(val from: LocalDate, val amount: Long)
 
+/**
+ * 한 주기(월급날 ~ 다음 월급날 전날)의 장부. 불변이며 기록할 때마다 새 장부를 돌려준다.
+ *
+ * 계산은 한 가지뿐이다: **남은 생활비 = 한 달 생활비 − 쓴 돈**.
+ * 주마다 쓸 수 있는 돈 = 그 주를 시작할 때 남은 생활비(미리 떼어 둔 돈 빼고) × 그 주 날 수 ÷ 남은 날 수.
+ * 그래서 아끼면 남은 주가 저절로 늘고, 더 쓰면 저절로 줄고, 생활비를 고치면 오늘부터 다시 나뉜다 (따로 이월 계산이 없다).
+ * 예외 지출은 그 주를 깎지 않고 다음 주부터 나뉘어 빠진다 (마지막 주면 그 주에서).
+ */
 data class CycleLedger(val plan: CyclePlan, val entries: List<Entry> = emptyList(), val spreads: List<Spread> = emptyList()) {
 
     val exceptionCount: Int get() = entries.count { it.type == EntryType.EXCEPTION }
@@ -94,55 +102,55 @@ data class CycleLedger(val plan: CyclePlan, val entries: List<Entry> = emptyList
 
     fun remove(entry: Entry): CycleLedger = copy(entries = entries - entry)
 
-    /** 예외 지출을 반영해 다시 나눈 주 목록. */
-    fun adjustedWeeks(): List<Week> = applyExceptions().first
+    /** 주마다 쓸 수 있는 돈으로 본 주 목록 */
+    fun adjustedWeeks(): List<Week> = results().map { it.week.copy(budget = it.budget + it.carryIn) }
 
     fun results(): List<WeekResult> {
-        val (weeks, overflow) = applyExceptions()
-        var carry = 0L
+        val weeks = plan.weeks
+        if (weeks.isEmpty()) return emptyList()
+        val total = plan.disposable
+        val end = plan.cycle.end.toEpochDay()
+        val lastIndex = weeks.lastIndex
         return weeks.mapIndexed { i, week ->
-            val spent = entries.filter { it.date in week }.sumOf {
-                when (it.type) {
-                    EntryType.SPEND -> it.amount
-                    EntryType.REFUND -> -it.amount
-                    EntryType.EXCEPTION, EntryType.INCOME, EntryType.FIXED, EntryType.TRANSFER -> 0L
-                }
-            }
-            WeekResult(week, carry, spent, overflow[i]).also { carry = it.carryOut }
+            val start = week.start
+            // 이 주 전까지 생활비로 쓴 돈 (예외 지출 포함)
+            val before = entries.filter { it.date.isBefore(start) }.sumOf { living(it) }
+            // 이 주까지 시작한 "한 달에 나눠서" 계획
+            val reserved = spreads.filter { !it.from.isAfter(week.end) }.sumOf { it.amount }
+            val daysLeft = end - start.toEpochDay() + 1
+            val pool = total - before - reserved
+            val can = if (i == lastIndex) pool else Math.floorDiv(pool * week.days, daysLeft)
+            val inWeek = entries.filter { it.date in week }
+            val spent = inWeek.sumOf { weekly(it) }
+            val overflow = if (i == lastIndex) inWeek.filter { it.type == EntryType.EXCEPTION }.sumOf { it.amount } else 0L
+            WeekResult(week, can - week.budget, spent, overflow)
         }
     }
 
     fun resultOn(date: LocalDate): WeekResult? = plan.weekIndexOf(date)?.let { results()[it] }
 
-    /** [date]까지 결산된 주들에서 아낀 돈 (= 이번 주로 넘어온 이월액). */
-    fun savedSoFar(date: LocalDate): Long = resultOn(date)?.carryIn ?: 0
-
-    private fun applyExceptions(): Pair<List<Week>, List<Long>> {
-        val budgets = plan.weeks.map { it.budget }.toMutableList()
-        val overflow = MutableList(plan.weeks.size) { 0L }
-        for (sp in spreads) {
-            val i = plan.weekIndexOf(sp.from) ?: (if (sp.from.isBefore(plan.cycle.start)) 0 else continue)
-            val idx = (i until budgets.size).toList()
-            val parts = BudgetEngine.distribute(sp.amount, idx.map { plan.weeks[it].days.toLong() })
-            idx.forEachIndexed { k, w -> budgets[w] -= parts[k] }
-        }
-        for (e in entries.filter { it.type == EntryType.EXCEPTION }.sortedBy { it.date }) {
-            val i = plan.weekIndexOf(e.date) ?: continue
-            val future = (i + 1 until budgets.size).toList()
-            val futureTotal = future.sumOf { budgets[it] }
-            val taken = minOf(e.amount, futureTotal)
-            val redistributed = BudgetEngine.distribute(
-                futureTotal - taken,
-                future.map { plan.weeks[it].days.toLong() },
-            )
-            future.forEachIndexed { k, idx -> budgets[idx] = redistributed[k] }
-            overflow[i] += e.amount - taken
-        }
-        return plan.weeks.mapIndexed { i, w -> w.copy(budget = budgets[i]) } to overflow
+    /** [date]가 든 주 전까지 끝난 주들에서 기본 주 예산보다 아낀 돈 (더 썼으면 음수) */
+    fun savedSoFar(date: LocalDate): Long {
+        val i = plan.weekIndexOf(date) ?: return 0
+        return plan.weeks.take(i).sumOf { w -> w.budget - entries.filter { it.date in w }.sumOf { weekly(it) } }
     }
 
     companion object {
         const val MAX_EXCEPTIONS = 2
+
+        /** 한 달 생활비에 들어가는 돈: 생활비 +, 예외 지출 +, 환불 − (고정 지출·수입·이체는 0) */
+        fun living(e: Entry): Long = when (e.type) {
+            EntryType.SPEND, EntryType.EXCEPTION -> e.amount
+            EntryType.REFUND -> -e.amount
+            EntryType.INCOME, EntryType.FIXED, EntryType.TRANSFER -> 0L
+        }
+
+        /** 그 주 지출로 세는 돈: 예외 지출은 빼고 (다음 주부터 나뉜다) */
+        fun weekly(e: Entry): Long = when (e.type) {
+            EntryType.SPEND -> e.amount
+            EntryType.REFUND -> -e.amount
+            else -> 0L
+        }
     }
 }
 

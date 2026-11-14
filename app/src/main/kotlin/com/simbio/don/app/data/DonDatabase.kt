@@ -38,8 +38,9 @@ import com.simbio.don.budget.CategoryGuesser
         FxRateEntity::class,
         BalanceGapEntity::class,
         AppEventEntity::class,
+        WishEntity::class,
     ],
-    version = 20,
+    version = 21,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -57,7 +58,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                 }
                 ).build().also { instance = it }
         }
@@ -70,6 +71,19 @@ abstract class DonDatabase : RoomDatabase() {
         }
 
         /** v20: 알려 준 카드·계좌 끝자리 (알림에 끝자리가 있으면 그 자산으로 저절로) */
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entry ADD COLUMN want INTEGER")
+                db.execSQL("ALTER TABLE entry ADD COLUMN moveState INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE cycle ADD COLUMN budgetAdjust INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wish` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `price` INTEGER NOT NULL, " +
+                        "`note` TEXT NOT NULL DEFAULT '', `createdEpochDay` INTEGER NOT NULL, `remindEpochDay` INTEGER NOT NULL, " +
+                        "`status` TEXT NOT NULL DEFAULT 'WAITING', `doneEpochDay` INTEGER, `entryId` INTEGER, `notified` INTEGER NOT NULL DEFAULT 0)",
+                )
+            }
+        }
+
         val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE account ADD COLUMN tails TEXT NOT NULL DEFAULT ''")

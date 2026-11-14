@@ -970,7 +970,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
-            Overlay.Salary -> SalaryScreen(home, { vm.updateSalary(it) }, close)
+            Overlay.Salary -> SalaryScreen(home, { vm.updateSalary(it) }, close, onBudget = { vm.setMonthBudget(it) })
             Overlay.Settings -> SettingsOverlay(home, open, close)
             Overlay.Search -> {
                 val q by vm.searchQuery.collectAsStateWithLifecycle()

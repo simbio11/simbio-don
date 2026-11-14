@@ -111,6 +111,8 @@ data class CycleEntity(
     @ColumnInfo(defaultValue = "MANUAL") val salarySource: String = SalarySource.MANUAL.name,
     /** 새 달 시작 안내를 봤는지 */
     @ColumnInfo(defaultValue = "1") val noticeShown: Boolean = true,
+    /** 이번 달 안에서 생활비를 늘리거나 줄인 만큼 (남은 생활비를 통장에 맞춤 등). 쓴 돈이 아니라 예산이 바뀐 것 */
+    @ColumnInfo(defaultValue = "0") val budgetAdjust: Long = 0,
 )
 
 @Entity(tableName = "entry")
@@ -166,6 +168,10 @@ data class EntryEntity(
     @ColumnInfo(defaultValue = "0") val linkState: Int = 0,
     /** 어느 통장에서 나갔는지 앱이 짐작해서 넣은 것 (알림 앱이 자산과 안 이어져 기본 통장으로 둠) — 골라 달라고 보인다 */
     @ColumnInfo(defaultValue = "0") val acctGuess: Boolean = false,
+    /** 필요(0)·욕구(1) 소비. null이면 분류로 정한다 ([com.simbio.don.budget.Wants]) */
+    val want: Int? = null,
+    /** "내 계좌끼리 옮긴 돈인가요?" 물음: 0 아직, 2 "지출 맞아요" (다시 안 묻기) */
+    @ColumnInfo(defaultValue = "0") val moveState: Int = 0,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */
@@ -417,6 +423,26 @@ data class AssetCheckEntity(
  * 돈 나갈 계획: 아직 안 쓴, 쓸 예정인 돈. 실제 기록과 따로 두고, 쓰면 그 기록과 이어 계획과 실제를 견준다.
  * [doneEntryId]·[doneAmount]가 있으면 썼음, [canceled]면 안 쓰기로 함.
  */
+/**
+ * 사고 싶은 것: 바로 사지 않고 [remindEpochDay]까지 참아 본다 (7일). 그날 "아직도 사고 싶나요?"를 묻고,
+ * 그래도 사고 싶으면 사서 가계부에 적고([entryId]), 안 사면 참아서 아낀 돈이 된다.
+ */
+@Entity(tableName = "wish")
+data class WishEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val price: Long,
+    @ColumnInfo(defaultValue = "") val note: String = "",
+    val createdEpochDay: Long,
+    val remindEpochDay: Long,
+    /** WAITING 참는 중 · BOUGHT 샀음 · SKIPPED 안 사기로 함 */
+    @ColumnInfo(defaultValue = "WAITING") val status: String = "WAITING",
+    val doneEpochDay: Long? = null,
+    val entryId: Long? = null,
+    /** 참은 날이 다 돼 알림을 보냈는지 */
+    @ColumnInfo(defaultValue = "0") val notified: Boolean = false,
+)
+
 @Entity(tableName = "plan")
 data class PlanEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

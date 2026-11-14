@@ -112,6 +112,8 @@ data class HomeState(
     val salarySource: SalarySource,
     /** 새 달이 자동으로 시작돼 안내할 것 (봤으면 null) */
     val salaryNotice: SalaryNotice?,
+    /** 이번 달 생활비가 계획에서 바뀐 만큼과 이유 (더 한 저축·통장에 맞춤) */
+    val budgetChange: BudgetChange = BudgetChange.None,
     /** 이번 주기 기록 (최신순) */
     val entries: List<EntryEntity>,
     /** 이번 달 가계부 지출 (고정·예외 지출 포함, 환불 뺌) */
@@ -321,7 +323,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     fun summaries(now: Flow<LocalDateTime>): Flow<List<CycleSummary>> =
         combine(dao.settings(), dao.cycles()) { s, cs -> s to cs }.flatMapLatest { (s, cs) ->
             if (s == null || cs.isEmpty()) return@flatMapLatest flowOf(emptyList())
-            combine(dao.entriesSince(cs.last().startEpochDay), now) { all, t -> Summaries.cycles(s.payDay, cs, all, t.toLocalDate()) }
+            combine(dao.entriesSince(cs.last().startEpochDay), now, dao.accounts()) { all, t, accounts -> Summaries.cycles(s.payDay, cs, all, t.toLocalDate(), accounts) }
         }
 
     /** 자산과 지금 잔액 */
@@ -476,8 +478,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     private fun previousMonth(s: SettingsEntity, cycles: List<CycleEntity>): Flow<PrevMonth?> {
         val c = cycles.getOrNull(1) ?: return flowOf(null)
         val cycle = cycleOf(c, cycles[0], s.payDay)
-        return combine(dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()), dao.settledWeeks(c.nominal), dao.plans()) { entries, settled, plans ->
-            val plan = planFor(c, cycle)
+        return combine(dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()), dao.settledWeeks(c.nominal), dao.plans(), dao.accounts()) { entries, settled, plans, accounts ->
+            val plan = planFor(c, cycle, BudgetChange.of(c, entries, accounts))
             val ledger = ledgerOf(plan, entries, plans)
             PrevMonth(c.nominal, ledger.results(), settled.map { it.weekIndex }.toSet())
         }
@@ -494,7 +496,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 combine(dao.reviewItems(), dao.settledWeeks(c.nominal), previousMonth(s, cs)) { r, w, p -> Triple(r, w, p) },
                 now,
                 combine(dao.mockPurchases(), dao.house(), dao.plans()) { m, h, p -> Triple(m, h, p) },
-            ) { entries, rw, t, game -> buildHome(s, c, cycle, entries, rw.first, rw.second, t, game.first, game.second, rw.third, cs.getOrNull(1)?.salary, game.third) }
+                dao.accounts(),
+            ) { entries, rw, t, game, accounts ->
+                buildHome(s, c, cycle, entries, rw.first, rw.second, t, game.first, game.second, rw.third, cs.getOrNull(1)?.salary, game.third, accounts)
+            }
         }
 
     private fun buildHome(
@@ -510,8 +515,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         prev: PrevMonth? = null,
         prevSalary: Long? = null,
         plans: List<PlanEntity> = emptyList(),
+        accounts: List<AccountEntity> = emptyList(),
     ): HomeState {
-        val plan = planFor(c, cycle)
+        val change = BudgetChange.of(c, entries, accounts)
+        val plan = planFor(c, cycle, change)
         val ledger = ledgerOf(plan, entries, plans)
         val results = ledger.results()
         val today = now.toLocalDate()
@@ -548,6 +555,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             salary = c.salary,
             salarySource = source,
             salaryNotice = if (c.noticeShown) null else SalaryNotice(c.salary, source, cycle.start, prevSalary),
+            budgetChange = change,
             entries = entries,
             monthSpent = Stats.total(asEntries),
             monthLiving = living,
@@ -676,8 +684,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()),
                 prev?.let { dao.entriesBetween(it.start.toEpochDay(), it.end.toEpochDay()) } ?: flowOf(emptyList()),
                 dao.plans(),
-            ) { entities, prevEntities, plans ->
-                val plan = planFor(c, cycle)
+                dao.accounts(),
+            ) { entities, prevEntities, plans, accounts ->
+                val plan = planFor(c, cycle, BudgetChange.of(c, entities, accounts))
                 val entries = entities.map { it.toEntry() }
                 val ledger = ledgerOf(plan, entities, plans)
                 MonthView(
@@ -757,14 +766,20 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         return false
     }
 
-    private fun planFor(c: CycleEntity, cycle: PayCycle): CyclePlan = BudgetEngine.plan(
+    /** 이번 달 예산: 월급 − 고정비 − 저축 (또는 직접 정한 생활비) + 이번 달 안에서 바뀐 만큼 ([BudgetChange]) */
+    private fun planFor(c: CycleEntity, cycle: PayCycle, change: BudgetChange = BudgetChange(c.budgetAdjust, 0, 0, c.savings)): CyclePlan = BudgetEngine.plan(
         cycle,
         salary = c.salary,
         fixedExpenses = listOf(FixedExpense("고정비", c.fixedTotal)),
         savings = c.savings,
         settlementDay = DayOfWeek.of(c.settlementDay),
         disposableOverride = c.budgetOverride,
+        adjust = change.total,
     )
+
+    /** 기록·자산으로 이번 달 예산 */
+    private suspend fun planNow(c: CycleEntity, cycle: PayCycle, entries: List<EntryEntity>): CyclePlan =
+        planFor(c, cycle, BudgetChange.of(c, entries, dao.accountsNow()))
 
     // ── 카테고리·소분류 ─────────────────────────────────────────
 
@@ -1251,8 +1266,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val s = dao.settingsNow() ?: return 0
         val c = dao.latestCycleNow() ?: return 0
         val cycle = c.toPayCycle(s.payDay)
-        val plan = planFor(c, cycle)
-        val living = Stats.livingTotal(dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).map { it.toEntry() })
+        val inCycle = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay())
+        val plan = planNow(c, cycle, inCycle)
+        val living = Stats.livingTotal(inCycle.map { it.toEntry() })
         return MockWallet.balance(plan.disposable, living, dao.mockPurchasesNow().map { it.toItem() })
     }
 
@@ -2440,6 +2456,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 가린 계좌번호("240-******-88507")를 이름으로 적은 것 다시 찾기, 정산 짝 다시 보기.
      */
     suspend fun tidyUp(today: LocalDate = LocalDate.now()) = locked {
+        migrateAlignEntriesLocked()
         val recent = dao.entriesBetweenNow(today.minusDays(60).toEpochDay(), today.plusDays(1).toEpochDay())
         val rules = dao.appRulesNow().associateBy { it.packageName }
         val fixed = mutableListOf<EntryEntity>()
@@ -2678,8 +2695,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /**
      * 이번 달 남은 생활비를 생활비 통장 기준으로 맞춘다: 통장 잔액(+현금·페이 − 생활비로 쓴 카드값 + 받을 돈 − 보낼 돈 − 통장 없는 지출)과
-     * 남은 생활비의 차이만큼 오늘 "생활비 맞춤 (통장 기준)" 기록을 남기고, 통장 잔액은 그대로 둔다.
-     * 맞춘 금액 (+면 남은 생활비가 늘었다, 0이면 이미 맞음)을 돌려준다.
+     * 남은 생활비의 차이만큼 **이번 달 생활비를 고친다** (쓴 돈·환불로 적지 않는다 — 그러면 이번 주 남은 돈만 갑자기 커지거나 작아졌다).
+     * 고친 만큼은 오늘부터 남은 날에 다시 나뉜다. 통장 잔액은 그대로. 맞춘 금액 (+면 생활비가 늘었다, 0이면 이미 맞음)을 돌려준다.
      */
     suspend fun alignLivingToBank(now: LocalDateTime = LocalDateTime.now()): Long {
         val h = home(flowOf(now)).first() ?: return 0
@@ -2688,15 +2705,43 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val gap = LivingGap.of(h.accounts, book, unassigned, h.plan.disposable - h.monthLiving, h.entries, h.today) ?: return 0
         val rest = gap.rest
         if (rest == 0L) return 0
-        val a = dao.accountsNow().firstOrNull { it.id == gap.account.id } ?: return 0
-        val before = balanceOf(a, now.toLocalDate())
-        addManual(
-            now.toLocalDate(), kotlin.math.abs(rest), ALIGN_LABEL,
-            if (rest > 0) EntryType.REFUND else EntryType.SPEND, Category.ETC, "통장 잔액에 남은 생활비를 맞춘 차이", a.id,
-        )
-        // 통장 잔액은 그대로 (생활비만 맞춘다)
-        dao.accountsNow().firstOrNull { it.id == a.id }?.let { saveAccount(it, before, now.toLocalDate()) }
+        locked { adjustBudgetLocked(rest) }
         return rest
+    }
+
+    /** 이번 달 생활비를 [diff]만큼 늘리거나 줄인다 (남은 날에 다시 나뉜다) */
+    suspend fun adjustBudget(diff: Long) = locked { adjustBudgetLocked(diff) }
+
+    private suspend fun adjustBudgetLocked(diff: Long) {
+        val c = dao.latestCycleNow() ?: return
+        dao.saveCycle(c.copy(budgetAdjust = c.budgetAdjust + diff))
+    }
+
+    /**
+     * 이번 달 생활비를 [amount]로 정한다 (월급·고정비·저축은 그대로 두고 생활비만): 지금 생활비와의 차이를 조정으로 남긴다.
+     */
+    suspend fun setMonthBudget(amount: Long, now: LocalDateTime = LocalDateTime.now()) {
+        val h = home(flowOf(now)).first() ?: return
+        val diff = amount.coerceAtLeast(0) - h.plan.disposable
+        if (diff != 0L) adjustBudget(diff)
+    }
+
+    /** 0.30까지 "생활비 맞춤" 기록(환불·지출)으로 남긴 것을 이번 달 생활비 조정으로 바꾼다 (통장 잔액은 그대로) */
+    private suspend fun migrateAlignEntriesLocked() {
+        val s = dao.settingsNow() ?: return
+        val c = dao.latestCycleNow() ?: return
+        val cycle = c.toPayCycle(s.payDay)
+        val old = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()).filter { it.label == ALIGN_LABEL }
+        if (old.isEmpty()) return
+        var diff = 0L
+        old.forEach { e ->
+            diff += if (e.type == EntryType.REFUND.name) e.amount else -e.amount
+            val a = e.accountId?.let { id -> dao.accountsNow().firstOrNull { it.id == id } }
+            val before = a?.let { balanceOf(it) }
+            dao.deleteEntry(e)
+            if (a != null && before != null) saveAccount(a, before)
+        }
+        dao.saveCycle(c.copy(budgetAdjust = c.budgetAdjust + diff))
     }
 
     suspend fun dismissBalanceGap(accountId: Long) = dao.deleteBalanceGap(accountId)
@@ -3023,8 +3068,9 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     )
 
     private suspend fun weekResultNow(c: CycleEntity, cycle: PayCycle, index: Int): WeekResult? {
-        val plan = planFor(c, cycle)
-        val ledger = ledgerOf(plan, dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay()), dao.plansNow())
+        val entries = dao.entriesBetweenNow(cycle.start.toEpochDay(), cycle.end.toEpochDay())
+        val plan = planNow(c, cycle, entries)
+        val ledger = ledgerOf(plan, entries, dao.plansNow())
         return ledger.results().getOrNull(index)
     }
 
@@ -3330,6 +3376,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             goalMoves = dao.goalMovesNow(),
             fxRates = dao.fxRatesNow(),
             appEvents = dao.appEventsNow(),
+            wishes = dao.wishesNow(),
         ),
         now,
     )
@@ -3344,7 +3391,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.wipeCategoryBudgets(); dao.wipeGoals(); dao.wipeAccounts()
                 dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes(); dao.wipeMileTx()
                 dao.wipeGamePlays(); dao.wipeAssetChecks(); dao.wipePlans(); dao.wipeGoalMoves()
-                dao.wipeFxRates(); dao.wipeBalanceGaps(); dao.wipeAppEvents()
+                dao.wipeFxRates(); dao.wipeBalanceGaps(); dao.wipeAppEvents(); dao.wipeWishes()
                 dao.putSettings(d.settings); dao.putFixed(d.fixed); dao.putCycles(d.cycles); dao.putEntries(d.entries)
                 dao.putReviews(d.reviews); dao.putRules(d.rules); dao.putSettled(d.settled); dao.putCategoryRules(d.categoryRules)
                 dao.putMocks(d.mocks); dao.putHouses(d.houses); dao.putCategoryBudgets(d.categoryBudgets); dao.putGoals(d.goals)
@@ -3352,7 +3399,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.putCategoryDefs(d.categoryDefs); dao.putSubcategories(d.subcategories); dao.putInstallments(d.installments)
                 dao.putRecurringIncomes(d.recurringIncomes); dao.putMileTx(d.mileTx)
                 dao.putGamePlays(d.gamePlays); dao.putAssetChecks(d.assetChecks); dao.putPlans(d.plans); dao.putGoalMoves(d.goalMoves)
-                dao.putFxRates(d.fxRates); dao.putAppEvents(d.appEvents)
+                dao.putFxRates(d.fxRates); dao.putAppEvents(d.appEvents); dao.putWishes(d.wishes)
             }
             Category.register(dao.categoryDefsNow().map { it.toCategory() })
         }

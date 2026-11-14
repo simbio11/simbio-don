@@ -616,6 +616,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun discard(ids: Set<Long>) = viewModelScope.launch { repo.discard(ids) }
 
     fun updateSalary(amount: Long) = viewModelScope.launch { repo.updateSalary(amount) }
+    fun setMonthBudget(amount: Long) = viewModelScope.launch { repo.setMonthBudget(amount, clock.value) }
 
     fun dismissSalaryNotice() = viewModelScope.launch { repo.dismissSalaryNotice() }
 

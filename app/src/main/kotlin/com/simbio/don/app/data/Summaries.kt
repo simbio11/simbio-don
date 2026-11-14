@@ -56,9 +56,9 @@ object Summaries {
      * 달마다 요약 (최신 달 먼저). [cycles]는 최신순, [entries]는 그 기간 전체 기록.
      * 각 달은 다음 달 시작 전날까지 (실제 입금일 기준).
      */
-    fun cycles(payDay: Int, cycles: List<CycleEntity>, entries: List<EntryEntity>, today: LocalDate): List<CycleSummary> =
+    fun cycles(payDay: Int, cycles: List<CycleEntity>, entries: List<EntryEntity>, today: LocalDate, accounts: List<AccountEntity> = emptyList()): List<CycleSummary> =
         cycles.mapIndexed { i, c ->
-            val plan = plan(payDay, cycles, i)
+            val plan = plan(payDay, cycles, i, entries, accounts)
             val cycle = plan.cycle
             val inCycle = entries.filter { it.epochDay in cycle.start.toEpochDay()..cycle.end.toEpochDay() }.map { it.toEntry() }
             val ledger = inCycle.fold(CycleLedger(plan)) { l, e -> runCatching { l.add(e) }.getOrDefault(l) }
@@ -78,7 +78,7 @@ object Summaries {
         }
 
     /** [cycles](최신순)의 [i]번째 달 예산 — 다음 달 시작 전날까지 */
-    fun plan(payDay: Int, cycles: List<CycleEntity>, i: Int): com.simbio.don.budget.CyclePlan {
+    fun plan(payDay: Int, cycles: List<CycleEntity>, i: Int, entries: List<EntryEntity> = emptyList(), accounts: List<AccountEntity> = emptyList()): com.simbio.don.budget.CyclePlan {
         val c = cycles[i]
         val base = c.toPayCycle(payDay)
         val next = cycles.getOrNull(i - 1)
@@ -90,6 +90,7 @@ object Summaries {
             savings = c.savings,
             settlementDay = DayOfWeek.of(c.settlementDay),
             disposableOverride = c.budgetOverride,
+            adjust = BudgetChange.of(c, entries.filter { it.epochDay in cycle.start.toEpochDay()..cycle.end.toEpochDay() }, accounts).total,
         )
     }
 

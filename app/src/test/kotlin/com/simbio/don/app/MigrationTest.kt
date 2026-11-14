@@ -227,4 +227,17 @@ class MigrationTest {
             c.moveToNext(); assertEquals("생활비 통장", c.getString(0)); assertEquals("", c.getString(1)); assertEquals("bank.app", c.getString(2))
         }
     }
+
+    @Test
+    fun v20에서_v21로_필요욕구_예산조정_사고싶은것이_생긴다() {
+        helper.createDatabase("m20.db", 20).use { db ->
+            db.execSQL("INSERT INTO cycle (nominal, salary, startEpochDay, settlementDay, savings, fixedTotal, salarySource, noticeShown) VALUES ('2026-11', 3000000, 20000, 1, 300000, 600000, 'MANUAL', 1)")
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, category) VALUES (1, 20000, 5000, '커피', 'SPEND', 'MANUAL', 'CAFE')")
+        }
+        val db = helper.runMigrationsAndValidate("m20.db", 21, true, DonDatabase.MIGRATION_20_21)
+        db.query("SELECT budgetAdjust FROM cycle").use { c -> c.moveToNext(); assertEquals(0L, c.getLong(0)) }
+        db.query("SELECT want, moveState FROM entry").use { c -> c.moveToNext(); assertTrue(c.isNull(0)); assertEquals(0, c.getInt(1)) }
+        db.execSQL("INSERT INTO wish (name, price, createdEpochDay, remindEpochDay) VALUES ('운동화', 89000, 20000, 20007)")
+        db.query("SELECT status, notified FROM wish").use { c -> c.moveToNext(); assertEquals("WAITING", c.getString(0)); assertEquals(0, c.getInt(1)) }
+    }
 }
