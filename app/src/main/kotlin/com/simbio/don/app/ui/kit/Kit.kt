@@ -359,6 +359,7 @@ enum class UiIcon(@DrawableRes val res: Int) {
     CHART(R.drawable.ic_bar_chart),
     CHART_ON(R.drawable.ic_bar_chart_fill),
     GEAR(R.drawable.ic_settings),
+    MOON(R.drawable.ic_dark_mode),
     GEAR_ON(R.drawable.ic_settings_fill),
     ADD(R.drawable.ic_add),
     BACK(R.drawable.ic_arrow_back_ios_new),

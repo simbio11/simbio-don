@@ -540,6 +540,11 @@ class MainActivity : ComponentActivity() {
                         onAi = { m -> screens.push(Overlay.Ai(m)) },
                         report = produceState<com.simbio.don.budget.MonthReport?>(null, home.cycle.start) { value = vm.lastMonthReport() }.value,
                         onCanBuy = { screens.push(Overlay.CanBuy) },
+                        onToggleDark = {
+                            UiPrefs.setThemeMode(this, if (UiPrefs.dark(this)) com.simbio.don.app.ui.ThemeMode.LIGHT else com.simbio.don.app.ui.ThemeMode.DARK)
+                            applyTheme()
+                            Widgets.refresh(this)
+                        },
                         wishes = vm.wishes.collectAsStateWithLifecycle().value,
                         onWishes = { screens.push(Overlay.Wishes) },
                         calendar = calendar,

@@ -77,6 +77,7 @@ fun HomeScreen(
     onAi: (AiMode) -> Unit = {},
     report: com.simbio.don.budget.MonthReport? = null,
     onCanBuy: () -> Unit = {},
+    onToggleDark: (() -> Unit)? = null,
     wishes: List<com.simbio.don.app.data.WishEntity> = emptyList(),
     onWishes: () -> Unit = {},
     calendar: CalendarHooks = CalendarHooks.Off,
@@ -131,6 +132,8 @@ fun HomeScreen(
                 CharacterSprite(home.mood, 30.dp)
             }
             Spacer(Modifier.width(4.dp))
+            // 어두운 화면 바로 켜고 끄기 (설정 › 화면에서 "폰 설정 따라가기"도 고를 수 있다)
+            if (onToggleDark != null) RoundIconButton(UiIcon.MOON, if (DonColors.palette.dark) "밝은 화면으로" else "어두운 화면으로", true, onToggleDark)
             RoundIconButton(UiIcon.GEAR, "설정", true, onSettings)
         }
 
