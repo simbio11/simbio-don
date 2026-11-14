@@ -58,8 +58,9 @@ object AccountBalances {
      * [today]를 주면 그날까지의 기록만 센다 — 할부 남은 달처럼 앞으로 적힐 기록은 그날이 와야 잔액에 들어간다
      * (안 그러면 카드값을 다 내도 카드에 남은 할부가 "낼 돈"으로 남아 생활비와 통장이 안 맞는다).
      */
-    fun compute(accounts: List<AccountEntity>, all: List<EntryEntity>, checks: List<AssetCheckEntity>, today: java.time.LocalDate? = null): List<AccountBalance> {
+    fun compute(accounts: List<AccountEntity>, all: List<EntryEntity>, allChecks: List<AssetCheckEntity>, today: java.time.LocalDate? = null): List<AccountBalance> {
         val entries = today?.toEpochDay()?.let { d -> all.filter { it.epochDay <= d } } ?: all
+        val checks = today?.toEpochDay()?.let { d -> allChecks.filter { it.epochDay <= d } } ?: allChecks
         val plain = compute(accounts, entries).associateBy { it.account.id }
         val last = checks.groupBy { it.accountId }.mapValues { (_, l) -> l.maxWith(compareBy({ it.epochDay }, { it.id })) }
         return accounts.map { a ->

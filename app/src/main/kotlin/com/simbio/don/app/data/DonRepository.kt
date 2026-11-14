@@ -3334,7 +3334,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         val id = dao.saveAccount(a.copy(name = a.name.take(20), sortOrder = order))
         // 새 모으는 통장은 시작 금액을 첫 점검으로
         if (a.id == 0L && enumOr(a.type, AccountType.ETC).grows) {
-            dao.insertAssetCheck(AssetCheckEntity(accountId = id, epochDay = LocalDate.now().toEpochDay(), value = a.opening))
+            dao.insertAssetCheck(AssetCheckEntity(accountId = id, epochDay = today.toEpochDay(), value = a.opening))
         }
         // 고칠 때 upsert는 -1을 돌려주므로 원래 id로
         checkToday?.let { dao.insertAssetCheck(AssetCheckEntity(accountId = a.id, epochDay = today.toEpochDay(), value = it)) }

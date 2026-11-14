@@ -57,6 +57,9 @@ object Splits {
     /** 나눠 낸 날부터 이만큼 안에 들어오거나 나간 돈만 짝으로 본다 */
     const val WINDOW_DAYS = 30L
 
+    /** 정산 금액 오차: 1,000원 또는 10% 중 큰 것 (끝전 올림·내림, 이체 수수료) */
+    fun near(amount: Long): Long = maxOf(1_000L, amount / 10)
+
     /** 한 사람 몫: 똑같이 나누고 10원 단위로 올림 (남는 끝전은 낸 사람이 안는다) */
     fun perPerson(total: Long, people: Int): Long =
         if (people <= 1) total else ((total + people - 1) / people + 9) / 10 * 10
@@ -80,12 +83,16 @@ object Splits {
         val received = entries.filter {
             it.type == EntryType.INCOME.name && it.settleFor == null && it.incomeId == null && it.id !in dismissed && it.linkState != 2
         }.sortedBy { it.epochDay }.mapNotNull { inc ->
-            open.filter { r -> inc.epochDay in r.entry.epochDay..(r.entry.epochDay + WINDOW_DAYS) && inc.amount <= r.left }
+            // 끝전을 올리거나 내려 보내는 일이 많아 남은 받을 돈보다 조금(1,000원 또는 10%) 많아도 본다
+            open.filter { r -> inc.epochDay in r.entry.epochDay..(r.entry.epochDay + WINDOW_DAYS) && inc.amount <= r.left + near(r.left) }
                 .minByOrNull { r ->
-                    val fit = when (inc.amount) {
-                        r.perPerson -> 0
-                        r.left -> 1
-                        else -> 2
+                    val per = r.perPerson
+                    val fit = when {
+                        inc.amount == per -> 0
+                        inc.amount == r.left -> 1
+                        per != null && kotlin.math.abs(inc.amount - per) <= near(per) -> 2
+                        kotlin.math.abs(inc.amount - r.left) <= near(r.left) -> 2
+                        else -> 3
                     }
                     fit * 1_000L + (inc.epochDay - r.entry.epochDay)
                 }?.let { SplitHint.Received(inc, it) }

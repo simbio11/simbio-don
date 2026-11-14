@@ -337,7 +337,12 @@ private fun PayPanel(p: EntryEntity, accounts: List<AccountEntity>, onDone: (Lon
 
 /** 홈 카드: 남은 정산이 있을 때만 */
 @Composable
-fun SplitHomeCard(book: SplitBook, onOpen: () -> Unit) {
+fun SplitHomeCard(
+    book: SplitBook,
+    onOpen: () -> Unit,
+    onSettle: (com.simbio.don.app.data.SplitHint) -> Unit = {},
+    onDismiss: (Long) -> Unit = {},
+) {
     if (book.isEmpty) return
     SectionCard("정산", trailing = { TextButton(onClick = onOpen) { Text("보기") } }) {
         Row(Modifier.fillMaxWidth()) {
@@ -354,16 +359,28 @@ fun SplitHomeCard(book: SplitBook, onOpen: () -> Unit) {
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             )
         }
-        if (book.hints.isNotEmpty()) {
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "정산 같은 돈 ${book.hints.size}건이 있어요 — 눌러서 묶어요",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = DonColors.Real,
-                modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(8.dp)).background(DonColors.RealSurface).clickable(onClick = onOpen)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            )
+        // 정산 같은 돈: 맨 위 하나는 여기서 바로 맞아요/아니에요 (나머지는 정산 화면에서)
+        book.hints.firstOrNull()?.let { h ->
+            val (what, ask) = when (h) {
+                is com.simbio.don.app.data.SplitHint.Received ->
+                    "${h.income.label} +${won(h.income.amount)}" to "'${h.target.entry.label}' 나눠 낸 돈을 받은 거예요?"
+                is com.simbio.don.app.data.SplitHint.Sent ->
+                    "${h.out.label} −${won(h.out.amount)}" to "보낼 돈 '${h.target.label}'을 보낸 거예요?"
+            }
+            Column(
+                Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(DonColors.RealSurface).padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(what, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+                Text(ask, fontSize = 12.sp, color = DonColors.InkSoft)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.simbio.don.app.ui.kit.SmallButton(onClick = { onSettle(h) }) { Text("맞아요") }
+                    com.simbio.don.app.ui.kit.SubButton(onClick = { onDismiss(h.key) }, containerColor = DonColors.Surface) { Text("아니에요") }
+                }
+                if (book.hints.size > 1) {
+                    Text("정산 같은 돈 ${book.hints.size - 1}건 더 — 눌러서 보기", fontSize = 12.sp, color = DonColors.Real, modifier = Modifier.clickable(onClick = onOpen))
+                }
+            }
         }
     }
 }

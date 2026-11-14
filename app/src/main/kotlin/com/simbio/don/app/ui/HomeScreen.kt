@@ -71,6 +71,8 @@ fun HomeScreen(
     onCustomize: () -> Unit = {},
     splits: com.simbio.don.app.data.SplitBook = com.simbio.don.app.data.SplitBook.Empty,
     onSplits: () -> Unit = {},
+    onSettleHint: (com.simbio.don.app.data.SplitHint) -> Unit = {},
+    onDismissHint: (Long) -> Unit = {},
     aiOn: Boolean = false,
     onAi: (AiMode) -> Unit = {},
     report: com.simbio.don.budget.MonthReport? = null,
@@ -199,7 +201,7 @@ fun HomeScreen(
                     },
                     onEvent = onEventDay,
                 )
-                HomeCard.SPLITS -> SplitHomeCard(splits, onSplits)
+                HomeCard.SPLITS -> SplitHomeCard(splits, onSplits, onSettleHint, onDismissHint)
                 // 새 달 첫 두 주만
                 HomeCard.REPORT -> if (report != null && home.today.toEpochDay() - home.cycle.start.toEpochDay() < 14) ReportCard(report)
                 HomeCard.CANBUY -> CanBuyHomeCard(onCanBuy)

@@ -547,6 +547,13 @@ class MainActivity : ComponentActivity() {
                         unassignedSpend = unassignedSpend(vm.unassigned.collectAsStateWithLifecycle().value),
                         accountQuestions = vm.accountQuestions.collectAsStateWithLifecycle().value,
                         onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
+                        onSettleHint = { h ->
+                            when (h) {
+                                is com.simbio.don.app.data.SplitHint.Received -> vm.settleWith(h.target.entry, h.income)
+                                is com.simbio.don.app.data.SplitHint.Sent -> vm.payWith(h.target, h.out)
+                            }
+                        },
+                        onDismissHint = { vm.dismissSplitHint(it) },
                         moveQuestions = vm.moveQuestions.collectAsStateWithLifecycle().value,
                         onConfirmMove = { q, to, saving -> vm.confirmMove(q, to, saving) },
                         onDismissMove = { vm.dismissMove(it) },
@@ -1232,6 +1239,13 @@ class MainActivity : ComponentActivity() {
                 questions = vm.accountQuestions.collectAsStateWithLifecycle().value,
                 onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
                 fixes = vm.balanceFixEntries.collectAsStateWithLifecycle().value,
+                receivables = vm.splits.collectAsStateWithLifecycle().value.receivables,
+                onReceived = { r ->
+                    // 통장에 이미 들어온 돈: 잔액은 그대로 두고 받을 돈만 정리 (받은 통장 없음)
+                    vm.settleDirect(r.entry, r.left, null)
+                    Toast.makeText(this, "받을 돈 ${com.simbio.don.app.ui.won(r.left)}을 받은 것으로 정리했어요", Toast.LENGTH_SHORT).show()
+                },
+                onForgive = { vm.forgiveSplit(it.entry) },
                 onDropFix = { e ->
                     vm.keepBalanceDropFix(e.id)
                     Toast.makeText(this, "${com.simbio.don.app.ui.won(e.amount)}을 생활비에서 뺐어요 (잔액은 그대로)", Toast.LENGTH_SHORT).show()

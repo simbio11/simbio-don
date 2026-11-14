@@ -247,6 +247,10 @@ fun BalanceFixScreen(
     /** 예전에 잔액 맞추기로 넣은 기록 (두 번 센 것이면 생활비에서 뺄 수 있게) */
     fixes: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
     onDropFix: (com.simbio.don.app.data.EntryEntity) -> Unit = {},
+    /** 아직 남은 받을 돈 (나눠 낸 것) — 이미 받아서 통장에 있으면 정리해야 생활비 차이가 안 남는다 */
+    receivables: List<com.simbio.don.app.data.Receivable> = emptyList(),
+    onReceived: (com.simbio.don.app.data.Receivable) -> Unit = {},
+    onForgive: (com.simbio.don.app.data.Receivable) -> Unit = {},
 ) {
     val list = balances.filter(::fixable)
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
@@ -266,6 +270,33 @@ fun BalanceFixScreen(
             if (questions.isNotEmpty()) {
                 Text("먼저 어느 통장에서 나갔는지 골라 주세요. 통장 없이 적힌 지출은 잔액에서 빠져 있어서 잔액이 안 맞아 보일 수 있어요 (생활비는 그대로).", fontSize = 12.sp, color = DonColors.InkMuted)
                 AccountQuestionCard(questions, balances.map { it.account }, onChoose = onChooseAccount, limit = 50)
+            }
+            if (receivables.isNotEmpty()) {
+                // 받을 돈이 남아 있으면 "쓸 수 있는 돈"에 더해져 있다. 이미 받아서 통장 잔액에 들어왔는데 기록이 없으면
+                // 잔액을 맞춘 뒤에도 그만큼 차이가 남으니 먼저 정리한다.
+                Column(Modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("아직 받을 돈 ${won(receivables.sumOf { it.left })}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                    Text(
+                        "이미 받아서 통장에 들어와 있으면 '받았어요'를 먼저 눌러 주세요. 그래야 잔액을 맞춘 뒤에 받을 돈이 또 더해지지 않아요.",
+                        fontSize = 12.sp,
+                        color = DonColors.InkMuted,
+                    )
+                    receivables.forEach { r ->
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(DonColors.SurfaceAlt).padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${r.entry.label} · ${shortDate(LocalDate.ofEpochDay(r.entry.epochDay))}", fontSize = 13.sp, color = DonColors.Ink, modifier = Modifier.weight(1f), maxLines = 1)
+                                Text("남은 ${won(r.left)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DonColors.Good)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                SmallButton(onClick = { onReceived(r) }) { Text("받았어요 (통장에 있음)") }
+                                SubButton(onClick = { onForgive(r) }, containerColor = DonColors.Surface) { Text("안 받기로") }
+                            }
+                        }
+                    }
+                }
             }
             val livingId = list.filter { it.type == AccountType.BANK }.minByOrNull { it.account.sortOrder }?.account?.id
                 ?: list.filter { it.type == AccountType.CASH }.minByOrNull { it.account.sortOrder }?.account?.id
