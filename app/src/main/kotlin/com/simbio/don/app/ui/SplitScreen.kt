@@ -377,9 +377,7 @@ fun SplitHomeCard(
                     com.simbio.don.app.ui.kit.SmallButton(onClick = { onSettle(h) }) { Text("맞아요") }
                     com.simbio.don.app.ui.kit.SubButton(onClick = { onDismiss(h.key) }, containerColor = DonColors.Surface) { Text("아니에요") }
                 }
-                if (book.hints.size > 1) {
-                    Text("정산 같은 돈 ${book.hints.size - 1}건 더 — 눌러서 보기", fontSize = 12.sp, color = DonColors.Real, modifier = Modifier.clickable(onClick = onOpen))
-                }
+                Text("정산 같은 돈 ${book.hints.size}건 — 눌러서 모두 보기", fontSize = 12.sp, color = DonColors.Real, modifier = Modifier.clickable(onClick = onOpen))
             }
         }
     }
