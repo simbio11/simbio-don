@@ -2909,11 +2909,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         return shown.firstOrNull { it.packageName == p.packageName }
     }
 
-    /** 이체 짝·배운 것에 쓰는 이름 열쇠 ("홍길동님" → "홍길동"). 받는·보낸 사람을 모르는 말("이체", "KB스타뱅킹 출금")이면 빈 값 */
+    /**
+     * 이체 짝·배운 것에 쓰는 이름 열쇠: 받는·보낸 **사람 이름**일 때만 ("홍길동님" → "홍길동", "김*수").
+     * "이체"·"KB국민"·"입금되었어요"처럼 사람이 아닌 말이면 빈 값 — 그런 걸 배우면 다른 송금까지 이체로 보게 된다.
+     */
     private fun moveKey(label: String): String {
-        val k = CategoryGuesser.key(label.trim().removeSuffix("님"))
-        val generic = setOf("이체", "출금", "입금", "송금", "결제", "보냄", "받음", "자동이체", "타행이체", "인터넷이체", "모바일이체")
-        return if (k in generic || generic.any { k.endsWith(it) && k.length > it.length && k.removeSuffix(it).let { head -> head.any { c -> c in 'a'..'z' } || head.endsWith("뱅킹") || head.endsWith("뱅크") || head.endsWith("은행") } }) "" else k
+        val who = label.trim().removeSuffix("님")
+        return if (SelfTransfer.PERSON.matches(who)) CategoryGuesser.key(who) else ""
     }
 
     /** 알림 글에 내 다른 통장 이름이나 그 통장 끝자리가 보이면 그 통장 */
