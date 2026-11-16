@@ -240,4 +240,21 @@ class MigrationTest {
         db.execSQL("INSERT INTO wish (name, price, createdEpochDay, remindEpochDay) VALUES ('운동화', 89000, 20000, 20007)")
         db.query("SELECT status, notified FROM wish").use { c -> c.moveToNext(); assertEquals("WAITING", c.getString(0)); assertEquals(0, c.getInt(1)) }
     }
+
+    @Test
+    fun v21에서_v22로_이체_배운것과_예산고르기가_생기고_예전_이체는_합칠지_정한다() {
+        helper.createDatabase("m21.db", 21).use { db ->
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, category, accountId, toAccountId) VALUES (1, 20000, 300000, '내 계좌 이체', 'TRANSFER', 'NOTIFICATION', 'ETC', 1, 2)")
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, category, accountId) VALUES (2, 20000, 50000, '내 계좌 이체', 'TRANSFER', 'NOTIFICATION', 'ETC', 1)")
+            db.execSQL("INSERT INTO entry (id, epochDay, amount, label, type, source, category, toAccountId) VALUES (3, 20000, 70000, '내 계좌 이체', 'TRANSFER', 'NOTIFICATION', 'ETC', 2)")
+        }
+        val db = helper.runMigrationsAndValidate("m21.db", 22, true, DonDatabase.MIGRATION_21_22)
+        db.query("SELECT moveState, bucket FROM entry ORDER BY id").use { c ->
+            c.moveToNext(); assertEquals(3, c.getInt(0)); assertTrue(c.isNull(1))
+            c.moveToNext(); assertEquals(1, c.getInt(0))
+            c.moveToNext(); assertEquals(4, c.getInt(0))
+        }
+        db.execSQL("INSERT INTO move_rule (side, key, fromAccountId, toAccountId) VALUES ('OUT', '적금', 1, NULL)")
+        db.query("SELECT count FROM move_rule").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
+    }
 }

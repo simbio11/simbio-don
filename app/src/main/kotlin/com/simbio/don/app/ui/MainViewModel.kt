@@ -172,8 +172,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 draft.accountId, draft.toAccountId, draft.minuteOfDay, LocalDateTime.now(), draft.sub,
                 share = draft.share, people = draft.people, owe = draft.owe, want = draft.want,
             )
-            // 계획에서 "썼어요"로 적었으면 계획과 잇는다 (계획과 실제를 견줌), 아니면 맞는 계획을 찾아 잇는다
-            draft.planId?.let { repo.completePlan(it, id, draft.amount, draft.date) } ?: repo.autoLinkPlans()
+            draft.bucket?.let { repo.setEntryBucket(id, it) }
+            // 계획에서 "썼어요"로 적었거나 고른 계획이 있으면 그 계획과 잇는다 (계획과 실제를 견줌), 아니면 맞는 계획을 찾아 잇는다
+            (draft.linkPlanId ?: draft.planId)?.let { repo.completePlan(it, id, draft.share ?: draft.amount, draft.date) } ?: repo.autoLinkPlans()
             // 나눠 냈거나 보낼 돈이면 이미 들어오거나 나간 돈과 정산 짝을
             if (draft.share != null || draft.owe) repo.autoMatch()
         } else {
@@ -193,11 +194,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     people = draft.people,
                     owe = draft.owe,
                     want = draft.want,
+                    bucket = draft.bucket,
                 ),
                 existing,
                 draft.applyToSameLabel,
             )
             if (n > 0) learned(n)
+            // 고른 계획으로 바꾸기: 이어져 있던 계획은 풀고(다시 저절로 잇지 않게) 새 계획과 잇는다
+            draft.unlinkPlanId?.let { repo.rejectPlanMatch(it, existing.id) }
+            draft.linkPlanId?.let { repo.completePlan(it, existing.id, draft.share ?: draft.amount, draft.date) }
             // 나눠 냈다고 고치면 내 몫으로 계획과 다시 견준다
             if (draft.share != existing.share || draft.amount != existing.amount) {
                 repo.autoLinkPlans()
@@ -423,6 +428,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun buyWish(w: com.simbio.don.app.data.WishEntity) = viewModelScope.launch { repo.buyWish(w.id, null, clock.value.toLocalDate()) }
     fun skipWish(w: com.simbio.don.app.data.WishEntity) = viewModelScope.launch { repo.skipWish(w.id, clock.value.toLocalDate()) }
     fun deleteWish(w: com.simbio.don.app.data.WishEntity) = viewModelScope.launch { repo.deleteWish(w.id) }
+
+    /** 이 기록의 통장을 새 내 통장으로 등록 (만든 통장 이름을 알려 준다) */
+    fun registerNewAccount(e: EntryEntity, done: (String) -> Unit = {}) = viewModelScope.launch {
+        val id = repo.registerNewAccount(e.id) ?: return@launch
+        repo.accountsNow().firstOrNull { it.id == id }?.let { done(it.name) }
+    }
 
     /** 내 계좌끼리 옮긴 것 같은 돈 */
     val moveQuestions = repo.moveQuestions(clock.value.toLocalDate()).flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

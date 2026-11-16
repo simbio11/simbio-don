@@ -170,8 +170,14 @@ data class EntryEntity(
     @ColumnInfo(defaultValue = "0") val acctGuess: Boolean = false,
     /** 필요(0)·욕구(1) 소비. null이면 분류로 정한다 ([com.simbio.don.budget.Wants]) */
     val want: Int? = null,
-    /** "내 계좌끼리 옮긴 돈인가요?" 물음: 0 아직, 2 "지출 맞아요" (다시 안 묻기) */
+    /**
+     * 내 계좌끼리 옮긴 돈:
+     * 지출·수입이면 0 아직 안 물음, 2 "지출 맞아요"(다시 안 묻기).
+     * 이체면 1 한쪽 알림만 봄(다른 쪽 알림이 오면 합친다), 3 양쪽 다 봄(더 합치지 않는다).
+     */
     @ColumnInfo(defaultValue = "0") val moveState: Int = 0,
+    /** 어느 예산에서 썼나 (직접 고름): null 앱이 판단, 0 오늘 몫(그날 쓰는 돈), 1 이번 주에 나눠서(큰 지출) */
+    val bucket: Int? = null,
 )
 
 /** 사용자가 고친 가게 → 카테고리. 다음부터 같은 가게는 이 카테고리로 분류한다. */
@@ -427,6 +433,21 @@ data class AssetCheckEntity(
  * 사고 싶은 것: 바로 사지 않고 [remindEpochDay]까지 참아 본다 (7일). 그날 "아직도 사고 싶나요?"를 묻고,
  * 그래도 사고 싶으면 사서 가계부에 적고([entryId]), 안 사면 참아서 아낀 돈이 된다.
  */
+/**
+ * 내 통장끼리 옮긴 돈을 배운 것: [fromAccountId] 통장에서 [key](받는 사람·내용)로 나간 송금은 [toAccountId] 통장으로 간 이체,
+ * 또는 [toAccountId] 통장에 [key](보낸 사람)로 들어온 돈은 [fromAccountId]에서 온 이체. 둘 중 하나는 null일 수 있다(앱에 없는 통장).
+ * [side]: OUT 나간 알림에서 배운 것, IN 들어온 알림에서 배운 것.
+ */
+@Entity(tableName = "move_rule")
+data class MoveRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val side: String,
+    val key: String,
+    val fromAccountId: Long?,
+    val toAccountId: Long?,
+    @ColumnInfo(defaultValue = "0") val count: Int = 0,
+)
+
 @Entity(tableName = "wish")
 data class WishEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

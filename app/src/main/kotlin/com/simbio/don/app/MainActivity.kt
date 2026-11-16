@@ -555,6 +555,7 @@ class MainActivity : ComponentActivity() {
                         unassignedSpend = unassignedSpend(vm.unassigned.collectAsStateWithLifecycle().value),
                         accountQuestions = vm.accountQuestions.collectAsStateWithLifecycle().value,
                         onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
+                        onNewAccount = { e -> vm.registerNewAccount(e) { name -> Toast.makeText(this, "'$name'을 내 통장으로 등록했어요", Toast.LENGTH_SHORT).show() } },
                         onSettleHint = { h ->
                             when (h) {
                                 is com.simbio.don.app.data.SplitHint.Received -> vm.settleWith(h.target.entry, h.income)
@@ -632,6 +633,7 @@ class MainActivity : ComponentActivity() {
                         onBalanceFix = { screens.push(Overlay.BalanceFix) },
                         questions = vm.accountQuestions.collectAsStateWithLifecycle().value,
                         onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
+                        onNewAccount = { e -> vm.registerNewAccount(e) { name -> Toast.makeText(this, "'$name'을 내 통장으로 등록했어요", Toast.LENGTH_SHORT).show() } },
                     )
                     Tab.Calendar -> {
                         val month by vm.calendarMonth.collectAsStateWithLifecycle()
@@ -965,6 +967,7 @@ class MainActivity : ComponentActivity() {
                         onDelete = o.existing?.let { e -> { vm.deleteEntry(e) } },
                         onUnsettle = o.existing?.takeIf { it.settleFor != null }?.let { e -> { vm.unsettle(e) } },
                         dailyCategories = home.dailyCategories,
+                        plans = vm.plans.collectAsStateWithLifecycle().value,
                         onBack = close,
                     )
                 }

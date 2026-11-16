@@ -48,6 +48,8 @@ fun AccountQuestionCard(
     modifier: Modifier = Modifier,
     limit: Int = 3,
     onMore: (() -> Unit)? = null,
+    /** 이 기록의 통장을 새 내 통장으로 등록 */
+    onNewAccount: ((EntryEntity) -> Unit)? = null,
 ) {
     if (questions.isEmpty()) return
     val choices = accounts.filter { !it.hidden && AccountType.entries.firstOrNull { t -> t.name == it.type } in PICK_ORDER }
@@ -80,6 +82,10 @@ fun AccountQuestionCard(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     choices.forEach { a ->
                         FilterChip(selected = false, onClick = { onChoose(e, a.id, rememberApp && e.packageName != null) }, label = { Text(a.name, fontSize = 12.sp) })
+                    }
+                    // 알림이 온 통장이 아직 자산에 없는 내 통장이면 바로 등록 (앱·끝자리를 이어 다음부터 저절로)
+                    if (onNewAccount != null && e.packageName != null) {
+                        FilterChip(selected = false, onClick = { onNewAccount(e) }, label = { Text("+ 새 내 통장으로 등록", fontSize = 12.sp) })
                     }
                 }
             }

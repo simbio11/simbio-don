@@ -89,6 +89,7 @@ fun AssetsScreen(
     /** 어느 통장·카드인지 골라 줄 기록 (자산 없이 적힌 것 + 앱이 짐작해 넣은 것) */
     questions: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
     onChooseAccount: (com.simbio.don.app.data.EntryEntity, Long, Boolean) -> Unit = { _, _, _ -> },
+    onNewAccount: ((com.simbio.don.app.data.EntryEntity) -> Unit)? = null,
 ) {
     val shown = balances.filter { !it.account.hidden }
     Column(
@@ -97,7 +98,7 @@ fun AssetsScreen(
     ) {
         ScreenTitle("자산", trailing = { SmallButton(onClick = onAdd) { Text("+ 자산 추가") } })
         NetWorthCard(balances, shown.size >= 2, onTransfer)
-        AccountQuestionCard(questions, balances.map { it.account }, onChoose = onChooseAccount, limit = 50)
+        AccountQuestionCard(questions, balances.map { it.account }, onChoose = onChooseAccount, limit = 50, onNewAccount = onNewAccount)
         if (shown.any(::fixable)) {
             com.simbio.don.app.ui.kit.TextButton(onClick = onBalanceFix, modifier = Modifier.align(Alignment.CenterHorizontally), color = DonColors.InkMuted) {
                 Text("실제 잔액과 다르면 · 잔액 맞추기", fontSize = 12.sp)

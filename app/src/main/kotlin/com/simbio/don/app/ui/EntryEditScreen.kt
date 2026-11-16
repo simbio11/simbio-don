@@ -88,6 +88,12 @@ data class EntryDraft(
     val owe: Boolean = false,
     /** 필요(0)·욕구(1), null이면 분류대로 */
     val want: Int? = null,
+    /** 어느 예산에서: null 앱이 판단, 0 오늘 몫, 1 이번 주에 나눠서 */
+    val bucket: Int? = null,
+    /** 이을 계획 (일정 예산) — 새로 잇거나 바꿀 때 */
+    val linkPlanId: Long? = null,
+    /** 풀 계획 — 이 기록과 이어져 있던 것 */
+    val unlinkPlanId: Long? = null,
 )
 
 /** 나눠 내기: 혼자 냄 · 내가 다 냄 · 남이 냄 */
@@ -134,6 +140,8 @@ fun EntryEditScreen(
     onUnsettle: (() -> Unit)? = null,
     /** "그날 쓰는 돈"으로 볼 분류 (오늘 몫에서 빠지는지 알려 준다) */
     dailyCategories: Set<String> = com.simbio.don.budget.DayBudgets.DEFAULT_DAILY,
+    /** 이을 수 있는 계획 (일정 예산·돈 나갈 계획) */
+    plans: List<com.simbio.don.app.data.PlanEntity> = emptyList(),
     onSave: (EntryDraft) -> Unit,
     onDelete: (() -> Unit)?,
     onBack: () -> Unit,
@@ -170,6 +178,10 @@ fun EntryEditScreen(
     var allCats by remember { mutableStateOf(false) }
     // 필요·욕구: 고르기 전엔 분류대로
     var wantPick by remember { mutableStateOf(existing?.want ?: initial?.want) }
+    // 어느 예산에서: 앱이 판단한 것을 직접 바꿀 수 있다 (오늘 몫 / 이번 주에 나눠서 / 계획)
+    var bucket by remember { mutableStateOf(existing?.bucket ?: initial?.bucket) }
+    val linkedPlan = existing?.let { e -> plans.firstOrNull { it.doneEntryId == e.id } }
+    var planPick by remember { mutableStateOf(linkedPlan?.id ?: initial?.planId) }
     var splitMode by remember {
         mutableStateOf(
             when {
@@ -216,6 +228,9 @@ fun EntryEditScreen(
         people = people.takeIf { split == SplitMode.I_PAID },
         owe = split == SplitMode.THEY_PAID,
         want = wantPick.takeIf { kind == Kind.SPEND },
+        bucket = bucket.takeIf { type == EntryType.SPEND },
+        linkPlanId = planPick.takeIf { type == EntryType.SPEND && it != linkedPlan?.id && savedCount == 0 },
+        unlinkPlanId = linkedPlan?.id?.takeIf { it != planPick || type != EntryType.SPEND },
     )
 
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
@@ -386,6 +401,44 @@ fun EntryEditScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = applySame, onCheckedChange = { applySame = it })
                             Text("'${label.ifBlank { existing.label }}'의 다른 기록도 바꾸기", fontSize = 13.sp)
+                        }
+                    }
+                }
+                // 어느 예산에서 썼나: 앱이 판단한 것을 직접 바꾼다 (오늘 몫 / 이번 주에 나눠서 / 계획·일정 예산)
+                val nearPlans = plans.filter { p ->
+                    p.id == linkedPlan?.id || (p.open && kotlin.math.abs(p.epochDay - date.toEpochDay()) <= 7)
+                }.sortedBy { kotlin.math.abs(it.epochDay - date.toEpochDay()) }.take(6)
+                if (type == EntryType.SPEND && (existing != null || nearPlans.isNotEmpty())) {
+                    FormCard("어느 예산에서 썼나요") {
+                        val autoBig = category.name !in dailyCategories
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            FilterChip(selected = bucket == null && planPick == null, onClick = { bucket = null }, label = { Text("앱이 판단") })
+                            FilterChip(selected = bucket == 0, onClick = { bucket = 0 }, label = { Text("오늘 몫") })
+                            FilterChip(selected = bucket == 1, onClick = { bucket = 1 }, label = { Text("이번 주에 나눠서") })
+                        }
+                        Text(
+                            when {
+                                planPick != null -> "고른 계획의 예산에서 썼어요. 계획보다 더 썼는지 그 일정에서 보여요."
+                                bucket == 0 -> "오늘 몫에서 빠져요."
+                                bucket == 1 -> "큰 지출로 보고 이번 주 남은 날에 나눠서 빠져요."
+                                autoBig -> "지금은 앱이 판단해요: '${category.label}'은 하루 몫보다 크면 이번 주에 나눠요."
+                                else -> "지금은 앱이 판단해요: '${category.label}'은 그날 쓰는 돈이라 오늘 몫에서 빠져요."
+                            },
+                            fontSize = 12.sp,
+                            color = DonColors.InkMuted,
+                        )
+                        if (nearPlans.isNotEmpty()) {
+                            Text("계획·일정 예산과 잇기", fontSize = 12.sp, color = DonColors.InkSoft)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                                FilterChip(selected = planPick == null, onClick = { planPick = null }, label = { Text("계획 아님") })
+                                nearPlans.forEach { p ->
+                                    FilterChip(
+                                        selected = planPick == p.id,
+                                        onClick = { planPick = p.id },
+                                        label = { Text("${shortDate(LocalDate.ofEpochDay(p.epochDay))} ${p.label} · ${won(p.amount)}") },
+                                    )
+                                }
+                            }
                         }
                     }
                 }

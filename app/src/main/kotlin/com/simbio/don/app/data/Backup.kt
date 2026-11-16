@@ -11,7 +11,7 @@ import java.time.LocalDateTime
 object Backup {
     const val FORMAT = "dont-backup"
     /** 2: 직접 만든 카테고리·소분류·할부·반복 수입 (0.10), 3: 마일·집 꾸밈·뷰티샵 (0.11), 4: 칭호·미니게임 (0.12), 5: 자산 점검 (0.13), 6: 돈 나갈 계획·내 이름 (0.14) */
-    const val VERSION = 13
+    const val VERSION = 14
 
     data class Data(
         val settings: List<SettingsEntity>,
@@ -39,6 +39,7 @@ object Backup {
         val fxRates: List<FxRateEntity> = emptyList(),
         val appEvents: List<AppEventEntity> = emptyList(),
         val wishes: List<WishEntity> = emptyList(),
+        val moveRules: List<MoveRuleEntity> = emptyList(),
     )
 
     class BadBackup(message: String) : Exception(message)
@@ -72,7 +73,7 @@ object Backup {
             o.putOpt("installmentNo", x.installmentNo); o.putOpt("incomeId", x.incomeId)
             o.putOpt("share", x.share); o.putOpt("people", x.people); o.putOpt("settleFor", x.settleFor); o.put("owe", x.owe)
             o.putOpt("fxText", x.fxText); o.put("fxGuess", x.fxGuess); o.put("linkState", x.linkState); o.put("acctGuess", x.acctGuess)
-            o.putOpt("want", x.want); o.put("moveState", x.moveState)
+            o.putOpt("want", x.want); o.put("moveState", x.moveState); o.putOpt("bucket", x.bucket)
         })
         put("reviews", arr(d.reviews) { o, x ->
             o.put("id", x.id); o.put("packageName", x.packageName); o.put("action", x.action); o.put("amount", x.amount)
@@ -159,6 +160,10 @@ object Backup {
             o.put("remindEpochDay", x.remindEpochDay); o.put("status", x.status); o.putOpt("doneEpochDay", x.doneEpochDay); o.putOpt("entryId", x.entryId)
             o.put("notified", x.notified)
         })
+        put("moveRules", arr(d.moveRules) { o, x ->
+            o.put("id", x.id); o.put("side", x.side); o.put("key", x.key); o.putOpt("fromAccountId", x.fromAccountId)
+            o.putOpt("toAccountId", x.toAccountId); o.put("count", x.count)
+        })
     }.toString()
 
     fun decode(json: String): Data {
@@ -195,7 +200,7 @@ object Backup {
                         o.strOrNull("installmentNo"), o.longOrNull("incomeId"), share = o.longOrNull("share"),
                         people = o.intOrNull("people"), settleFor = o.longOrNull("settleFor"), owe = o.optBoolean("owe", false),
                         fxText = o.strOrNull("fxText"), fxGuess = o.optBoolean("fxGuess", false), linkState = o.optInt("linkState", 0), acctGuess = o.optBoolean("acctGuess", false),
-                        want = o.intOrNull("want"), moveState = o.optInt("moveState", 0))
+                        want = o.intOrNull("want"), moveState = o.optInt("moveState", 0), bucket = o.intOrNull("bucket"))
                 },
                 reviews = list(root, "reviews") { o ->
                     ReviewItemEntity(o.getLong("id"), o.getString("packageName"), o.getString("action"), o.getLong("amount"),
@@ -274,6 +279,9 @@ object Backup {
                 wishes = list(root, "wishes") { o ->
                     WishEntity(o.getLong("id"), o.getString("name"), o.getLong("price"), o.optString("note", ""), o.getLong("createdEpochDay"),
                         o.getLong("remindEpochDay"), o.optString("status", "WAITING"), o.longOrNull("doneEpochDay"), o.longOrNull("entryId"), o.optBoolean("notified", false))
+                },
+                moveRules = list(root, "moveRules") { o ->
+                    MoveRuleEntity(o.getLong("id"), o.getString("side"), o.getString("key"), o.longOrNull("fromAccountId"), o.longOrNull("toAccountId"), o.optInt("count", 0))
                 },
             ).also {
                 if (it.settings.isEmpty() || it.cycles.isEmpty()) throw BadBackup("백업에 설정이 없어요")

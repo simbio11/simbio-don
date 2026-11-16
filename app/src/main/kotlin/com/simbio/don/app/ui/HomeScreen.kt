@@ -91,6 +91,8 @@ fun HomeScreen(
     /** 어느 통장·카드인지 골라 줄 기록 */
     accountQuestions: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
     onChooseAccount: (com.simbio.don.app.data.EntryEntity, Long, Boolean) -> Unit = { _, _, _ -> },
+    /** 기록의 통장을 새 내 통장으로 등록 */
+    onNewAccount: ((com.simbio.don.app.data.EntryEntity) -> Unit)? = null,
     /** 내 계좌끼리 옮긴 돈인지 묻기 */
     moveQuestions: List<com.simbio.don.app.data.MoveQuestion> = emptyList(),
     onConfirmMove: (com.simbio.don.app.data.MoveQuestion, Long?, Boolean) -> Unit = { _, _, _ -> },
@@ -148,7 +150,7 @@ fun HomeScreen(
         }
         // 어느 통장에서 나갔는지 모르는 결제·입금: 자산 목록에서 고른다
         MoveQuestionCard(moveQuestions, home.accounts.map { it.account }, onConfirmMove, onDismissMove)
-        AccountQuestionCard(accountQuestions, home.accounts.map { it.account }, onChooseAccount, limit = 2, onMore = onOpenAssets)
+        AccountQuestionCard(accountQuestions, home.accounts.map { it.account }, onChooseAccount, limit = 2, onMore = onOpenAssets, onNewAccount = onNewAccount)
         // 가게 분류를 모르는 결제: 알려 주면 다음부터 저절로 (자동 기록률도 여기서)
         CheckCard(auto.checks, auto.rate, onConfirmCategory, onOpenEntry, onLearned)
         // 계획과 맞을 것 같은 결제 (두 번 세지 않게)

@@ -84,9 +84,9 @@ class SelfTransferRepoTest {
         repo.handleNotification(RawNotification(toss, "입금", "80,000원 입금되었어요", at(11, 1)))
         assertEquals(setOf(EntryType.SPEND.name, EntryType.INCOME.name), entries().filter { it.amount == 80_000L }.map { it.type }.toSet())
 
-        // 15분 넘게 떨어지면 따로
+        // 30분 넘게 떨어지면 저절로 합치지 않는다 (그때는 "내 계좌끼리 옮긴 돈이에요?"로 묻는다)
         repo.handleNotification(RawNotification(kb, "KB국민", "출금 20,000원 이체", at(13, 0)))
-        repo.handleNotification(RawNotification(toss, "입금", "20,000원 입금되었어요", at(13, 30)))
+        repo.handleNotification(RawNotification(toss, "입금", "20,000원 입금되었어요", at(13, 45)))
         assertEquals(setOf(EntryType.SPEND.name, EntryType.INCOME.name), entries().filter { it.amount == 20_000L }.map { it.type }.toSet())
     }
 

@@ -58,6 +58,8 @@ object DayBudgets {
         daily: Set<String>,
         plans: List<Pair<LocalDate, Long>> = emptyList(),
         planned: (Entry) -> Boolean = { false },
+        /** 사용자가 직접 고른 것: true 이번 주에 나눠서(큰 지출), false 오늘 몫, null 앱이 판단 */
+        chosen: (Entry) -> Boolean? = { null },
     ): DayBudget {
         if (today !in week.week) return DayBudget.Empty
         val todays = entries.filter { it.date == today }
@@ -68,7 +70,7 @@ object DayBudgets {
         val morning = week.available + spentToday
         // 큰 지출 없이 본 오늘 몫: 이보다 큰 한 번의 지출(그날 쓰는 분류가 아닌 것)만 이번 주에 나눈다
         val base = ((morning - reserved) / daysLeft).coerceAtLeast(0)
-        fun big(e: Entry) = planned(e) || (e.category.name !in daily && counted(e) > base)
+        fun big(e: Entry) = chosen(e) ?: (planned(e) || (e.category.name !in daily && counted(e) > base))
         val spentBig = todays.filter(::big).sumOf { counted(it) }
         val spentDaily = spentToday - spentBig
         val allowance = ((morning - spentBig - reserved) / daysLeft).coerceAtLeast(0)

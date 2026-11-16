@@ -39,8 +39,9 @@ import com.simbio.don.budget.CategoryGuesser
         BalanceGapEntity::class,
         AppEventEntity::class,
         WishEntity::class,
+        MoveRuleEntity::class,
     ],
-    version = 21,
+    version = 22,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -58,7 +59,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                 }
                 ).build().also { instance = it }
         }
@@ -70,7 +71,23 @@ abstract class DonDatabase : RoomDatabase() {
             instance = null
         }
 
-        /** v20: 알려 준 카드·계좌 끝자리 (알림에 끝자리가 있으면 그 자산으로 저절로) */
+        /** v22: 내 통장끼리 이체 배운 것, 기록마다 어느 예산에서 썼는지 고르기 */
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entry ADD COLUMN bucket INTEGER")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `move_rule` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `side` TEXT NOT NULL, `key` TEXT NOT NULL, " +
+                        "`fromAccountId` INTEGER, `toAccountId` INTEGER, `count` INTEGER NOT NULL DEFAULT 0)",
+                )
+                // 이미 양쪽 통장이 다 적힌 이체는 더 합치지 않게
+                db.execSQL("UPDATE entry SET moveState = 3 WHERE type = 'TRANSFER' AND accountId IS NOT NULL AND toAccountId IS NOT NULL")
+                // 한쪽만 적힌 내 계좌 이체는 다른 쪽 알림이 오면 합치게 (1 나간 쪽만, 4 들어온 쪽만)
+                db.execSQL("UPDATE entry SET moveState = 1 WHERE type = 'TRANSFER' AND label = '내 계좌 이체' AND accountId IS NOT NULL AND toAccountId IS NULL")
+                db.execSQL("UPDATE entry SET moveState = 4 WHERE type = 'TRANSFER' AND label = '내 계좌 이체' AND accountId IS NULL AND toAccountId IS NOT NULL")
+            }
+        }
+
+        /** v21: 필요/욕구, 이체 물음 상태, 달 예산 조정, 사고 싶은 것 */
         val MIGRATION_20_21 = object : Migration(20, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE entry ADD COLUMN want INTEGER")
