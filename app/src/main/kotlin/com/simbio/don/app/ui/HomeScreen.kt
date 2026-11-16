@@ -43,6 +43,7 @@ import com.simbio.don.app.ui.kit.TextButton
 import com.simbio.don.app.ui.kit.UiIcon
 import com.simbio.don.app.ui.kit.WarnLine
 import com.simbio.don.app.ui.kit.card
+import com.simbio.don.app.ui.kit.riseIn
 import com.simbio.don.budget.Stats
 
 @Composable
@@ -196,9 +197,10 @@ fun HomeScreen(
             }
         }
 
-        HomeCards.layout.shown.forEach { card ->
+        HomeCards.layout.shown.forEachIndexed { i, card ->
             when (card) {
-                HomeCard.WEEK -> TodayWeekCard(home, onBalanceFix, livingGap, onAlignLiving)
+                // 늘 보이는 카드는 처음 열 때 차례로 떠오른다 (앱을 켠 동안 한 번)
+                HomeCard.WEEK -> Box(Modifier.riseIn("home.WEEK", i)) { TodayWeekCard(home, onBalanceFix, livingGap, onAlignLiving) }
                 HomeCard.FORECAST -> home.insights.forecast?.let { ForecastCard(it, home.cycle.end) }
                 HomeCard.CALENDAR -> HomeCalendarCard(home, onCalendarDay, calendar.events)
                 HomeCard.UPCOMING -> UpcomingCard(
@@ -211,7 +213,7 @@ fun HomeScreen(
                 HomeCard.SPLITS -> SplitHomeCard(splits, onSplits, onSettleHint, onDismissHint)
                 // 새 달 첫 두 주만
                 HomeCard.REPORT -> if (report != null && home.today.toEpochDay() - home.cycle.start.toEpochDay() < 14) ReportCard(report)
-                HomeCard.CANBUY -> CanBuyHomeCard(onCanBuy, wishes, home.today, onWishes)
+                HomeCard.CANBUY -> Box(Modifier.riseIn("home.CANBUY", i)) { CanBuyHomeCard(onCanBuy, wishes, home.today, onWishes) }
                 HomeCard.AI -> if (aiOn) AiHomeCard(onAi)
                 HomeCard.TILES -> {
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -238,7 +240,7 @@ fun HomeScreen(
                 }
                 SavingsCard(home, onGoals, onWealth)
                 }
-                HomeCard.ROOM -> HomeGameCard(home, onHouse, onShop, weather)
+                HomeCard.ROOM -> Box(Modifier.riseIn("home.ROOM", i)) { HomeGameCard(home, onHouse, onShop, weather) }
                 HomeCard.INSIGHTS -> InsightCard(home.insights.insights)
                 HomeCard.SUBSCRIPTIONS -> SubscriptionCard(home.insights.subscriptions, onAddFixed)
                 HomeCard.CATEGORIES -> {
@@ -258,7 +260,7 @@ fun HomeScreen(
                     }
                 }
                 }
-                HomeCard.RECENT -> {
+                HomeCard.RECENT -> Box(Modifier.riseIn("home.RECENT", i)) {
                 SectionCard("최근 내역", trailing = if (home.entries.size > 5) ({ MoreButton("전체 ${home.entries.size}건", onAllEntries) }) else null) {
                     if (home.entries.isEmpty()) {
                         Text("아직 기록이 없어요. 결제하면 알림으로 자동 기록되고, + 버튼으로 직접 넣을 수도 있어요.", fontSize = 13.sp, color = DonColors.InkSoft)
@@ -427,7 +429,8 @@ private fun BudgetRow(label: String, value: String, over: Boolean, spent: Long, 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(label, fontSize = 12.sp, color = if (over && big) DonColors.Warn else DonColors.InkMuted, modifier = Modifier.weight(1f), maxLines = 1)
-            Text(value, fontSize = if (big) 24.sp else 18.sp, fontWeight = FontWeight.Bold, color = if (over) DonColors.Warn else DonColors.Ink, maxLines = 1)
+            // 금액이 바뀌면 자리마다 굴러가며 바뀐다
+            com.simbio.don.app.ui.kit.RollingText(value, if (big) 24.sp else 18.sp, if (over) DonColors.Warn else DonColors.Ink)
         }
         com.simbio.don.app.ui.Meter(spent, budget, Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth()) {

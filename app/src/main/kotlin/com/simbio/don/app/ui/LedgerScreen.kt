@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -183,18 +184,28 @@ fun LedgerMonthBar(view: MonthView, hasPrev: Boolean, hasNext: Boolean, onPrev: 
 /** 보기 고르기 탭 (밑줄) */
 @Composable
 fun LedgerTabs(mode: LedgerMode, onMode: (LedgerMode) -> Unit) {
-    Row(Modifier.fillMaxWidth()) {
-        LedgerMode.entries.forEach { m ->
-            val on = m == mode
-            Column(
-                Modifier.weight(1f).clickable(role = Role.Tab) { onMode(m) }.padding(top = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(m.label, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) DonColors.Ink else DonColors.InkMuted)
-                Spacer(Modifier.height(8.dp))
-                Box(Modifier.fillMaxWidth().height(2.dp).background(if (on) DonColors.Ink else DonColors.Line))
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cell = maxWidth / LedgerMode.entries.size
+        // 밑줄이 고른 탭으로 미끄러져 간다
+        val x by androidx.compose.animation.core.animateDpAsState(
+            cell * mode.ordinal,
+            if (com.simbio.don.app.ui.kit.Motion.reduced) androidx.compose.animation.core.snap() else androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 420f),
+            label = "tabline",
+        )
+        Row(Modifier.fillMaxWidth()) {
+            LedgerMode.entries.forEach { m ->
+                val on = m == mode
+                Column(
+                    Modifier.weight(1f).clickable(role = Role.Tab) { onMode(m) }.padding(top = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(m.label, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) DonColors.Ink else DonColors.InkMuted)
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.fillMaxWidth().height(2.dp).background(DonColors.Line))
+                }
             }
         }
+        Box(Modifier.align(Alignment.BottomStart).offset(x = x).width(cell).height(2.dp).background(DonColors.Ink))
     }
 }
 

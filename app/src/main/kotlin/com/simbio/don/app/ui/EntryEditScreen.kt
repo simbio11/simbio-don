@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -452,7 +453,14 @@ fun EntryEditScreen(
                     memo.takeIf { it.isNotBlank() }?.let { "메모" },
                 ).joinToString(" · ")
                 MoreToggle(more, if (isIncome) "들어온 곳 · 메모" else "결제 수단 · 나눠 내기 · 할부 · 종류 · 메모", summary) { more = !more }
-                if (more) {
+                // 스프링으로 펼쳐지고 접힌다 (Expand card)
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = more,
+                    enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 380f)) +
+                        androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.spring(stiffness = 600f)) +
+                        androidx.compose.animation.fadeOut(),
+                ) { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (shownAccounts.isNotEmpty() && split != SplitMode.THEY_PAID) {
                         FormCard(if (isIncome) "들어온 곳" else "결제 수단") { AccountChips(shownAccounts, accountId, allowNone = true) { accountId = it } }
                     }
@@ -537,7 +545,7 @@ fun EntryEditScreen(
                     }
 
                     FormCard { MemoField(memo) { memo = it } }
-                }
+                } }
             }
 
             if (onDelete != null) {
@@ -643,21 +651,11 @@ fun EntryEditScreen(
 /** 수입 · 지출 · 이체 (가계부 관례 색) */
 @Composable
 private fun KindTabs(selected: Kind, onSelect: (Kind) -> Unit) {
-    Row(Modifier.fillMaxWidth().card(DonColors.Line.copy(alpha = 0.6f), 12.dp).padding(4.dp)) {
-        Kind.entries.forEach { k ->
-            val on = k == selected
-            val color = when (k) { Kind.INCOME -> DonColors.Income; Kind.SPEND -> DonColors.Expense; Kind.TRANSFER -> DonColors.InkSoft }
-            Box(
-                Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                    .background(if (on) DonColors.Surface else Color.Transparent)
-                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(k) })
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(k.label, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) color else DonColors.InkMuted)
-            }
-        }
-    }
+    // 고른 칸으로 알약 바탕이 미끄러져 간다
+    com.simbio.don.app.ui.kit.PillTabs(
+        Kind.entries.map { it.label }, selected.ordinal, { onSelect(Kind.entries[it]) },
+        colorOf = { when (Kind.entries[it]) { Kind.INCOME -> DonColors.Income; Kind.SPEND -> DonColors.Expense; Kind.TRANSFER -> DonColors.InkSoft } },
+    )
 }
 
 /** 왼쪽 이름표 + 오른쪽 값 */
@@ -680,27 +678,8 @@ fun AccountChips(accounts: List<AccountEntity>, selected: Long?, allowNone: Bool
 
 /** 두세 칸 중 하나 고르기 */
 @Composable
-fun SegmentedToggle(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().card(DonColors.Line.copy(alpha = 0.6f), 12.dp).padding(4.dp)) {
-        options.forEachIndexed { i, label ->
-            val on = i == selected
-            Box(
-                Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                    .background(if (on) DonColors.Surface else Color.Transparent)
-                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(i) })
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    fontSize = 15.sp,
-                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-                    color = if (on) DonColors.Ink else DonColors.InkMuted,
-                )
-            }
-        }
-    }
-}
+fun SegmentedToggle(options: List<String>, selected: Int, onSelect: (Int) -> Unit) =
+    com.simbio.don.app.ui.kit.PillTabs(options, selected, onSelect)
 
 /** 흰 카드 (+ 선택 소제목) */
 @Composable
@@ -789,7 +768,9 @@ private fun MoreToggle(open: Boolean, what: String, summary: String, onClick: ()
             Text(if (open) "접기" else "더 고르기", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
             Text(if (open || summary.isBlank()) what else summary, fontSize = 12.sp, color = DonColors.InkMuted, maxLines = 1)
         }
-        Text(if (open) "▲" else "▼", fontSize = 12.sp, color = DonColors.InkMuted)
+        // 펼치면 화살표가 돌아간다
+        val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 180f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f), label = "chevron")
+        Text("▼", fontSize = 12.sp, color = DonColors.InkMuted, modifier = Modifier.graphicsLayer { rotationZ = turn })
     }
 }
 

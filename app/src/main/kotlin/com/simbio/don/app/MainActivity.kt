@@ -225,6 +225,8 @@ class MainActivity : ComponentActivity() {
     private fun applyTheme() {
         val p = UiPrefs.palette(this)
         DonColors.palette = p
+        // 폰에서 애니메이션을 껐으면 움직임 효과도 끈다 ("효과 늘 보기"를 켰으면 그대로)
+        com.simbio.don.app.ui.kit.Motion.reduced = UiPrefs.systemAnimationsOff(this) && !UiPrefs.effectsAlways(this)
         val clear = android.graphics.Color.TRANSPARENT
         val lightScrim = android.graphics.Color.argb(0xE6, 0xFF, 0xFF, 0xFF)
         val darkScrim = android.graphics.Color.argb(0x80, 0x1B, 0x1B, 0x1B)
@@ -277,6 +279,8 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.safeDrawingPadding()) {
                         if (locked) LockScreen { locked = false } else App()
                     }
+                    // 아낀 돈·저축 같은 잘한 일에 톡 터지는 동전 (화면 맨 위)
+                    com.simbio.don.app.ui.kit.BurstLayer()
                 }
             }
         }
@@ -564,7 +568,10 @@ class MainActivity : ComponentActivity() {
                         },
                         onDismissHint = { vm.dismissSplitHint(it) },
                         moveQuestions = vm.moveQuestions.collectAsStateWithLifecycle().value,
-                        onConfirmMove = { q, to, saving -> vm.confirmMove(q, to, saving) },
+                        onConfirmMove = { q, to, saving ->
+                            vm.confirmMove(q, to, saving)
+                            if (saving) com.simbio.don.app.ui.kit.Burst.play()
+                        },
                         onDismissMove = { vm.dismissMove(it) },
                         onOpenAssets = { onTab(Tab.Assets) },
                         auto = vm.autoState.collectAsStateWithLifecycle().value,
@@ -1326,6 +1333,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onSkip = { v ->
                     Toast.makeText(this, "${"%,d".format(v)}원 참았어요. 잘했어요!", Toast.LENGTH_SHORT).show()
+                    com.simbio.don.app.ui.kit.Burst.play()
                     close()
                 },
                 onBack = close,
@@ -1358,6 +1366,7 @@ class MainActivity : ComponentActivity() {
                 onSkip = { w ->
                     vm.skipWish(w)
                     Toast.makeText(this, "${com.simbio.don.app.ui.won(w.price)} 참았어요!", Toast.LENGTH_SHORT).show()
+                    com.simbio.don.app.ui.kit.Burst.play()
                 },
                 onDelete = { vm.deleteWish(it) },
                 onAdd = { open(Overlay.CanBuy) },
