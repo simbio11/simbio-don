@@ -2909,8 +2909,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         return shown.firstOrNull { it.packageName == p.packageName }
     }
 
-    /** 이체 짝·배운 것에 쓰는 이름 열쇠 ("홍길동님" → "홍길동") */
-    private fun moveKey(label: String): String = CategoryGuesser.key(label.trim().removeSuffix("님"))
+    /** 이체 짝·배운 것에 쓰는 이름 열쇠 ("홍길동님" → "홍길동"). 받는·보낸 사람을 모르는 말("이체", "KB스타뱅킹 출금")이면 빈 값 */
+    private fun moveKey(label: String): String {
+        val k = CategoryGuesser.key(label.trim().removeSuffix("님"))
+        val generic = setOf("이체", "출금", "입금", "송금", "결제", "보냄", "받음", "자동이체", "타행이체", "인터넷이체", "모바일이체")
+        return if (k in generic || generic.any { k.endsWith(it) && k.length > it.length && k.removeSuffix(it).let { head -> head.any { c -> c in 'a'..'z' } || head.endsWith("뱅킹") || head.endsWith("뱅크") || head.endsWith("은행") } }) "" else k
+    }
 
     /** 알림 글에 내 다른 통장 이름이나 그 통장 끝자리가 보이면 그 통장 */
     private fun namedOther(p: ParsedPayment, accounts: List<AccountEntity>, mine: AccountEntity?): AccountEntity? {
@@ -3007,7 +3011,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
         // 3. 배운 것 · 알림에 보이는 내 다른 통장 (받는·보낸 사람을 모르는 알림은 배운 것으로 정하지 않는다)
         val key = moveKey(p.label)
-        val learned = if (p.nameUnknown) emptyList() else dao.moveRulesNow().filter { r ->
+        val learned = if (p.nameUnknown || key.isBlank()) emptyList() else dao.moveRulesNow().filter { r ->
             r.key == key && if (income) r.side == "IN" && (r.toAccountId == mine?.id) else r.side == "OUT" && r.fromAccountId == mine?.id
         }
         val other = when {
