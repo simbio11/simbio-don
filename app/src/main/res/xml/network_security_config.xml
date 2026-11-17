@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 평문 HTTP는 'PC로 보내기'(생활관리 PC 서버) 경로에만: Tailscale(WireGuard로 암호화) IP·MagicDNS와 개발용 루프백.
+     그 밖(날씨·환율·쇼핑 검색·AI)은 지금처럼 HTTPS만. PC Tailscale IP가 바뀌면 여기에 추가하거나 *.ts.net 이름을 쓰세요. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">100.72.99.70</domain>
+        <domain includeSubdomains="true">ts.net</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

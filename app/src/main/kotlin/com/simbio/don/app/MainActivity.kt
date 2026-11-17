@@ -798,6 +798,7 @@ class MainActivity : ComponentActivity() {
         }
         settings?.let {
             SettingsScreen(
+                onPcSend = { vm.pcSendNow() },
                 settings = it,
                 fixed = fixed,
                 rules = rules,

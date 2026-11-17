@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -71,6 +72,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { repo.tidyUp(now.toLocalDate()) }
         }
         refreshWeather()
+        pcSchedule()
         // 해외 결제가 있으면 오늘 환율 (켜 둔 때만)
         viewModelScope.launch { runCatching { com.simbio.don.app.fx.FxRates.refreshIfNeeded(getApplication()) } }
     }
@@ -210,6 +212,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (draft.owe != existing.owe) repo.autoMatch()
         }
+        pcSchedule()
+    }
+
+    // ── PC로 보내기 (생활관리 데스크탑, 켤 때만) — 앱을 열 때·기록할 때 20초 모았다가, 자동은 10분에 한 번까지 ──
+    private var pcJob: kotlinx.coroutines.Job? = null
+
+    private fun pcSchedule(force: Boolean = false, wait: Long = 20_000) {
+        if (!com.simbio.don.app.pc.PcSync.config(getApplication()).ready) return
+        pcJob?.cancel()
+        pcJob = viewModelScope.launch {
+            delay(wait)
+            val home = (state.first { it is AppState.Ready } as AppState.Ready).home
+            pcSend(home, force)
+        }
+    }
+
+    /** 설정의 '지금 보내기' */
+    fun pcSendNow() = pcSchedule(force = true, wait = 0)
+
+    private suspend fun pcSend(home: HomeState, force: Boolean) {
+        val app = getApplication<android.app.Application>()
+        val cfg = com.simbio.don.app.pc.PcSync.config(app)
+        if (!cfg.ready) return
+        if (!force && System.currentTimeMillis() - com.simbio.don.app.pc.PcSync.lastOkAt(app) < com.simbio.don.app.pc.PcSync.MIN_INTERVAL_MS) return
+        val body = withContext(Dispatchers.Default) {
+            val (entries, accounts, fixed) = repo.pcData(home.today.minusDays(com.simbio.don.app.pc.PcSnapshot.DAYS))
+            val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: ""
+            com.simbio.don.app.pc.PcSnapshot.build(
+                com.simbio.don.app.pc.PcInput.from(home, entries, accounts, fixed), java.time.OffsetDateTime.now(), version,
+            )
+        }
+        com.simbio.don.app.pc.PcSync.send(app, cfg, body)
     }
 
     suspend fun lastMonthReport() = withContext(Dispatchers.Default) { repo.lastMonthReport() }

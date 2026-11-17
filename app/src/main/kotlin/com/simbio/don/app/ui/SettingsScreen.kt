@@ -35,6 +35,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.simbio.don.app.ui.kit.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -98,6 +99,8 @@ fun SettingsScreen(
     aiModel: com.simbio.don.app.ai.AiModel = com.simbio.don.app.ai.AiModel.OPUS,
     onAiKey: (String) -> Unit = {},
     onAiModel: (com.simbio.don.app.ai.AiModel) -> Unit = {},
+    /** PC로 보내기: 지금 보내기 */
+    onPcSend: () -> Unit = {},
     onAiOff: () -> Unit = {},
     /** "그날 쓰는 돈"으로 볼 분류 바꾸기 */
     onDailyCategories: (Set<String>) -> Unit = {},
@@ -508,6 +511,8 @@ fun SettingsScreen(
             if (lockOn) SubButton(onClick = onChangePin, modifier = Modifier.fillMaxWidth()) { Text("암호 바꾸기") }
         }
 
+        PcSyncCard(onPcSend)
+
         RealCard("백업·복원") {
             Text("백업 파일에는 모든 기록·설정·자산·내 방이 들어가요. 폰을 바꿀 때 파일을 옮겨서 복원하세요. 파일은 고른 곳에만 저장되고 어디로도 보내지 않아요.", fontSize = 13.sp, color = DonColors.InkSoft)
             SubButton(onClick = onBackup, modifier = Modifier.fillMaxWidth()) {
@@ -635,6 +640,61 @@ private fun WidgetPreview(theme: ThemeMode, opacity: Int) {
             Text("이번 주 남은 돈", fontSize = 11.sp, color = androidx.compose.ui.graphics.Color(st.inkMuted))
             Text("183,000원", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(st.ink))
             Text("오늘은 26,000원까지", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(st.real))
+        }
+    }
+}
+
+/**
+ * PC로 보내기 — 생활관리 데스크탑 (켤 때만, 사용자가 넣은 내 PC 서버로만). docs/decisions.md 0.35
+ * 연결 링크는 PC에서 `python -m app pair`가 찍어 주는 lifeapp://pair?… (QR을 찍으면 나오는 글자 그대로)
+ */
+@Composable
+fun PcSyncCard(onSend: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var cfg by remember { mutableStateOf(com.simbio.don.app.pc.PcSync.config(ctx)) }
+    var link by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    remember { com.simbio.don.app.pc.PcSync.lastStatus(ctx) }
+    val status by com.simbio.don.app.pc.PcSync.status.collectAsState()
+    RealCard("PC로 보내기 (생활관리)", trailing = {
+        Switch(checked = cfg.enabled, onCheckedChange = { on ->
+            cfg = cfg.copy(enabled = on)
+            com.simbio.don.app.pc.PcSync.save(ctx, cfg)
+        })
+    }) {
+        Text(
+            "켜면 내 PC의 생활관리 서버로만 가계부 숫자를 보내요 — 거래(날짜·금액·분류·가게 이름·자산), 이번 달 예산, 자산 잔액, 고정 지출. " +
+                "알림 글·메모·카드 끝자리는 보내지 않아요. 앱을 열 때와 기록할 때 보내요.",
+            fontSize = 13.sp, color = DonColors.InkSoft,
+        )
+        if (cfg.enabled) {
+            if (cfg.url.isNotBlank()) Text("연결: ${cfg.url}", fontSize = 13.sp, color = DonColors.Ink)
+            OutlinedTextField(
+                value = link, onValueChange = { link = it.trim() }, singleLine = true,
+                label = { Text(if (cfg.url.isBlank()) "연결 링크 (lifeapp://pair?…)" else "다른 PC로 바꾸기 — 연결 링크") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (link.isNotBlank()) SubButton(onClick = {
+                val p = com.simbio.don.app.pc.PcLink.parse(link)
+                if (p == null) {
+                    error = "링크를 읽지 못했어요 — PC에서 python -m app pair 가 보여 주는 lifeapp://pair?… 전체를 넣어 주세요"
+                } else {
+                    cfg = cfg.copy(url = p.first, token = p.second)
+                    com.simbio.don.app.pc.PcSync.save(ctx, cfg)
+                    link = ""
+                    error = null
+                    onSend()
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text("연결하고 보내기") }
+            error?.let { Text(it, fontSize = 13.sp, color = DonColors.Warn) }
+            if (cfg.ready) SubButton(onClick = onSend, modifier = Modifier.fillMaxWidth()) { Text("지금 보내기") }
+            status?.let { s ->
+                val at = java.time.Instant.ofEpochMilli(s.at).atZone(java.time.ZoneId.systemDefault())
+                Text(
+                    (if (s.ok) "✓ " else "⚠ ") + "${at.monthValue}/${at.dayOfMonth} ${"%02d:%02d".format(at.hour, at.minute)} · ${s.message}",
+                    fontSize = 12.sp, color = if (s.ok) DonColors.InkMuted else DonColors.Warn,
+                )
+            }
         }
     }
 }

@@ -358,6 +358,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     )
 
     @OptIn(ExperimentalCoroutinesApi::class)
+    /** PC로 보내기(생활관리 데스크탑) 재료 — [since]부터의 기록·자산·고정 지출. 알림 글·메모는 보내는 쪽(PcSnapshot)에서 뺀다 */
+    suspend fun pcData(since: LocalDate): Triple<List<EntryEntity>, List<AccountEntity>, List<FixedExpenseEntity>> =
+        Triple(dao.entriesBetweenNow(since.toEpochDay(), Long.MAX_VALUE / 2), dao.accounts().first(), dao.fixedExpensesNow())
+
     fun home(now: Flow<LocalDateTime>): Flow<HomeState?> {
         val more = combine(
             combine(dao.mileTx(), dao.gamePlays(), balancesAndWealth(now)) { m, g, w -> Triple(m, g, w) },
