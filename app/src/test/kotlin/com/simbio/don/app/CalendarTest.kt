@@ -261,9 +261,10 @@ class CalendarRepoTest {
         val p = repo.planNow(id)!!
         assertEquals(60_000L, p.doneAmount)
         assertEquals(first, p.doneEntryId)
-        // 같은 기록을 다시 이으면 (고친 것) 그대로 바꾼다
+        // 같은 기록을 다시 이으면 (금액을 고친 것) 그 결제 몫만 바꾼다 — 2차는 그대로 더해져 있다
         repo.completePlan(id, first, 45_000, d(10, 27))
-        assertEquals(45_000L, repo.planNow(id)!!.doneAmount)
+        assertEquals(63_000L, repo.planNow(id)!!.doneAmount)
+        assertEquals(listOf(first, second), repo.planNow(id)!!.entryIds)
     }
 
     @Test

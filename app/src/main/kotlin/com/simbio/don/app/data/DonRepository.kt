@@ -2028,7 +2028,12 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun completePlan(id: Long, entryId: Long?, amount: Long, date: LocalDate) {
         val p = planNow(id) ?: return
-        if (entryId != null && entryId in p.entryIds) return
+        // 이미 이은 결제를 다시 이으면 (금액을 고친 것) 그 결제 몫만 바꿔 다시 더한다
+        if (entryId != null && entryId in p.entryIds) {
+            val others = p.entryIds.filter { it != entryId }.mapNotNull { dao.entryNow(it) }.sumOf { it.share ?: it.amount }
+            dao.savePlan(p.copy(doneAmount = others + amount, canceled = false))
+            return
+        }
         val more = p.done && (entryId == null || entryId != p.doneEntryId)
         val ids = (p.entryIds + listOfNotNull(entryId)).distinct()
         dao.savePlan(
