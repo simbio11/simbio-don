@@ -489,8 +489,14 @@ data class PlanEntity(
     @ColumnInfo(defaultValue = "0") val monthly: Boolean = false,
     /** 만든 날 (한 달에 나눠서면 이 주부터 나눈다, 0 = 모름 → 그 달 처음부터) */
     @ColumnInfo(defaultValue = "0") val createdEpochDay: Long = 0,
+    /** 이 예산으로 쓴 결제들 ("12,40" — 1차·2차처럼 여럿). 비었으면 [doneEntryId] 하나 */
+    @ColumnInfo(defaultValue = "") val linked: String = "",
 ) {
     fun rejects(entryId: Long): Boolean = rejected.split(",").any { it == entryId.toString() }
+
+    /** 이 예산과 이은 결제 id들 */
+    val entryIds: List<Long>
+        get() = linked.split(",").mapNotNull { it.trim().toLongOrNull() }.ifEmpty { listOfNotNull(doneEntryId) }
 
     val done: Boolean get() = doneAmount != null
     val open: Boolean get() = !done && !canceled

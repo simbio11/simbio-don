@@ -399,11 +399,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     private fun dayOf(h: HomeState, plans: List<PlanEntity>): com.simbio.don.budget.DayBudget {
         val w = h.currentWeek ?: return com.simbio.don.budget.DayBudget.Empty
         // 한 달에 나눠서 계획으로 쓴 기록은 주 예산에서 이미 나눠 뺐으니 이번 주 지출로 세지 않는다
-        val spreadIds = plans.filter { it.monthly }.mapNotNull { it.doneEntryId }.toSet()
+        val spreadIds = plans.filter { it.monthly }.flatMap { it.entryIds }.toSet()
         val pairs = h.entries.filter { LocalDate.ofEpochDay(it.epochDay) in w.week && it.id !in spreadIds }
             .mapNotNull { e -> runCatching { e to e.toEntry() }.getOrNull() }
         // 계획에서 "썼어요"로 이은 기록 (미리 떼어 둔 돈이라 큰 지출로)
-        val linkedIds = plans.mapNotNull { it.doneEntryId }.toSet()
+        val linkedIds = plans.flatMap { it.entryIds }.toSet()
         val linked = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<com.simbio.don.budget.Entry, Boolean>())
         pairs.filter { it.first.id in linkedIds }.forEach { linked += it.second }
         // 기록에서 직접 고른 예산 (오늘 몫 / 이번 주에 나눠서)
@@ -463,7 +463,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     private fun ledgerOf(plan: com.simbio.don.budget.CyclePlan, entries: List<EntryEntity>, plans: List<PlanEntity>): CycleLedger {
         val monthly = plans.filter { it.monthly && !it.canceled }
-        val linked = monthly.mapNotNull { it.doneEntryId }.toSet()
+        val linked = monthly.flatMap { it.entryIds }.toSet()
         val spreads = monthly.mapNotNull { p ->
             val day = LocalDate.ofEpochDay(p.epochDay)
             val amount = if (p.done) p.doneAmount ?: 0 else p.amount
@@ -1860,6 +1860,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun accountsNow(): List<AccountEntity> = dao.accountsNow()
 
+    /** 배운 내 통장끼리 이체 (보기·잊기) */
+    val moveRules: Flow<List<MoveRuleEntity>> = dao.moveRules()
+
+    suspend fun forgetMoveRule(id: Long) = dao.deleteMoveRule(id)
+
     /** 이 기록을 어느 예산에서 쓴 것으로 볼지 (null 앱이 판단, 0 오늘 몫, 1 이번 주에 나눠서) */
     suspend fun setEntryBucket(entryId: Long, bucket: Int?) = locked {
         dao.entryNow(entryId)?.let { dao.updateEntry(it.copy(bucket = bucket)) }
@@ -2023,10 +2028,33 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun completePlan(id: Long, entryId: Long?, amount: Long, date: LocalDate) {
         val p = planNow(id) ?: return
+        if (entryId != null && entryId in p.entryIds) return
         val more = p.done && (entryId == null || entryId != p.doneEntryId)
+        val ids = (p.entryIds + listOfNotNull(entryId)).distinct()
         dao.savePlan(
-            if (more) p.copy(doneAmount = (p.doneAmount ?: 0) + amount, doneEpochDay = maxOf(p.doneEpochDay ?: date.toEpochDay(), date.toEpochDay()))
-            else p.copy(doneEntryId = entryId, doneAmount = amount, doneEpochDay = date.toEpochDay(), canceled = false),
+            if (more) p.copy(doneAmount = (p.doneAmount ?: 0) + amount, doneEpochDay = maxOf(p.doneEpochDay ?: date.toEpochDay(), date.toEpochDay()), linked = ids.joinToString(","))
+            else p.copy(doneEntryId = entryId, doneAmount = amount, doneEpochDay = date.toEpochDay(), canceled = false, linked = ids.joinToString(",")),
+        )
+    }
+
+    /**
+     * 이 예산으로 쓴 결제를 직접 고른다 (1차·2차처럼 여럿). 실제 쓴 돈 = 고른 결제의 내 몫 합.
+     * 빼낸 결제는 다시 저절로 잇지 않고, 하나도 안 고르면 아직 안 쓴 예산으로 돌아간다.
+     */
+    suspend fun setPlanEntries(planId: Long, entryIds: List<Long>) = locked {
+        val p = planNow(planId) ?: return@locked
+        val picked = entryIds.distinct().mapNotNull { dao.entryNow(it) }
+        val removed = p.entryIds.filter { it !in picked.map { e -> e.id } }
+        val rejected = (p.rejected.split(",").filter { it.isNotBlank() } + removed.map { it.toString() }).distinct().joinToString(",")
+        dao.savePlan(
+            if (picked.isEmpty()) {
+                p.copy(doneEntryId = null, doneAmount = null, doneEpochDay = null, linked = "", autoLinked = false, rejected = rejected)
+            } else {
+                p.copy(
+                    doneEntryId = picked.first().id, doneAmount = picked.sumOf { it.share ?: it.amount }, doneEpochDay = picked.maxOf { it.epochDay },
+                    linked = picked.joinToString(",") { it.id.toString() }, autoLinked = false, canceled = false, rejected = rejected,
+                )
+            },
         )
     }
 
@@ -2063,7 +2091,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 계획과 아직 안 이은 지출 짝 (가장 잘 맞는 계획 하나씩, 잘 맞는 순) */
     private fun planCandidates(plans: List<PlanEntity>, entries: List<EntryEntity>): List<PlanHint> {
-        val linked = plans.mapNotNull { it.doneEntryId }.toSet()
+        val linked = plans.flatMap { it.entryIds }.toSet()
         val open = plans.filter { it.open }
         if (open.isEmpty()) return emptyList()
         return entries.filter { e ->
@@ -2091,7 +2119,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         planCandidates(plans, entries).filter { it.fit.kind == com.simbio.don.budget.PlanFitKind.STRONG }.forEach { h ->
             if (!used.add(h.plan.id)) return@forEach
             dao.savePlan(
-                h.plan.copy(doneEntryId = h.entry.id, doneAmount = h.entry.share ?: h.entry.amount, doneEpochDay = h.entry.epochDay, canceled = false, autoLinked = true),
+                h.plan.copy(
+                    doneEntryId = h.entry.id, doneAmount = h.entry.share ?: h.entry.amount, doneEpochDay = h.entry.epochDay, canceled = false, autoLinked = true,
+                    linked = h.entry.id.toString(),
+                ),
             )
             n++
         }
@@ -2117,7 +2148,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             e = e.copy(share = null, people = null)
             dao.updateEntry(e)
         }
-        dao.savePlan(p.copy(doneEntryId = e.id, doneAmount = e.share ?: e.amount, doneEpochDay = e.epochDay, canceled = false, autoLinked = false))
+        dao.savePlan(p.copy(doneEntryId = e.id, doneAmount = e.share ?: e.amount, doneEpochDay = e.epochDay, canceled = false, autoLinked = false, linked = e.id.toString()))
         // 나눠 냈다고 했으면 이미 들어온 친구 돈을 정산으로
         autoMatchLocked(LocalDate.ofEpochDay(e.epochDay).plusDays(Splits.WINDOW_DAYS).coerceAtMost(LocalDate.now()))
     }
@@ -2126,9 +2157,17 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun rejectPlanMatch(planId: Long, entryId: Long) = locked {
         val p = planNow(planId) ?: return@locked
         val rejected = (p.rejected.split(",").filter { it.isNotBlank() } + entryId.toString()).distinct().joinToString(",")
+        val rest = p.entryIds.filter { it != entryId }.mapNotNull { dao.entryNow(it) }
         dao.savePlan(
-            if (p.doneEntryId == entryId) p.copy(doneEntryId = null, doneAmount = null, doneEpochDay = null, autoLinked = false, rejected = rejected)
-            else p.copy(rejected = rejected),
+            when {
+                entryId !in p.entryIds -> p.copy(rejected = rejected)
+                rest.isEmpty() -> p.copy(doneEntryId = null, doneAmount = null, doneEpochDay = null, linked = "", autoLinked = false, rejected = rejected)
+                // 1차·2차 중 하나만 뺀다: 남은 결제로 다시 센다
+                else -> p.copy(
+                    doneEntryId = rest.first().id, doneAmount = rest.sumOf { it.share ?: it.amount }, doneEpochDay = rest.maxOf { it.epochDay },
+                    linked = rest.joinToString(",") { it.id.toString() }, autoLinked = false, rejected = rejected,
+                )
+            },
         )
     }
 
@@ -2266,8 +2305,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         dao.deleteEntry(e)
         releaseReceipts(e.id)
         // 이 기록으로 "썼어요"였던 계획은 다시 안 쓴 계획으로 (계획 금액이 사라지지도, 두 번 세지도 않게)
-        dao.plansNow().filter { it.doneEntryId == e.id }.forEach {
-            dao.savePlan(it.copy(doneEntryId = null, doneAmount = null, doneEpochDay = null, autoLinked = false))
+        // 지운 결제는 이어 둔 예산에서 빼고 남은 결제로 다시 센다
+        dao.plansNow().filter { e.id in it.entryIds }.forEach { p ->
+            val rest = p.entryIds.filter { it != e.id }.mapNotNull { dao.entryNow(it) }
+            dao.savePlan(
+                if (rest.isEmpty()) p.copy(doneEntryId = null, doneAmount = null, doneEpochDay = null, autoLinked = false, linked = "")
+                else p.copy(doneEntryId = rest.first().id, doneAmount = rest.sumOf { it.share ?: it.amount }, linked = rest.joinToString(",") { it.id.toString() }),
+            )
         }
     }
 
@@ -2511,7 +2555,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             else -> e0
         }
         dao.updateEntry(e)
-        dao.plansNow().filter { it.doneEntryId == e.id }.forEach { dao.savePlan(it.copy(doneAmount = e.share ?: e.amount)) }
+        dao.plansNow().filter { e.id in it.entryIds }.forEach { p -> dao.savePlan(p.copy(doneAmount = p.entryIds.mapNotNull { id -> if (id == e.id) e else dao.entryNow(id) }.sumOf { it.share ?: it.amount })) }
     }
 
     // ── 누구 돈이에요? (들어온 돈이 정말 수입인지) ───────────────────
@@ -2591,6 +2635,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun tidyUp(today: LocalDate = LocalDate.now()) = locked {
         migrateAlignEntriesLocked()
+        // 예전에 지출+수입이나 반쪽 두 개로 남은 내 통장끼리 이체를 한 건으로
+        fixOwnMovesLocked(today)
         val recent = dao.entriesBetweenNow(today.minusDays(60).toEpochDay(), today.plusDays(1).toEpochDay())
         val rules = dao.appRulesNow().associateBy { it.packageName }
         val fixed = mutableListOf<EntryEntity>()
@@ -2913,9 +2959,19 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 이체 짝·배운 것에 쓰는 이름 열쇠: 받는·보낸 **사람 이름**일 때만 ("홍길동님" → "홍길동", "김*수").
      * "이체"·"KB국민"·"입금되었어요"처럼 사람이 아닌 말이면 빈 값 — 그런 걸 배우면 다른 송금까지 이체로 보게 된다.
      */
-    private fun moveKey(label: String): String {
-        val who = label.trim().removeSuffix("님")
-        return if (SelfTransfer.PERSON.matches(who)) CategoryGuesser.key(who) else ""
+    private fun moveKey(label: String): String = whoOf(label)?.let { CategoryGuesser.key(it) } ?: ""
+
+    /** 받는·보낸 사람 이름만: "홍길동(카카오뱅크)" "홍길동님" "홍길동 카카오" → "홍길동". 사람 이름이 아니면 null */
+    private fun whoOf(label: String): String? {
+        val first = label.replace(Regex("""\([^)]*\)|\[[^\]]*]"""), " ").trim().split(Regex("""\s+""")).firstOrNull().orEmpty().removeSuffix("님")
+        return first.takeIf { SelfTransfer.PERSON.matches(it) }
+    }
+
+    /** 보낸 쪽·받은 쪽 이름이 둘 다 사람 이름인데 서로 다르면 다른 사람끼리 주고받은 돈 (내 계좌끼리면 둘 다 내 이름) */
+    private fun differentPeople(a: String, b: String): Boolean {
+        val x = whoOf(a) ?: return false
+        val y = whoOf(b) ?: return false
+        return '*' !in x && '*' !in y && x != y
     }
 
     /** 알림 글에 내 다른 통장 이름이나 그 통장 끝자리가 보이면 그 통장 */
@@ -2931,8 +2987,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 사람 이름처럼 보이는데 내 이름이 아님 (남에게 보낸·남이 보낸 돈) */
     private fun someoneElse(label: String, names: List<String>): Boolean {
-        val who = label.trim().removeSuffix("님")
-        return SelfTransfer.PERSON.matches(who) && '*' !in who && names.isNotEmpty() && names.none { who == it || who.startsWith(it) }
+        val who = whoOf(label) ?: return false
+        return '*' !in who && names.isNotEmpty() && names.none { who == it || who.startsWith(it) }
     }
 
     /** 내 통장끼리 이체를 배운다 (같은 열쇠·방향이면 횟수만 올린다) */
@@ -2994,7 +3050,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 kotlin.math.abs((e.postedAtEpochSecond ?: Long.MIN_VALUE / 2) - at) <= MOVE_PAIR_SECONDS
         }.minByOrNull { kotlin.math.abs((it.postedAtEpochSecond ?: 0) - at) }
         // 남에게 보낸 돈과 남이 보낸 돈이 우연히 같은 금액이면 합치지 않는다 (내 이름을 알 때)
-        if (opposite != null && !someoneElse(p.label, names) && !someoneElse(opposite.label, names)) {
+        if (opposite != null && !someoneElse(p.label, names) && !someoneElse(opposite.label, names) && !differentPeople(p.label, opposite.label)) {
             if (mine == null) mine = newOwnAccountLocked(p)
             val from = if (income) opposite.accountId else mine?.id
             val to = if (income) mine?.id else opposite.accountId
@@ -3048,6 +3104,79 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             ),
         )
         return true
+    }
+
+    /**
+     * 예전에 잘못 남은 내 통장끼리 이체를 정리한다 (앱을 열 때 최근 [days]일):
+     * 1. 송금 지출 + 다른 내 통장 입금이 같은 금액·30분 안 → 이체 한 건 (입금 기록은 지운다)
+     * 2. 한쪽만 적힌 이체 + 그 다른 쪽이 수입·지출로 따로 적힌 것 (사흘 안) → 합친다
+     * 3. 나간 쪽만 적힌 이체 + 들어온 쪽만 적힌 이체 → 한 건으로
+     * 남끼리 주고받은 돈(이름이 다르거나 내 이름이 아님), 월급, 정산·보낼 돈은 건드리지 않는다. 고친 건수.
+     */
+    private suspend fun fixOwnMovesLocked(today: LocalDate, days: Long = 60): Int {
+        val all = dao.entriesBetweenNow(today.minusDays(days).toEpochDay(), today.plusDays(1).toEpochDay())
+        val names = SelfTransfer.names(dao.settingsNow()?.ownerName)
+        val gone = mutableSetOf<Long>()
+        var n = 0
+        fun near(a: EntryEntity, b: EntryEntity, sec: Long): Boolean {
+            val x = a.postedAtEpochSecond ?: return kotlin.math.abs(a.epochDay - b.epochDay) * 86_400 <= sec
+            val y = b.postedAtEpochSecond ?: return kotlin.math.abs(a.epochDay - b.epochDay) * 86_400 <= sec
+            return kotlin.math.abs(x - y) <= sec
+        }
+        fun rawOut(e: EntryEntity) = e.type == EntryType.SPEND.name && e.sentOut && e.moveState == 0 && e.accountId != null &&
+            e.settleFor == null && !e.owe && e.share == null && e.installmentId == null && e.id !in gone
+        fun rawIn(e: EntryEntity) = e.type == EntryType.INCOME.name && e.moveState == 0 && e.accountId != null && e.settleFor == null &&
+            e.incomeId == null && e.linkState != 2 && e.category != Category.SALARY.name && e.id !in gone
+        fun others(a: EntryEntity, b: EntryEntity) = someoneElse(a.label, names) || someoneElse(b.label, names) || differentPeople(a.label, b.label)
+        val absorb = MOVE_ABSORB_DAYS * 86_400
+
+        // 1. 송금 지출 + 입금
+        all.filter(::rawOut).forEach { o ->
+            val i = all.filter { rawIn(it) && it.amount == o.amount && it.accountId != o.accountId && near(o, it, MOVE_PAIR_SECONDS) && !others(o, it) }
+                .minByOrNull { kotlin.math.abs((it.postedAtEpochSecond ?: 0) - (o.postedAtEpochSecond ?: 0)) } ?: return@forEach
+            dao.updateEntry(
+                o.copy(
+                    type = EntryType.TRANSFER.name, label = SELF_TRANSFER_LABEL, category = Category.ETC.name, sub = null, sentOut = false, want = null,
+                    memo = listOf(o.label, o.memo).filter { it.isNotBlank() }.joinToString(" · ").take(100),
+                    toAccountId = i.accountId, moveState = 3, acctGuess = false,
+                    rawText = listOfNotNull(o.rawText, i.rawText).joinToString("\n").take(600),
+                ),
+            )
+            dao.deleteEntry(i)
+            gone += o.id; gone += i.id
+            learnMoveLocked("OUT", o.label, o.accountId, i.accountId, o.nameUnknown)
+            learnMoveLocked("IN", i.label, o.accountId, i.accountId, i.nameUnknown)
+            n++
+        }
+        // 2. 한쪽만 적힌 이체 + 따로 적힌 다른 쪽
+        all.filter { it.type == EntryType.TRANSFER.name && (it.moveState == 1 || it.moveState == 4) && it.id !in gone }.forEach { t ->
+            val other = if (t.moveState == 1) {
+                all.filter { rawIn(it) && it.amount == t.amount && it.accountId != t.accountId && (t.toAccountId == null || it.accountId == t.toAccountId) && near(t, it, absorb) }
+            } else {
+                all.filter { rawOut(it) && it.amount == t.amount && it.accountId != t.toAccountId && (t.accountId == null || it.accountId == t.accountId) && near(t, it, absorb) }
+            }.minByOrNull { kotlin.math.abs(it.epochDay - t.epochDay) } ?: return@forEach
+            dao.updateEntry(
+                if (t.moveState == 1) t.copy(toAccountId = t.toAccountId ?: other.accountId, moveState = 3)
+                else t.copy(accountId = t.accountId ?: other.accountId, moveState = 3),
+            )
+            dao.deleteEntry(other)
+            gone += t.id; gone += other.id
+            n++
+        }
+        // 3. 나간 쪽만 + 들어온 쪽만
+        val outs = all.filter { it.type == EntryType.TRANSFER.name && it.moveState == 1 && it.id !in gone }
+        val ins = all.filter { it.type == EntryType.TRANSFER.name && it.moveState == 4 && it.id !in gone }.toMutableList()
+        outs.forEach { a ->
+            val b = ins.firstOrNull { b ->
+                b.amount == a.amount && near(a, b, absorb) && b.toAccountId != a.accountId &&
+                    (a.toAccountId == null || a.toAccountId == b.toAccountId) && (b.accountId == null || b.accountId == a.accountId)
+            } ?: return@forEach
+            ins.remove(b)
+            dao.updateEntry(a.copy(toAccountId = a.toAccountId ?: b.toAccountId, moveState = 3))
+            dao.deleteEntry(b)
+            n++
+        }
+        return n
     }
 
     /** 내 통장끼리 이체로 들어온·나간 앱이 아직 자산이 아니면 새 내 통장으로 (알림 잔액이 있으면 그 잔액으로 맞춘다) */

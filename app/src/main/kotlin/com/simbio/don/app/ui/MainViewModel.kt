@@ -400,6 +400,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 아니에요 (저절로 이었던 것이면 풀기) */
     fun rejectPlanMatch(planId: Long, entryId: Long) = viewModelScope.launch { repo.rejectPlanMatch(planId, entryId) }
+    fun setPlanEntries(planId: Long, ids: List<Long>) = viewModelScope.launch { repo.setPlanEntries(planId, ids) }
+
+    /** 배운 내 통장끼리 이체 */
+    val moveRules = repo.moveRules.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun forgetMoveRule(id: Long) = viewModelScope.launch { repo.forgetMoveRule(id) }
 
     /** 어느 자산인지 없이 적힌 수입·지출 (자산 잔액에 안 들어감) */
     val unassigned = repo.unassignedEntries.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

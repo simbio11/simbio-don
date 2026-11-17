@@ -85,7 +85,7 @@ fun timeText(minuteOfDay: Int): String = "%02d:%02d".format(minuteOfDay / 60, mi
 
 /** 가계부 한 줄: 분류 · 내용(자산·시각) · 금액 */
 @Composable
-fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEntity) -> Unit) {
+fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEntity) -> Unit, planTag: String? = null) {
     val type = enumOr(e.type, EntryType.SPEND)
     val c = Category.of(e.category)
     Row(
@@ -109,8 +109,11 @@ fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEnt
                         when {
                             e.settleFor != null -> "정산 받음" + (e.toAccountId?.let(accountNames::get)?.let { " → $it" } ?: "")
                             else -> when (type) {
-                            EntryType.TRANSFER -> listOfNotNull(e.accountId?.let(accountNames::get), e.toAccountId?.let(accountNames::get))
-                                .joinToString(" → ").ifEmpty { "이체" }
+                            // 내 통장끼리: 어디서 어디로 (다른 쪽 알림을 기다리는 중이면 "확인 중")
+                            EntryType.TRANSFER -> listOf(
+                                e.accountId?.let(accountNames::get) ?: if (e.moveState == 4) "보낸 통장 확인 중" else null,
+                                e.toAccountId?.let(accountNames::get) ?: if (e.moveState == 1) "받은 통장 확인 중" else null,
+                            ).filterNotNull().joinToString(" → ").ifEmpty { "이체" }
                             EntryType.FIXED -> "고정 · ${c.label}"
                             EntryType.EXCEPTION -> "예외 · ${c.label}"
                             EntryType.REFUND -> "환불 · ${c.label}"
@@ -122,6 +125,9 @@ fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEnt
                     e.fxText?.let { add(it + if (e.fxGuess) " (어림 환율)" else "") }
                     if (e.owe) add("보낼 돈")
                     e.installmentNo?.let { add("할부 $it") }
+                    // 어느 예산에서 썼나 (직접 고른 것·계획과 이은 것)
+                    planTag?.let(::add)
+                    if (type == EntryType.SPEND) e.bucket?.let { add(if (it == 1) "이번 주에 나눔" else "오늘 몫") }
                     if (type != EntryType.TRANSFER) e.accountId?.let(accountNames::get)?.let(::add)
                     e.minuteOfDay?.let { add(timeText(it)) }
                     when (e.source) {
@@ -254,7 +260,7 @@ fun LedgerScreen(
                     }
                     Spacer(Modifier.height(10.dp))
                 }
-                dailyItems(view, accountNames, selectedDate, onSelectDate, category, onCategory, onOpen)
+                dailyItems(view, accountNames, selectedDate, onSelectDate, category, onCategory, onOpen, plans)
             }
             LedgerMode.CALENDAR -> calendarItems(view, accountNames, selectedDate ?: view.today.takeIf { it in view.cycle } ?: view.cycle.start, onSelectDate, onOpen, plans, onPlans, calendar)
             LedgerMode.WEEKLY -> weeklyItems(view)
@@ -274,7 +280,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dailyItems(
     category: Category?,
     onCategory: (Category?) -> Unit,
     onOpen: (EntryEntity) -> Unit,
+    plans: List<com.simbio.don.app.data.PlanEntity> = emptyList(),
 ) {
+    // 결제마다 이은 예산 (일정·계획)
+    val planOf = plans.flatMap { p -> p.entryIds.map { it to p } }.toMap()
     val present = view.entities.map { Category.of(it.category) }.toSet()
     val filtered = view.entities.filter { e ->
         (selectedDate == null || e.epochDay == selectedDate.toEpochDay()) && (category == null || e.category == category.name)
@@ -306,7 +315,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dailyItems(
             Column(Modifier.padding(bottom = 10.dp).fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 10.dp)) {
                 DayHeader(d, Stats.income(es), Stats.total(es))
                 list.sortedWith(compareByDescending<EntryEntity> { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
-                    .forEach { e -> LedgerRow(e, accountNames, onOpen) }
+                    .forEach { e -> LedgerRow(e, accountNames, onOpen, planOf[e.id]?.let { p -> "예산: ${p.label}" + if ((p.doneAmount ?: 0) > p.amount) " (넘음)" else "" }) }
             }
         }
     }
@@ -352,7 +361,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.calendarItems(
     val dayEvents = calendar.events[selected].orEmpty()
     // 캘린더 연동을 켰으면 일정 카드가 먼저 (그날 할 일 → 쓸 돈)
     if (calendar.on) item(key = "events$selected") {
-        DayEventsCard(selected, view.today, dayEvents, plans, true, calendar.canWrite, calendar.onBudget, { t, m, b -> calendar.onAdd(selected, t, m, b) }, calendar.onSpent, calendar.onConnect, calendar.onUnlink)
+        DayEventsCard(selected, view.today, dayEvents, plans, true, calendar.canWrite, calendar.onBudget, { t, m, b -> calendar.onAdd(selected, t, m, b) }, calendar.onSpent, calendar.onConnect, calendar.onUnlink, view.entities, calendar.onPickPayments)
         Spacer(Modifier.height(10.dp))
     }
     item {

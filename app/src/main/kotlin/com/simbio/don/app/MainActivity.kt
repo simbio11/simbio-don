@@ -345,6 +345,7 @@ class MainActivity : ComponentActivity() {
                 onSpent = { p -> open(Overlay.Edit(null, spentDraft(p))) },
                 onConnect = connect,
                 onUnlink = { p -> p.doneEntryId?.let { vm.rejectPlanMatch(p.id, it) } },
+                onPickPayments = { p, ids -> vm.setPlanEntries(p.id, ids) },
             )
         }
     }
@@ -1203,6 +1204,8 @@ class MainActivity : ComponentActivity() {
                     onUnlink = { p -> p.doneEntryId?.let { vm.rejectPlanMatch(p.id, it) } },
                     onOpenEntry = { open(Overlay.Edit(it)) },
                     onMonthly = { p, m -> vm.setPlanMonthly(p.id, m) },
+                    payments = (home.entries + calEntries).distinctBy { it.id },
+                    onPickPayments = { p, ids -> vm.setPlanEntries(p.id, ids) },
                     onBack = close,
                 )
             }
@@ -1251,6 +1254,8 @@ class MainActivity : ComponentActivity() {
                 onUnlinkApp = { vm.unlinkApp(it) },
                 onForgetTail = { id, t -> vm.forgetTail(id, t) },
                 onBack = close,
+                moveRules = vm.moveRules.collectAsStateWithLifecycle().value,
+                onForgetMove = { vm.forgetMoveRule(it) },
             )
             Overlay.BalanceFix -> com.simbio.don.app.ui.BalanceFixScreen(
                 unassignedSpend = unassignedSpend(vm.unassigned.collectAsStateWithLifecycle().value),

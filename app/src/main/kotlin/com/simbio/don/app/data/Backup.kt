@@ -143,6 +143,7 @@ object Backup {
             // 캘린더 일정 id는 이 폰에서만 뜻이 있어 다른 폰에 되살리면 이어짐이 풀린다 (계획은 그대로)
             o.putOpt("eventId", x.eventId); o.put("calendarOwned", x.calendarOwned)
             o.put("autoLinked", x.autoLinked); o.put("rejected", x.rejected); o.put("monthly", x.monthly); o.put("createdEpochDay", x.createdEpochDay)
+            o.put("linked", x.linked)
         })
         put("goalMoves", arr(d.goalMoves) { o, x ->
             o.put("id", x.id); o.put("goalId", x.goalId); o.put("epochDay", x.epochDay); o.put("amount", x.amount); o.put("source", x.source)
@@ -263,7 +264,8 @@ object Backup {
                     PlanEntity(o.getLong("id"), o.getLong("epochDay"), o.getLong("amount"), o.getString("label"), o.optString("category", "ETC"),
                         o.optString("memo", ""), o.longOrNull("doneEntryId"), o.longOrNull("doneAmount"), o.longOrNull("doneEpochDay"),
                         o.optBoolean("canceled", false), o.longOrNull("eventId"), o.optBoolean("calendarOwned", false),
-                        o.optBoolean("autoLinked", false), o.optString("rejected", ""), o.optBoolean("monthly", false), o.optLong("createdEpochDay", 0))
+                        o.optBoolean("autoLinked", false), o.optString("rejected", ""), o.optBoolean("monthly", false), o.optLong("createdEpochDay", 0),
+                        o.optString("linked", o.longOrNull("doneEntryId")?.toString() ?: ""))
                 },
                 goalMoves = list(root, "goalMoves") { o ->
                     GoalMoveEntity(o.getLong("id"), o.getLong("goalId"), o.getLong("epochDay"), o.getLong("amount"), o.optString("source", GoalSource.EXTRA.name))

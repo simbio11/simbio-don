@@ -89,6 +89,9 @@ fun EventDetailScreen(
     onOpenEntry: (EntryEntity) -> Unit,
     onBack: () -> Unit,
     onMonthly: (PlanEntity, Boolean) -> Unit = { _, _ -> },
+    /** 그 무렵 결제 (예산에 들어갈 결제 고르기) */
+    payments: List<EntryEntity> = emptyList(),
+    onPickPayments: (PlanEntity, List<Long>) -> Unit = { _, _ -> },
 ) {
     var confirm by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
@@ -113,7 +116,7 @@ fun EventDetailScreen(
                 e.memo?.takeIf { it.isNotBlank() }?.let { DetailLine(UiIcon.NOTE, it) }
                 DetailLine(UiIcon.CALENDAR, calendarName)
             }
-            EventMoneyCard(e, plan, linked, today, onBudget, onSpent, onUnlink, onOpenEntry, onMonthly)
+            EventMoneyCard(e, plan, linked, today, onBudget, onSpent, onUnlink, onOpenEntry, onMonthly, payments, onPickPayments)
         }
     }
     if (confirm) {
@@ -151,8 +154,11 @@ private fun EventMoneyCard(
     onUnlink: (PlanEntity) -> Unit,
     onOpenEntry: (EntryEntity) -> Unit,
     onMonthly: (PlanEntity, Boolean) -> Unit = { _, _ -> },
+    payments: List<EntryEntity> = emptyList(),
+    onPickPayments: (PlanEntity, List<Long>) -> Unit = { _, _ -> },
 ) {
     var editing by remember(plan?.id) { mutableStateOf(plan == null) }
+    var picking by remember(plan?.id) { mutableStateOf(false) }
     var amount by remember(plan?.id) { mutableStateOf(plan?.amount?.toString() ?: "") }
     Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("이 일정에 쓸 돈", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
@@ -174,13 +180,16 @@ private fun EventMoneyCard(
                     color = DonColors.InkMuted,
                 )
             }
-            linked?.let { LedgerRow(it, emptyMap(), onOpenEntry) }
+            // 이 예산으로 쓴 결제들 (1차·2차처럼 여럿일 수 있다)
+            val links = plan.entryIds.mapNotNull { id -> payments.firstOrNull { it.id == id } }.ifEmpty { listOfNotNull(linked) }
+            links.forEach { LedgerRow(it, emptyMap(), onOpenEntry) }
+            if (picking) PlanPaymentPicker(plan, payments, { ids -> onPickPayments(plan, ids); picking = false }) { picking = false }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 SubButton(onClick = { editing = true }, containerColor = DonColors.SurfaceAlt) { Text("예산 고치기") }
                 if (!e.startDate.isAfter(today) && !plan.canceled) {
                     SmallButton(onClick = { onSpent(plan) }) { Text(if (plan.done) "더 썼어요" else "썼어요") }
                 }
-                if (plan.autoLinked) SubButton(onClick = { onUnlink(plan) }, containerColor = DonColors.SurfaceAlt) { Text("이 결제 아니에요") }
+                if (!e.startDate.isAfter(today) && !plan.canceled) SubButton(onClick = { picking = !picking }, containerColor = DonColors.SurfaceAlt) { Text("결제 고르기") }
             }
         } else {
             Text(

@@ -107,6 +107,9 @@ fun AutoLearnScreen(
     onUnlinkApp: (Long) -> Unit,
     onForgetTail: (Long, String) -> Unit,
     onBack: () -> Unit,
+    /** 배운 내 통장끼리 이체 */
+    moveRules: List<com.simbio.don.app.data.MoveRuleEntity> = emptyList(),
+    onForgetMove: (Long) -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
         BackBar("자동 기록 학습", onBack)
@@ -145,6 +148,29 @@ fun AutoLearnScreen(
                     }
                 }
                 if (linked.isNotEmpty()) Text("누르면 잊어요. 다음에 그 결제가 오면 다시 물어봐요.", fontSize = 11.sp, color = DonColors.InkMuted)
+            }
+
+            // 배운 내 통장끼리 이체: 이 통장에서 이 사람 이름으로 나가면 저 통장 (수입·지출이 아니라 이체)
+            Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("내 통장끼리 이체 배운 것 ${moveRules.size}개", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                if (moveRules.isEmpty()) {
+                    Text("내 통장끼리 옮긴 돈을 한 번 짝짓거나 \"내 계좌끼리 옮긴 돈이에요?\"에 답하면 여기에 쌓여요. 그다음부터는 한쪽 알림만 와도 이체로 적어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                }
+                val names = accounts.associate { it.id to it.name }
+                moveRules.forEach { r ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("${r.fromAccountId?.let(names::get) ?: "다른 통장"} → ${r.toAccountId?.let(names::get) ?: "다른 통장"}", fontSize = 14.sp, color = DonColors.Ink, maxLines = 1)
+                            Text(
+                                (if (r.side == "OUT") "'${r.key}'에게 보낼 때" else "'${r.key}'이(가) 보냈을 때") + " · ${r.count}번",
+                                fontSize = 12.sp,
+                                color = DonColors.InkSoft,
+                            )
+                        }
+                        Text("✕", fontSize = 14.sp, color = DonColors.InkMuted, modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onForgetMove(r.id) }.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                }
+                if (moveRules.isNotEmpty()) Text("누르면 잊어요. 다음에 그 송금이 오면 다시 짝을 찾거나 물어봐요.", fontSize = 11.sp, color = DonColors.InkMuted)
             }
 
             // 배운 가게

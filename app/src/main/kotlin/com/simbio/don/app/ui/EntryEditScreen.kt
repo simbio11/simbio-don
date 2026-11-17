@@ -181,7 +181,7 @@ fun EntryEditScreen(
     var wantPick by remember { mutableStateOf(existing?.want ?: initial?.want) }
     // 어느 예산에서: 앱이 판단한 것을 직접 바꿀 수 있다 (오늘 몫 / 이번 주에 나눠서 / 계획)
     var bucket by remember { mutableStateOf(existing?.bucket ?: initial?.bucket) }
-    val linkedPlan = existing?.let { e -> plans.firstOrNull { it.doneEntryId == e.id } }
+    val linkedPlan = existing?.let { e -> plans.firstOrNull { e.id in it.entryIds } }
     var planPick by remember { mutableStateOf(linkedPlan?.id ?: initial?.planId) }
     var splitMode by remember {
         mutableStateOf(

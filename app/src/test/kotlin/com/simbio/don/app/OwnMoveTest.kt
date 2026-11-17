@@ -139,4 +139,79 @@ class OwnMoveTest {
         assertEquals(30_000L, day.spentBig)
         assertEquals(0L, day.spentDaily)
     }
+
+    private suspend fun raw(type: EntryType, amount: Long, label: String, account: Long, h: Int, m: Int, day: LocalDate = d, sentOut: Boolean = false) =
+        db.dao().insertEntry(
+            com.simbio.don.app.data.EntryEntity(
+                epochDay = day.toEpochDay(), amount = amount, label = label, type = type.name, source = "NOTIFICATION",
+                category = if (type == EntryType.INCOME) Category.OTHER_INCOME.name else Category.ETC.name, accountId = account,
+                postedAtEpochSecond = day.atTime(h, m).toEpochSecond(java.time.ZoneOffset.UTC), sentOut = sentOut,
+            ),
+        )
+
+    @Test
+    fun `예전에 지출+수입으로 남은 내 통장끼리 이체는 정리할 때 한 건으로`() = runTest {
+        raw(EntryType.SPEND, 120_000, "홍길동", a, 9, 0, sentOut = true)
+        raw(EntryType.INCOME, 120_000, "홍길동", b, 9, 2)
+        // 남끼리 같은 금액 (이름이 다름) — 그대로
+        raw(EntryType.SPEND, 15_000, "김철수", a, 12, 0, sentOut = true)
+        raw(EntryType.INCOME, 15_000, "이영희", b, 12, 3)
+        repo.tidyUp(d)
+        val t = entries().single { it.amount == 120_000L }
+        assertEquals(EntryType.TRANSFER.name, t.type)
+        assertEquals(a, t.accountId)
+        assertEquals(b, t.toAccountId)
+        assertEquals(2, entries().count { it.amount == 15_000L })
+        assertTrue(entries().filter { it.amount == 15_000L }.none { it.type == EntryType.TRANSFER.name })
+    }
+
+    @Test
+    fun `반쪽 이체와 따로 적힌 다른 쪽, 반쪽 두 개는 정리할 때 합친다`() = runTest {
+        db.dao().insertEntry(
+            com.simbio.don.app.data.EntryEntity(
+                epochDay = d.toEpochDay(), amount = 60_000, label = DonRepository.SELF_TRANSFER_LABEL, type = EntryType.TRANSFER.name,
+                source = "NOTIFICATION", category = Category.ETC.name, accountId = a, moveState = 1,
+            ),
+        )
+        raw(EntryType.INCOME, 60_000, "홍길동", b, 15, 0, day = d.plusDays(1))
+        db.dao().insertEntry(
+            com.simbio.don.app.data.EntryEntity(
+                epochDay = d.toEpochDay(), amount = 80_000, label = DonRepository.SELF_TRANSFER_LABEL, type = EntryType.TRANSFER.name,
+                source = "NOTIFICATION", category = Category.ETC.name, accountId = a, moveState = 1,
+            ),
+        )
+        db.dao().insertEntry(
+            com.simbio.don.app.data.EntryEntity(
+                epochDay = d.toEpochDay(), amount = 80_000, label = DonRepository.SELF_TRANSFER_LABEL, type = EntryType.TRANSFER.name,
+                source = "NOTIFICATION", category = Category.ETC.name, toAccountId = b, moveState = 4,
+            ),
+        )
+        repo.tidyUp(d.plusDays(1))
+        val six = entries().single { it.amount == 60_000L }
+        assertEquals(b, six.toAccountId)
+        val eight = entries().single { it.amount == 80_000L }
+        assertEquals(a, eight.accountId)
+        assertEquals(b, eight.toAccountId)
+        assertEquals(3, eight.moveState)
+    }
+
+    @Test
+    fun `일정 예산에 결제를 직접 고른다 — 여럿, 하나 빼기, 다 빼면 다시 안 쓴 예산`() = runTest {
+        val plan = repo.savePlan(com.simbio.don.app.data.PlanEntity(epochDay = d.toEpochDay(), amount = 40_000, label = "회식", category = Category.FOOD.name))
+        val first = repo.addManual(d, 30_000, "고깃집", EntryType.SPEND, Category.FOOD, accountId = a)
+        val second = repo.addManual(d, 20_000, "2차 맥주", EntryType.SPEND, Category.FOOD, accountId = a)
+        repo.setPlanEntries(plan, listOf(first, second))
+        var p = repo.planNow(plan)!!
+        assertEquals(50_000L, p.doneAmount)
+        assertEquals(listOf(first, second), p.entryIds)
+        repo.rejectPlanMatch(plan, first)
+        p = repo.planNow(plan)!!
+        assertEquals(20_000L, p.doneAmount)
+        repo.setPlanEntries(plan, emptyList())
+        p = repo.planNow(plan)!!
+        assertTrue(p.open)
+        // 뺀 결제는 다시 저절로 잇지 않는다
+        repo.autoLinkPlans(d)
+        assertTrue(repo.planNow(plan)!!.open)
+    }
 }

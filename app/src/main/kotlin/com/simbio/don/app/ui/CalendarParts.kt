@@ -1,6 +1,7 @@
 package com.simbio.don.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,8 @@ class CalendarHooks(
     val onConnect: () -> Unit = {},
     /** 저절로 이은 결제가 아니면 풀기 */
     val onUnlink: (PlanEntity) -> Unit = {},
+    /** 이 예산으로 쓴 결제를 직접 고르기 (여럿) */
+    val onPickPayments: (PlanEntity, List<Long>) -> Unit = { _, _ -> },
 ) {
     companion object {
         val Off = CalendarHooks()
@@ -113,9 +116,13 @@ fun DayEventsCard(
     onSpent: (PlanEntity) -> Unit,
     onConnect: () -> Unit,
     onUnlink: (PlanEntity) -> Unit = {},
+    /** 그 무렵 결제 (예산에 들어갈 결제 고르기) */
+    payments: List<com.simbio.don.app.data.EntryEntity> = emptyList(),
+    onPickPayments: (PlanEntity, List<Long>) -> Unit = { _, _ -> },
 ) {
     var adding by remember(date) { mutableStateOf(false) }
     var budgeting by remember(date) { mutableStateOf<Long?>(null) }
+    var picking by remember(date) { mutableStateOf<Long?>(null) }
     Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("일정", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink, modifier = Modifier.weight(1f))
@@ -140,10 +147,13 @@ fun DayEventsCard(
                     Text(e.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink, maxLines = 1)
                     Text(listOfNotNull(eventTime(e), e.location?.takeIf { it.isNotBlank() }).joinToString(" · "), fontSize = 12.sp, color = DonColors.InkMuted, maxLines = 1)
                 }
-                EventBudget(p, date, today, onSpent, onUnlink) { budgeting = if (budgeting == e.eventId) null else e.eventId }
+                EventBudget(p, date, today, onSpent, onUnlink, onPick = { picking = if (picking == p?.id) null else p?.id }) { budgeting = if (budgeting == e.eventId) null else e.eventId }
             }
             if (budgeting == e.eventId) {
                 BudgetPanel(e.title, p?.amount, { amount -> onBudget(e, amount); budgeting = null }) { budgeting = null }
+            }
+            if (p != null && picking == p.id) {
+                PlanPaymentPicker(p, payments, { ids -> onPickPayments(p, ids); picking = null }) { picking = null }
             }
         }
         if (adding) AddEventPanel(date, { t, m, b -> onAdd(t, m, b); adding = false }) { adding = false }
@@ -152,7 +162,7 @@ fun DayEventsCard(
 
 /** 일정 오른쪽: 예산 없음 → 정하기 / 예산 → 썼어요 / 쓴 뒤 → 예산과 실제 */
 @Composable
-private fun EventBudget(p: PlanEntity?, date: LocalDate, today: LocalDate, onSpent: (PlanEntity) -> Unit, onUnlink: (PlanEntity) -> Unit, onEdit: () -> Unit) {
+private fun EventBudget(p: PlanEntity?, date: LocalDate, today: LocalDate, onSpent: (PlanEntity) -> Unit, onUnlink: (PlanEntity) -> Unit, onPick: () -> Unit = {}, onEdit: () -> Unit) {
     when {
         p == null -> SmallButton(onClick = onEdit, containerColor = DonColors.SurfaceAlt, contentColor = DonColors.Real) { Text("예산 정하기") }
         p.canceled -> Text("안 썼어요", fontSize = 12.sp, color = DonColors.Good)
@@ -168,8 +178,8 @@ private fun EventBudget(p: PlanEntity?, date: LocalDate, today: LocalDate, onSpe
                     color = if (kept) DonColors.Good else DonColors.Warn,
                 )
                 Row {
-                    // 들어온 결제와 저절로 이었으면 아니라고 풀 수 있게
-                    if (p.autoLinked) TextButton(onClick = { onUnlink(p) }) { Text("이 결제 아니에요", fontSize = 12.sp) }
+                    // 어느 결제가 이 예산인지 직접 고른다 (앱이 이은 것을 바꾸거나 1차·2차를 더하거나)
+                    TextButton(onClick = onPick) { Text("결제 고르기", fontSize = 12.sp) }
                     TextButton(onClick = { onSpent(p) }) { Text("더 썼어요", fontSize = 12.sp) }
                 }
             }
@@ -178,8 +188,63 @@ private fun EventBudget(p: PlanEntity?, date: LocalDate, today: LocalDate, onSpe
             Text("예산 ${won(p.amount)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = DonColors.Real)
             Row {
                 TextButton(onClick = onEdit) { Text("고치기", fontSize = 12.sp) }
+                if (!date.isAfter(today)) TextButton(onClick = onPick) { Text("결제 고르기", fontSize = 12.sp) }
                 if (!date.isAfter(today)) TextButton(onClick = { onSpent(p) }) { Text("썼어요", fontSize = 12.sp) }
             }
+        }
+    }
+}
+
+@Composable
+fun PlanPaymentPicker(
+    plan: PlanEntity,
+    payments: List<com.simbio.don.app.data.EntryEntity>,
+    onSave: (List<Long>) -> Unit,
+    onClose: () -> Unit,
+) {
+    // 그날 앞뒤 하루의 지출 + 이미 이은 결제
+    val candidates = payments.filter { e ->
+        e.id in plan.entryIds || (
+            (e.type == com.simbio.don.budget.EntryType.SPEND.name || e.type == com.simbio.don.budget.EntryType.EXCEPTION.name) &&
+                kotlin.math.abs(e.epochDay - plan.epochDay) <= 1
+            )
+    }.distinctBy { it.id }.sortedWith(compareBy<com.simbio.don.app.data.EntryEntity> { it.epochDay }.thenBy { it.minuteOfDay ?: 0 })
+    val picked = remember(plan.id) { androidx.compose.runtime.mutableStateListOf<Long>().apply { addAll(plan.entryIds) } }
+    val total = candidates.filter { it.id in picked }.sumOf { it.share ?: it.amount }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(DonColors.RealSurface).padding(12.dp).popIn(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("'${plan.label}' 예산으로 쓴 결제", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+        Text("앱이 짐작해 이은 것을 바꾸거나, 1차·2차처럼 여럿을 고를 수 있어요. 고른 결제만 예산과 견줘요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        if (candidates.isEmpty()) Text("그날 앞뒤로 적힌 지출이 없어요.", fontSize = 13.sp, color = DonColors.InkSoft)
+        candidates.forEach { e ->
+            val on = e.id in picked
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (on) DonColors.Surface else androidx.compose.ui.graphics.Color.Transparent)
+                    .clickable { if (on) picked.remove(e.id) else picked.add(e.id) }.padding(horizontal = 6.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                androidx.compose.material3.Checkbox(checked = on, onCheckedChange = { if (on) picked.remove(e.id) else picked.add(e.id) })
+                Column(Modifier.weight(1f)) {
+                    Text(e.label, fontSize = 14.sp, color = DonColors.Ink, maxLines = 1)
+                    Text(shortDate(LocalDate.ofEpochDay(e.epochDay)) + (e.minuteOfDay?.let { " " + timeText(it) } ?: ""), fontSize = 11.sp, color = DonColors.InkMuted)
+                }
+                Text(won(e.share ?: e.amount), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Ink)
+            }
+        }
+        if (picked.isNotEmpty()) {
+            val kept = total <= plan.amount
+            Text(
+                "고른 결제 ${won(total)} · 예산 ${won(plan.amount)} → " + if (kept) "지킴" else "${won(total - plan.amount)} 넘음",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (kept) DonColors.Good else DonColors.Warn,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SubButton(onClick = onClose, modifier = Modifier.weight(1f), containerColor = DonColors.Surface) { Text("닫기") }
+            SmallButton(onClick = { onSave(picked.toList()) }, modifier = Modifier.weight(1f)) { Text(if (picked.isEmpty()) "아직 안 썼어요" else "이걸로 정하기") }
         }
     }
 }

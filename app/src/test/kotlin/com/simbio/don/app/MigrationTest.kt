@@ -257,4 +257,17 @@ class MigrationTest {
         db.execSQL("INSERT INTO move_rule (side, key, fromAccountId, toAccountId) VALUES ('OUT', '적금', 1, NULL)")
         db.query("SELECT count FROM move_rule").use { c -> c.moveToNext(); assertEquals(0, c.getInt(0)) }
     }
+
+    @Test
+    fun v22에서_v23으로_일정예산에_이은_결제가_목록이_된다() {
+        helper.createDatabase("m22.db", 22).use { db ->
+            db.execSQL("INSERT INTO plan (id, epochDay, amount, label, category, memo, doneEntryId, doneAmount, canceled) VALUES (1, 20000, 50000, '회식', 'FOOD', '', 7, 48000, 0)")
+            db.execSQL("INSERT INTO plan (id, epochDay, amount, label, category, memo, canceled) VALUES (2, 20001, 10000, '커피', 'CAFE', '', 0)")
+        }
+        val db = helper.runMigrationsAndValidate("m22.db", 23, true, DonDatabase.MIGRATION_22_23)
+        db.query("SELECT linked FROM plan ORDER BY id").use { c ->
+            c.moveToNext(); assertEquals("7", c.getString(0))
+            c.moveToNext(); assertEquals("", c.getString(0))
+        }
+    }
 }
