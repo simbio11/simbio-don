@@ -1929,6 +1929,32 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         n
     }
 
+    /**
+     * PC로 보내기 양방향 (0.36) — 생활관리 PC 알림함에서 답한 '어느 통장'·'필요/욕구'를 받아 채운다.
+     * 폰에 아직 빈 칸만 채운다(이미 폰에서 정한 건 그대로 — 폰이 정본). 통장은 이름으로 찾고("현금"은 현금 자산),
+     * 고를 때와 같은 길([chooseAccount])로 넣어 잔액·끝자리 기억이 같이 맞는다. 채운 칸 수를 돌려준다.
+     */
+    suspend fun applyPcChanges(changes: List<com.simbio.don.app.pc.PcChange>): Int {
+        var n = 0
+        val accounts = dao.accountsNow().filter { !it.hidden }
+        for (c in changes) {
+            val e = dao.entryNow(c.entryId) ?: continue
+            c.account?.let { name ->
+                val a = accounts.firstOrNull { it.name == name }
+                    ?: accounts.firstOrNull { name == AccountType.CASH.label && it.type == AccountType.CASH.name }
+                if (a != null && unassigned(e)) { chooseAccount(e.id, a.id); n++ }
+            }
+            c.want?.let { w ->
+                n += locked {
+                    val cur = dao.entryNow(c.entryId)
+                    val spend = cur?.let { runCatching { EntryType.valueOf(it.type) }.getOrNull()?.spendLike } == true
+                    if (cur != null && spend && cur.want == null) { dao.updateEntry(cur.copy(want = if (w) 1 else 0)); 1 } else 0
+                }
+            }
+        }
+        return n
+    }
+
     private suspend fun accountFor(pkg: String?): Long? =
         pkg?.let { p -> dao.accountsNow().firstOrNull { it.packageName == p && !it.hidden }?.id }
 

@@ -30,6 +30,7 @@ import java.time.OffsetDateTime
  *  - 켤 때만. 사용자가 넣은 '내 PC 서버' 주소로만 (Tailscale 사설망). 다른 곳으로는 보내지 않는다
  *  - 보내는 것: 거래(날짜·시각·금액·내 몫·종류·분류·가게 이름·자산 이름·필요/욕구), 이번 달 예산 숫자, 자산 잔액, 고정 지출
  *  - 안 보내는 것: 알림 글(rawText)·메모·알림 보낸 앱·계좌 끝자리·게임·AI 키
+ *  - 받는 것 (0.36 양방향): 응답의 changes — PC 알림함에서 답한 '어느 통장'·'필요/욕구'. 폰에 아직 빈 칸만 채운다
  */
 
 /** 생활관리 서버가 찍어 주는 연결 링크 `lifeapp://pair?u=…&t=…` (python -m app pair) */
@@ -83,6 +84,23 @@ data class PcInput(
                 accounts = accounts.filter { !it.hidden }.map { it to (balances[it.id]?.balance ?: it.opening) },
                 entries = entries, fixed = fixed,
             )
+        }
+    }
+}
+
+/** PC(생활관리 알림함)에서 고친 기록 하나 — 응답 changes 한 줄 (계약 docs/08 6절) */
+data class PcChange(val entryId: Long, val account: String? = null, val want: Boolean? = null)
+
+object PcChanges {
+    /** 응답에서 changes만 읽는다. 모르는 칸·이상한 줄은 버린다 (서버가 바뀌어도 앱이 죽지 않게) */
+    fun parse(reply: JSONObject?): List<PcChange> {
+        val a = reply?.optJSONArray("changes") ?: return emptyList()
+        return (0 until minOf(a.length(), 500)).mapNotNull { i ->
+            val o = a.optJSONObject(i) ?: return@mapNotNull null
+            val id = o.opt("id")?.toString()?.toLongOrNull() ?: return@mapNotNull null
+            val account = if (o.isNull("account")) null else o.optString("account").trim().take(80).ifBlank { null }
+            val want = if (o.isNull("want")) null else (o.opt("want") as? Boolean)
+            if (account == null && want == null) null else PcChange(id, account, want)
         }
     }
 }
@@ -179,6 +197,9 @@ object PcSync {
 
     data class Status(val at: Long, val ok: Boolean, val message: String)
 
+    /** 보낸 결과 + PC에서 고쳐 돌려준 것 */
+    data class Reply(val status: Status, val changes: List<PcChange> = emptyList())
+
     val status = MutableStateFlow<Status?>(null)
 
     private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -195,6 +216,11 @@ object PcSync {
 
     fun lastOkAt(c: Context): Long = prefs(c).getLong("last_ok_at", 0)
 
+    /** 마지막 상태 글에 덧붙인다 ("· PC에서 고친 2건 받음") */
+    fun annotate(c: Context, extra: String) {
+        lastStatus(c)?.let { record(c, it.copy(message = it.message + " · " + extra)) }
+    }
+
     private fun record(c: Context, s: Status) {
         status.value = s
         prefs(c).edit().putLong("last_at", s.at).putBoolean("last_ok", s.ok).putString("last_msg", s.message).apply {
@@ -202,8 +228,9 @@ object PcSync {
         }.apply()
     }
 
-    /** POST {url}/money/snapshot — 5초 안에 못 붙으면 포기(다음 기회에) */
-    suspend fun send(c: Context, cfg: Config, body: JSONObject, now: Long = System.currentTimeMillis()): Status = withContext(Dispatchers.IO) {
+    /** POST {url}/money/snapshot — 5초 안에 못 붙으면 포기(다음 기회에). 응답의 changes(PC에서 고친 것)도 돌려준다 */
+    suspend fun send(c: Context, cfg: Config, body: JSONObject, now: Long = System.currentTimeMillis()): Reply = withContext(Dispatchers.IO) {
+        var changes = emptyList<PcChange>()
         val s = try {
             val conn = URL(cfg.url.trimEnd('/') + "/money/snapshot").openConnection() as HttpURLConnection
             try {
@@ -217,6 +244,7 @@ object PcSync {
                 when (val code = conn.responseCode) {
                     in 200..299 -> {
                         val r = runCatching { JSONObject(conn.inputStream.bufferedReader().readText()) }.getOrNull()
+                        changes = PcChanges.parse(r)
                         if (r?.optBoolean("stored", true) == false) Status(now, true, "PC에 더 새 기록이 있어 건너뜀")
                         else Status(now, true, "보냄 · 기록 ${body.optJSONArray("entries")?.length() ?: 0}건")
                     }
@@ -234,6 +262,6 @@ object PcSync {
             Status(now, false, "이 주소로는 보낼 수 없어요 (Tailscale 100.x 또는 *.ts.net만)")
         }
         record(c, s)
-        s
+        Reply(s, changes)
     }
 }

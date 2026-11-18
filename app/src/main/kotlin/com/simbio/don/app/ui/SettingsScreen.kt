@@ -645,7 +645,7 @@ private fun WidgetPreview(theme: ThemeMode, opacity: Int) {
 }
 
 /**
- * PC로 보내기 — 생활관리 데스크탑 (켤 때만, 사용자가 넣은 내 PC 서버로만). docs/decisions.md 0.35
+ * PC로 보내기 — 생활관리 데스크탑 (켤 때만, 사용자가 넣은 내 PC 서버로만). docs/decisions.md 0.35 · 0.36(양방향)
  * 연결 링크는 PC에서 `python -m app pair`가 찍어 주는 lifeapp://pair?… (QR을 찍으면 나오는 글자 그대로)
  */
 @Composable
@@ -664,7 +664,8 @@ fun PcSyncCard(onSend: () -> Unit) {
     }) {
         Text(
             "켜면 내 PC의 생활관리 서버로만 가계부 숫자를 보내요 — 거래(날짜·금액·분류·가게 이름·자산), 이번 달 예산, 자산 잔액, 고정 지출. " +
-                "알림 글·메모·카드 끝자리는 보내지 않아요. 앱을 열 때와 기록할 때 보내요.",
+                "알림 글·메모·카드 끝자리는 보내지 않아요. 앱을 열 때와 기록할 때 보내요.\n" +
+                "PC 알림함에서 답한 '어느 통장'·'필요/욕구'는 보낼 때 받아 와서 비어 있는 칸만 채워요.",
             fontSize = 13.sp, color = DonColors.InkSoft,
         )
         if (cfg.enabled) {
@@ -688,6 +689,10 @@ fun PcSyncCard(onSend: () -> Unit) {
             }, modifier = Modifier.fillMaxWidth()) { Text("연결하고 보내기") }
             error?.let { Text(it, fontSize = 13.sp, color = DonColors.Warn) }
             if (cfg.ready) SubButton(onClick = onSend, modifier = Modifier.fillMaxWidth()) { Text("지금 보내기") }
+            if (cfg.ready) Text(
+                "Tailscale 앱을 안드로이드 '상시 사용 VPN'으로 두면 따로 켜지 않아도 돼요 (설정 › 연결 › 기타 연결 설정 › VPN › Tailscale ⚙)",
+                fontSize = 12.sp, color = DonColors.InkMuted,
+            )
             status?.let { s ->
                 val at = java.time.Instant.ofEpochMilli(s.at).atZone(java.time.ZoneId.systemDefault())
                 Text(

@@ -243,8 +243,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 com.simbio.don.app.pc.PcInput.from(home, entries, accounts, fixed), java.time.OffsetDateTime.now(), version,
             )
         }
-        com.simbio.don.app.pc.PcSync.send(app, cfg, body)
+        val reply = com.simbio.don.app.pc.PcSync.send(app, cfg, body)
+        // 양방향: PC 알림함에서 답한 통장·필요/욕구를 채우고, 채웠으면 곧바로 다시 보내 PC 쪽 표시를 지운다
+        // (이름을 못 찾은 통장처럼 못 채운 것만 남으면 n = 0 → 다시 보내지 않으니 되풀이되지 않는다)
+        val n = if (reply.changes.isEmpty()) 0 else repo.applyPcChanges(reply.changes)
+        if (n > 0) {
+            pcReceived += n
+            pcSchedule(force = true, wait = 1_500)
+        } else if (reply.status.ok && pcReceived > 0) {
+            com.simbio.don.app.pc.PcSync.annotate(app, "PC에서 고친 ${pcReceived}칸 받음")
+            pcReceived = 0
+        }
     }
+
+    /** PC에서 받아 채운 칸 수 — 다시 보낸 뒤 상태 글에 적는다 */
+    private var pcReceived = 0
 
     suspend fun lastMonthReport() = withContext(Dispatchers.Default) { repo.lastMonthReport() }
 

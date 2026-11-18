@@ -7,6 +7,8 @@ import com.simbio.don.app.data.AccountType
 import com.simbio.don.app.data.DonDatabase
 import com.simbio.don.app.data.DonRepository
 import com.simbio.don.app.data.EntryEntity
+import com.simbio.don.app.pc.PcChange
+import com.simbio.don.app.pc.PcChanges
 import com.simbio.don.app.pc.PcInput
 import com.simbio.don.app.pc.PcLink
 import com.simbio.don.app.pc.PcSnapshot
@@ -110,6 +112,52 @@ class PcSyncTest {
         val cats = json.getJSONArray("categories").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
         assertTrue(cats.all { it.getString("color").matches(Regex("#[0-9A-F]{6}")) })
         assertEquals("월세", json.getJSONArray("fixed").getJSONObject(0).getString("name"))
+    }
+
+    @Test
+    fun `양방향 — 응답 changes 읽기 (이상한 줄은 버림)`() {
+        val r = JSONObject("""{"ok":true,"stored":true,"changes":[
+            {"id":10,"account":"현금"},{"id":"11","want":true},{"id":12,"want":false,"account":null},
+            {"id":"x","want":true},{"id":13},{"id":14,"account":"  "},{"id":15,"want":"yes"},"줄"]}""")
+        assertEquals(listOf(PcChange(10, account = "현금"), PcChange(11, want = true), PcChange(12, want = false)), PcChanges.parse(r))
+        assertEquals(emptyList<PcChange>(), PcChanges.parse(JSONObject("""{"ok":true,"stored":true}""")))  // 예전 서버
+        assertEquals(emptyList<PcChange>(), PcChanges.parse(null))
+    }
+
+    @Test
+    fun `양방향 — PC에서 답한 통장·필요욕구는 폰의 빈 칸만 채운다`() = runTest {
+        val cash = repo.saveAccount(AccountEntity(name = "지갑", type = AccountType.CASH.name, opening = 50_000, sortOrder = 3))
+        val gimbap = repo.addManual(d, 9_000, "김밥천국", EntryType.SPEND, Category.FOOD)
+        val coffee = repo.addManual(d, 6_500, "스타벅스", EntryType.SPEND, Category.CAFE, accountId = bank)
+        val store = repo.addManual(d, 4_000, "편의점", EntryType.SPEND, Category.FOOD, accountId = bank, want = 0)
+        val fish = repo.addManual(d, 3_000, "붕어빵", EntryType.SPEND, Category.FOOD)
+        val move = repo.addManual(d, 300_000, "적금", EntryType.TRANSFER, null, accountId = bank, toAccountId = savings)
+        val changes = listOf(
+            PcChange(gimbap, account = "카카오뱅크"),
+            PcChange(coffee, want = true),
+            PcChange(store, want = true),           // 폰에서 이미 '필요'로 정함 → 그대로
+            PcChange(fish, account = "현금"),       // 이름이 '현금'인 자산이 없으면 현금 자산으로
+            PcChange(coffee, account = "없는 통장"), // 이미 통장 있음 + 모르는 이름 → 무시
+            PcChange(move, want = true),            // 이체엔 필요/욕구가 없다
+            PcChange(999_999, account = "카카오뱅크"),
+            PcChange(gimbap, account = "숨긴 통장"),
+        )
+        assertEquals(3, repo.applyPcChanges(changes))
+        assertEquals(bank, db.dao().entryNow(gimbap)!!.accountId)
+        assertFalse(db.dao().entryNow(gimbap)!!.acctGuess)
+        assertEquals(1, db.dao().entryNow(coffee)!!.want)
+        assertEquals(0, db.dao().entryNow(store)!!.want)
+        assertEquals(cash, db.dao().entryNow(fish)!!.accountId)
+        assertNull(db.dao().entryNow(move)!!.want)
+        assertEquals(0, repo.applyPcChanges(changes))  // 두 번 받아도 그대로
+        // 다시 보내는 스냅샷에 채운 값이 실린다 → 서버는 반영된 걸 보고 지운다
+        val home = repo.home(flowOf(LocalDateTime.of(2026, 11, 16, 21, 40))).first()!!
+        val (entries, accounts, fixed) = repo.pcData(d.minusDays(PcSnapshot.DAYS))
+        val es = PcSnapshot.build(PcInput.from(home, entries, accounts, fixed), at, "0.36.0").getJSONArray("entries")
+            .let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.associateBy { it.getLong("id") }
+        assertEquals("카카오뱅크", es.getValue(gimbap).getString("account"))
+        assertEquals("지갑", es.getValue(fish).getString("account"))
+        assertTrue(es.getValue(coffee).getBoolean("want"))
     }
 
     @Test
