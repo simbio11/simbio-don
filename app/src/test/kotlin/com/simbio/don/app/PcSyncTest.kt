@@ -115,6 +115,21 @@ class PcSyncTest {
     }
 
     @Test
+    fun `와이파이 주소 u2와 평문 허용 주소`() {
+        val link = "lifeapp://pair?u=http%3A%2F%2F100.72.99.70%3A9100&t=abcdefghijklmnop1234&u2=http%3A%2F%2F192.168.0.12%3A9100"
+        assertEquals("http://192.168.0.12:9100", PcLink.lan(link))
+        assertNull(PcLink.lan("lifeapp://pair?u=http%3A//100.72.99.70%3A9100&t=abcdefghijklmnop1234"))
+        assertNull(PcLink.lan("lifeapp://pair?u=x&t=y&u2=http%3A%2F%2F8.8.8.8%3A9100"))  // 공인 주소는 안 됨
+        val ok = listOf("http://100.72.99.70:9100", "http://192.168.0.12:9100", "http://10.0.0.3:9100", "http://172.20.1.2:9100",
+            "http://my-pc.tail1234.ts.net:9100", "http://127.0.0.1:9100", "https://example.com")
+        ok.forEach { assertTrue(it, com.simbio.don.app.pc.PcSync.allowedHost(it)) }
+        listOf("http://8.8.8.8:9100", "http://example.com", "http://172.32.0.1:9100", "http://100.200.1.1:9100")
+            .forEach { assertFalse(it, com.simbio.don.app.pc.PcSync.allowedHost(it)) }
+        val cfg = com.simbio.don.app.pc.PcSync.Config(true, "http://100.72.99.70:9100", "abcdefghijklmnop1234", "http://192.168.0.12:9100/")
+        assertEquals(listOf("http://100.72.99.70:9100", "http://192.168.0.12:9100"), cfg.urls)
+    }
+
+    @Test
     fun `양방향 — 응답 changes 읽기 (이상한 줄은 버림)`() {
         val r = JSONObject("""{"ok":true,"stored":true,"changes":[
             {"id":10,"account":"현금"},{"id":"11","want":true},{"id":12,"want":false,"account":null},

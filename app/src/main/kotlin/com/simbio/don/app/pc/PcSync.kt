@@ -51,6 +51,13 @@ object PcLink {
         if (!(u.startsWith("http://") || u.startsWith("https://")) || t.length < 16) return null
         return u to t
     }
+
+    /** 같은 와이파이 주소 u2 (0.38 — 있으면 Tailscale로 안 될 때 이걸로) */
+    fun lan(text: String): String? {
+        val q = runCatching { URI(text.trim()).rawQuery }.getOrNull() ?: return null
+        val v = q.split('&').firstOrNull { it.startsWith("u2=") }?.let { URLDecoder.decode(it.substring(3), "UTF-8").trim().trimEnd('/') }
+        return v?.takeIf { it.startsWith("http://") && PcSync.allowedHost(it) }
+    }
 }
 
 /** 스냅샷 재료 — 화면 상태(HomeState)에서 뽑는다. 테스트는 이걸 직접 만든다 */
@@ -239,8 +246,24 @@ object PcSync {
     /** 자동으로는 2분에 한 번까지 — 앱을 열 때마다 보내되 연달아 열면 건너뜀 (지금 보내기는 바로) */
     const val MIN_INTERVAL_MS = 2 * 60_000L
 
-    data class Config(val enabled: Boolean = false, val url: String = "", val token: String = "") {
+    /** [lan] = 같은 와이파이 주소(선택). 보낼 때 [url](Tailscale) → 안 되면 [lan] */
+    data class Config(val enabled: Boolean = false, val url: String = "", val token: String = "", val lan: String = "") {
         val ready: Boolean get() = enabled && url.isNotBlank() && token.length >= 16
+        val urls: List<String> get() = listOf(url, lan).map { it.trim().trimEnd('/') }.filter { it.isNotBlank() }.distinct()
+    }
+
+    /**
+     * 평문 HTTP는 내 PC로만 — Tailscale(100.64~127.x)·*.ts.net·집 공유기 사설 주소(192.168·10·172.16~31)·루프백.
+     * (와이파이 주소는 집마다 달라 network_security_config에 다 적을 수 없어 평문을 열어 두고, 여기서 막는다)
+     */
+    fun allowedHost(url: String): Boolean {
+        val host = runCatching { URI(url).host }.getOrNull()?.lowercase() ?: return false
+        if (url.startsWith("https://")) return true
+        if (host == "localhost" || host.endsWith(".ts.net")) return true
+        val p = host.split('.').mapNotNull { it.toIntOrNull() }
+        if (p.size != 4 || p.any { it !in 0..255 }) return false
+        return p[0] == 10 || p[0] == 127 || (p[0] == 192 && p[1] == 168) || (p[0] == 172 && p[1] in 16..31) ||
+            (p[0] == 100 && p[1] in 64..127)
     }
 
     data class Status(val at: Long, val ok: Boolean, val message: String)
@@ -252,10 +275,13 @@ object PcSync {
 
     private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun config(c: Context): Config = prefs(c).let { Config(it.getBoolean("enabled", false), it.getString("url", "") ?: "", it.getString("token", "") ?: "") }
+    fun config(c: Context): Config = prefs(c).let {
+        Config(it.getBoolean("enabled", false), it.getString("url", "") ?: "", it.getString("token", "") ?: "", it.getString("lan", "") ?: "")
+    }
 
     fun save(c: Context, cfg: Config) {
-        prefs(c).edit().putBoolean("enabled", cfg.enabled).putString("url", cfg.url).putString("token", cfg.token).apply()
+        prefs(c).edit().putBoolean("enabled", cfg.enabled).putString("url", cfg.url).putString("token", cfg.token)
+            .putString("lan", cfg.lan).apply()
     }
 
     fun lastStatus(c: Context): Status? = status.value ?: prefs(c).let { p ->
@@ -276,40 +302,62 @@ object PcSync {
         }.apply()
     }
 
-    /** POST {url}/money/snapshot — 5초 안에 못 붙으면 포기(다음 기회에). 응답의 changes(PC에서 고친 것)도 돌려준다 */
+    /**
+     * POST {url}/money/snapshot — Tailscale 주소로 먼저, 닿지 않으면 같은 와이파이 주소로 (0.38).
+     * 5초 안에 못 붙으면 다음 주소, 다 안 되면 포기(다음 기회에). 응답의 changes(PC에서 고친 것)·urls(서버 주소들)도 받는다
+     */
     suspend fun send(c: Context, cfg: Config, body: JSONObject, now: Long = System.currentTimeMillis()): Reply = withContext(Dispatchers.IO) {
         var changes = emptyList<PcChange>()
-        val s = try {
-            val conn = URL(cfg.url.trimEnd('/') + "/money/snapshot").openConnection() as HttpURLConnection
-            try {
-                conn.requestMethod = "POST"
-                conn.connectTimeout = 5_000
-                conn.readTimeout = 20_000
-                conn.doOutput = true
-                conn.setRequestProperty("Authorization", "Bearer ${cfg.token}")
-                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                when (val code = conn.responseCode) {
-                    in 200..299 -> {
-                        val r = runCatching { JSONObject(conn.inputStream.bufferedReader().readText()) }.getOrNull()
-                        changes = PcChanges.parse(r)
-                        if (r?.optBoolean("stored", true) == false) Status(now, true, "PC에 더 새 기록이 있어 건너뜀")
-                        else Status(now, true, "보냄 · 기록 ${body.optJSONArray("entries")?.length() ?: 0}건")
-                    }
-                    401 -> Status(now, false, "토큰이 맞지 않아요 — 연결 링크를 다시 넣어 주세요")
-                    413 -> Status(now, false, "보낼 기록이 너무 많아요")
-                    422 -> Status(now, false, "PC 서버가 형식을 거절했어요 — 생활관리 서버를 업데이트하세요")
-                    else -> Status(now, false, "PC 서버 오류 $code")
-                }
-            } finally {
-                conn.disconnect()
+        var s: Status? = null
+        val urls = cfg.urls
+        for ((idx, base) in urls.withIndex()) {
+            if (!allowedHost(base)) {
+                s = Status(now, false, "이 주소로는 보낼 수 없어요 (Tailscale 100.x · 집 와이파이 192.168.x · *.ts.net만)")
+                continue
             }
-        } catch (e: IOException) {
-            Status(now, false, "PC 서버에 닿지 않아요 (Tailscale·서버가 켜져 있는지)")
-        } catch (e: SecurityException) {
-            Status(now, false, "이 주소로는 보낼 수 없어요 (Tailscale 100.x 또는 *.ts.net만)")
+            val via = if (base == cfg.lan.trimEnd('/') && cfg.lan.isNotBlank()) " (와이파이)" else ""
+            s = try {
+                val conn = URL(base + "/money/snapshot").openConnection() as HttpURLConnection
+                try {
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 5_000
+                    conn.readTimeout = 20_000
+                    conn.doOutput = true
+                    conn.setRequestProperty("Authorization", "Bearer ${cfg.token}")
+                    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    when (val code = conn.responseCode) {
+                        in 200..299 -> {
+                            val r = runCatching { JSONObject(conn.inputStream.bufferedReader().readText()) }.getOrNull()
+                            changes = PcChanges.parse(r)
+                            learnUrls(c, cfg, r)
+                            if (r?.optBoolean("stored", true) == false) Status(now, true, "PC에 더 새 기록이 있어 건너뜀$via")
+                            else Status(now, true, "보냄$via · 기록 ${body.optJSONArray("entries")?.length() ?: 0}건")
+                        }
+                        401 -> Status(now, false, "토큰이 맞지 않아요 — 연결 링크를 다시 넣어 주세요")
+                        413 -> Status(now, false, "보낼 기록이 너무 많아요")
+                        422 -> Status(now, false, "PC 서버가 형식을 거절했어요 — 생활관리 서버를 업데이트하세요")
+                        else -> Status(now, false, "PC 서버 오류 $code")
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            } catch (e: IOException) {
+                if (idx < urls.lastIndex) continue  // 다음 주소(와이파이)로
+                Status(now, false, if (urls.size > 1) "PC 서버에 닿지 않아요 (Tailscale도, 집 와이파이도)" else "PC 서버에 닿지 않아요 (Tailscale·서버가 켜져 있는지)")
+            } catch (e: SecurityException) {
+                Status(now, false, "이 주소로는 보낼 수 없어요 (Tailscale 100.x · 집 와이파이 192.168.x만)")
+            }
+            break
         }
-        record(c, s)
-        Reply(s, changes)
+        val st = s ?: Status(now, false, "보낼 주소가 없어요 — 연결 링크를 넣어 주세요")
+        record(c, st)
+        Reply(st, changes)
+    }
+
+    /** 서버가 알려 준 같은 와이파이 주소를 기억 (PC 와이파이 주소가 바뀌어도 Tailscale로 한 번 붙으면 따라감) */
+    private fun learnUrls(c: Context, cfg: Config, r: JSONObject?) {
+        val lan = r?.optJSONObject("urls")?.optString("lan").orEmpty().trimEnd('/')
+        if (lan.isNotBlank() && lan != cfg.lan && allowedHost(lan)) save(c, config(c).copy(lan = lan))
     }
 }

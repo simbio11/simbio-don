@@ -669,7 +669,8 @@ fun PcSyncCard(onSend: () -> Unit) {
             fontSize = 13.sp, color = DonColors.InkSoft,
         )
         if (cfg.enabled) {
-            if (cfg.url.isNotBlank()) Text("연결: ${cfg.url}", fontSize = 13.sp, color = DonColors.Ink)
+            if (cfg.url.isNotBlank()) Text("연결: ${cfg.url}" + (if (cfg.lan.isNotBlank()) "\n집 와이파이: ${cfg.lan} (Tailscale이 꺼져 있으면 이걸로)" else ""),
+                fontSize = 13.sp, color = DonColors.Ink)
             OutlinedTextField(
                 value = link, onValueChange = { link = it.trim() }, singleLine = true,
                 label = { Text(if (cfg.url.isBlank()) "연결 링크 (lifeapp://pair?…)" else "다른 PC로 바꾸기 — 연결 링크") },
@@ -680,7 +681,7 @@ fun PcSyncCard(onSend: () -> Unit) {
                 if (p == null) {
                     error = "링크를 읽지 못했어요 — PC에서 python -m app pair 가 보여 주는 lifeapp://pair?… 전체를 넣어 주세요"
                 } else {
-                    cfg = cfg.copy(url = p.first, token = p.second)
+                    cfg = cfg.copy(url = p.first, token = p.second, lan = com.simbio.don.app.pc.PcLink.lan(link).orEmpty())
                     com.simbio.don.app.pc.PcSync.save(ctx, cfg)
                     link = ""
                     error = null
@@ -690,7 +691,7 @@ fun PcSyncCard(onSend: () -> Unit) {
             error?.let { Text(it, fontSize = 13.sp, color = DonColors.Warn) }
             if (cfg.ready) SubButton(onClick = onSend, modifier = Modifier.fillMaxWidth()) { Text("지금 보내기") }
             if (cfg.ready) Text(
-                "Tailscale 앱을 안드로이드 '상시 사용 VPN'으로 두면 따로 켜지 않아도 돼요 (설정 › 연결 › 기타 연결 설정 › VPN › Tailscale ⚙)",
+                "밖에서는 Tailscale, 집에서는 같은 와이파이로도 보내요. Tailscale을 '상시 사용 VPN'으로 두면 어디서든 따로 켜지 않아도 돼요",
                 fontSize = 12.sp, color = DonColors.InkMuted,
             )
             status?.let { s ->

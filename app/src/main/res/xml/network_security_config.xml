@@ -1,13 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 평문 HTTP는 'PC로 보내기'(생활관리 PC 서버) 경로에만: Tailscale(WireGuard로 암호화) IP·MagicDNS와 개발용 루프백.
-     그 밖(날씨·환율·쇼핑 검색·AI)은 지금처럼 HTTPS만. PC Tailscale IP가 바뀌면 여기에 추가하거나 *.ts.net 이름을 쓰세요. -->
+<!-- 0.38: 'PC로 보내기'가 집 와이파이 주소(192.168.x 등 — 집마다 다름)로도 가야 해서 평문 HTTP를 열어 둔다.
+     대신 앱 코드(PcSync.allowedHost)가 평문은 Tailscale(100.64~127.x)·*.ts.net·사설 주소(192.168·10·172.16~31)·루프백으로만 보낸다.
+     날씨·환율·쇼핑 검색·AI는 코드에 https 주소로 고정돼 있어 그대로 HTTPS. -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">100.72.99.70</domain>
-        <domain includeSubdomains="true">ts.net</domain>
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">10.0.2.2</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
