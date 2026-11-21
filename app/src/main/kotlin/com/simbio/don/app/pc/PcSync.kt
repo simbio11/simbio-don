@@ -12,6 +12,9 @@ import com.simbio.don.budget.Category
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -186,10 +189,55 @@ object PcSnapshot {
     }
 }
 
+/**
+ * 자동 보내기 (0.37) — 앱을 열 때마다(화면으로 돌아올 때 포함)·알림으로 기록이 적힐 때 백그라운드에서.
+ * 같은 일을 하던 ViewModel 코드를 여기로 모아, 화면이 없어도(알림 수신 서비스) 보낼 수 있게 했다.
+ * 받은 changes(PC 알림함 답)는 채우고 한 번 더 보낸다.
+ */
+object PcAuto {
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    private val lock = kotlinx.coroutines.sync.Mutex()
+    @Volatile private var job: kotlinx.coroutines.Job? = null
+
+    /** [wait] 동안 모았다가 보낸다(연달아 부르면 마지막 한 번만) */
+    fun trigger(c: Context, force: Boolean = false, wait: Long = 1_500) {
+        val app = c.applicationContext
+        if (!PcSync.config(app).ready) return
+        job?.cancel()
+        job = scope.launch {
+            kotlinx.coroutines.delay(wait)
+            runCatching { run(app, force) }
+        }
+    }
+
+    /** 보내고, PC에서 고친 칸을 채웠으면 다시 보낸다. 채운 칸 수 */
+    suspend fun run(c: Context, force: Boolean): Int = lock.withLock {
+        val cfg = PcSync.config(c)
+        if (!cfg.ready) return@withLock 0
+        if (!force && System.currentTimeMillis() - PcSync.lastOkAt(c) < PcSync.MIN_INTERVAL_MS) return@withLock 0
+        val repo = com.simbio.don.app.data.DonRepository.get(c)
+        val version = runCatching { c.packageManager.getPackageInfo(c.packageName, 0).versionName }.getOrNull() ?: ""
+        var received = 0
+        repeat(2) {
+            val home = repo.home(kotlinx.coroutines.flow.flowOf(java.time.LocalDateTime.now())).first() ?: return@withLock received
+            val (entries, accounts, fixed) = repo.pcData(home.today.minusDays(PcSnapshot.DAYS))
+            val body = PcSnapshot.build(PcInput.from(home, entries, accounts, fixed), OffsetDateTime.now(), version)
+            val reply = PcSync.send(c, cfg, body)
+            val n = if (reply.changes.isEmpty()) 0 else repo.applyPcChanges(reply.changes)
+            if (n == 0) {
+                if (received > 0 && reply.status.ok) PcSync.annotate(c, "PC에서 고친 ${received}칸 받음")
+                return@withLock received
+            }
+            received += n
+        }
+        received
+    }
+}
+
 object PcSync {
     private const val PREFS = "pc_sync"
-    /** 자동으로는 10분에 한 번까지 (지금 보내기는 바로) */
-    const val MIN_INTERVAL_MS = 10 * 60_000L
+    /** 자동으로는 2분에 한 번까지 — 앱을 열 때마다 보내되 연달아 열면 건너뜀 (지금 보내기는 바로) */
+    const val MIN_INTERVAL_MS = 2 * 60_000L
 
     data class Config(val enabled: Boolean = false, val url: String = "", val token: String = "") {
         val ready: Boolean get() = enabled && url.isNotBlank() && token.length >= 16

@@ -215,49 +215,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         pcSchedule()
     }
 
-    // ── PC로 보내기 (생활관리 데스크탑, 켤 때만) — 앱을 열 때·기록할 때 20초 모았다가, 자동은 10분에 한 번까지 ──
-    private var pcJob: kotlinx.coroutines.Job? = null
+    // ── PC로 보내기 (생활관리 데스크탑, 켤 때만) — 앱을 열 때마다·기록할 때 (pc/PcAuto, 자동은 2분에 한 번까지) ──
+    private fun pcSchedule(force: Boolean = false, wait: Long = 3_000) =
+        com.simbio.don.app.pc.PcAuto.trigger(getApplication(), force, wait)
 
-    private fun pcSchedule(force: Boolean = false, wait: Long = 20_000) {
-        if (!com.simbio.don.app.pc.PcSync.config(getApplication()).ready) return
-        pcJob?.cancel()
-        pcJob = viewModelScope.launch {
-            delay(wait)
-            val home = (state.first { it is AppState.Ready } as AppState.Ready).home
-            pcSend(home, force)
-        }
-    }
+    /** 앱 화면으로 돌아올 때마다 (MainActivity.onResume) */
+    fun pcOnResume() = pcSchedule(wait = 1_500)
 
     /** 설정의 '지금 보내기' */
     fun pcSendNow() = pcSchedule(force = true, wait = 0)
-
-    private suspend fun pcSend(home: HomeState, force: Boolean) {
-        val app = getApplication<android.app.Application>()
-        val cfg = com.simbio.don.app.pc.PcSync.config(app)
-        if (!cfg.ready) return
-        if (!force && System.currentTimeMillis() - com.simbio.don.app.pc.PcSync.lastOkAt(app) < com.simbio.don.app.pc.PcSync.MIN_INTERVAL_MS) return
-        val body = withContext(Dispatchers.Default) {
-            val (entries, accounts, fixed) = repo.pcData(home.today.minusDays(com.simbio.don.app.pc.PcSnapshot.DAYS))
-            val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: ""
-            com.simbio.don.app.pc.PcSnapshot.build(
-                com.simbio.don.app.pc.PcInput.from(home, entries, accounts, fixed), java.time.OffsetDateTime.now(), version,
-            )
-        }
-        val reply = com.simbio.don.app.pc.PcSync.send(app, cfg, body)
-        // 양방향: PC 알림함에서 답한 통장·필요/욕구를 채우고, 채웠으면 곧바로 다시 보내 PC 쪽 표시를 지운다
-        // (이름을 못 찾은 통장처럼 못 채운 것만 남으면 n = 0 → 다시 보내지 않으니 되풀이되지 않는다)
-        val n = if (reply.changes.isEmpty()) 0 else repo.applyPcChanges(reply.changes)
-        if (n > 0) {
-            pcReceived += n
-            pcSchedule(force = true, wait = 1_500)
-        } else if (reply.status.ok && pcReceived > 0) {
-            com.simbio.don.app.pc.PcSync.annotate(app, "PC에서 고친 ${pcReceived}칸 받음")
-            pcReceived = 0
-        }
-    }
-
-    /** PC에서 받아 채운 칸 수 — 다시 보낸 뒤 상태 글에 적는다 */
-    private var pcReceived = 0
 
     suspend fun lastMonthReport() = withContext(Dispatchers.Default) { repo.lastMonthReport() }
 

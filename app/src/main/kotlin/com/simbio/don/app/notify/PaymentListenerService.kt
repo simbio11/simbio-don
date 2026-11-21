@@ -85,6 +85,8 @@ class PaymentListenerService : NotificationListenerService() {
             if (watched == null && pkg !in repo.watchedPackages()) return@launch
             val before = repo.salarySnapshot()
             repo.handleNotification(RawNotification(pkg, title, text, postedAt))
+            // 결제 알림으로 적힌 기록도 앱을 안 열어도 PC로 (30초 모았다가 — 같은 결제 알림이 여럿 올 때 한 번만)
+            com.simbio.don.app.pc.PcAuto.trigger(applicationContext, wait = 30_000)
             Widgets.refresh(this@PaymentListenerService)
             // 입금 알림으로 월급이 바뀌었으면 알려준다
             val after = repo.salarySnapshot()
