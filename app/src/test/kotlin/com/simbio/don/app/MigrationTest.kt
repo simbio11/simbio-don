@@ -270,4 +270,17 @@ class MigrationTest {
             c.moveToNext(); assertEquals("", c.getString(0))
         }
     }
+
+    @Test
+    fun v23에서_v24로_물어보고_적기가_켜지고_기억한_알림_표가_생긴다() {
+        helper.createDatabase("m23.db", 23).use { db ->
+            db.execSQL("INSERT INTO settings (id, payDay, settlementDay, savings, subSeeded, milesSeeded) VALUES (0, 25, 1, 0, 1, 1)")
+            db.execSQL("INSERT INTO review_item (id, packageName, action, amount, label, postedAtEpochSecond, rawText, reason) VALUES (1, 'a', 'SPEND', 1000, 'x', 1, 'x', 'UNCLASSIFIED')")
+        }
+        val db = helper.runMigrationsAndValidate("m23.db", 24, true, DonDatabase.MIGRATION_23_24)
+        db.query("SELECT askFirst FROM settings").use { c -> c.moveToNext(); assertEquals(1, c.getInt(0)) }
+        db.query("SELECT guess, pattern FROM review_item").use { c -> c.moveToNext(); assertEquals("", c.getString(0)); assertEquals("", c.getString(1)) }
+        db.execSQL("INSERT INTO notif_rule (packageName, pattern, decision) VALUES ('a', 'p', 'IGNORE')")
+        db.query("SELECT auto, count FROM notif_rule").use { c -> c.moveToNext(); assertEquals(1, c.getInt(0)); assertEquals(0, c.getInt(1)) }
+    }
 }

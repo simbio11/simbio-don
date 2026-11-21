@@ -156,6 +156,9 @@ private sealed interface Overlay {
     /** 자동 기록 학습: 배운 가게·앱·카드, 자동 기록률 */
     data object Learned : Overlay
 
+    /** 비서: 물어볼 알림·찾은 문제·기억한 알림·AI 점검 */
+    data object Assistant : Overlay
+
     /** 캘린더 일정 보기 · 만들기/고치기 */
     data class EventDetail(val event: com.simbio.don.app.calendar.CalEvent) : Overlay
     data class EventEdit(val existing: com.simbio.don.app.calendar.CalEvent?, val date: LocalDate) : Overlay
@@ -574,6 +577,9 @@ class MainActivity : ComponentActivity() {
                             if (saving) com.simbio.don.app.ui.kit.Burst.play()
                         },
                         onDismissMove = { vm.dismissMove(it) },
+                        asks = vm.askItems.collectAsStateWithLifecycle().value,
+                        onAnswerAsk = { i, g, keep -> vm.answerAsk(i, g, keep) },
+                        onAssistant = { screens.push(Overlay.Assistant) },
                         onOpenAssets = { onTab(Tab.Assets) },
                         auto = vm.autoState.collectAsStateWithLifecycle().value,
                         onConfirmCategory = { e, c -> vm.confirmCategory(e.id, c) },
@@ -816,6 +822,7 @@ class MainActivity : ComponentActivity() {
                 learnedCount = learned,
                 onResetLearned = { vm.resetLearned() },
                 onLearned = { open(Overlay.Learned) },
+                onAssistant = { open(Overlay.Assistant) },
                 onExport = { export.launch("돈트_내역_${LocalDate.now()}.csv") },
                 reminderOn = reminderOn,
                 onReminder = { on ->
@@ -1245,6 +1252,32 @@ class MainActivity : ComponentActivity() {
                     onBack = close,
                 )
             }
+            Overlay.Assistant -> com.simbio.don.app.ui.AssistantScreen(
+                asks = vm.askItems.collectAsStateWithLifecycle().value,
+                accounts = home.accounts.map { it.account },
+                findings = vm.findings.collectAsStateWithLifecycle().value,
+                rules = vm.notifRules.collectAsStateWithLifecycle().value,
+                moveRules = vm.moveRules.collectAsStateWithLifecycle().value,
+                askFirst = vm.settings.collectAsStateWithLifecycle().value?.askFirst ?: true,
+                monthIncome = home.monthIncome,
+                monthLiving = home.monthLiving,
+                disposable = home.plan.disposable,
+                appName = { pkg -> appLabel(pkg) ?: pkg },
+                onAnswer = { i, g, keep -> vm.answerAsk(i, g, keep) },
+                onAskFirst = { vm.setAskFirst(it) },
+                onRuleAuto = { r, on -> vm.setNotifRuleAuto(r, on) },
+                onForgetRule = { vm.forgetNotifRule(it) },
+                onFix = { k ->
+                    when (k) {
+                        com.simbio.don.app.data.Finding.Kind.BALANCE_GAP, com.simbio.don.app.data.Finding.Kind.ACCOUNT_UNKNOWN -> open(Overlay.BalanceFix)
+                        else -> close()
+                    }
+                },
+                onOpenEntry = { open(Overlay.Edit(it)) },
+                onLearned = { open(Overlay.Learned) },
+                onAiSettings = { open(Overlay.Settings) },
+                onBack = close,
+            )
             Overlay.Learned -> com.simbio.don.app.ui.AutoLearnScreen(
                 rate = vm.autoState.collectAsStateWithLifecycle().value.rate,
                 accounts = home.accounts.map { it.account },

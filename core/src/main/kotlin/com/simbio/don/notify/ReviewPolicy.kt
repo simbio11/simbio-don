@@ -16,6 +16,9 @@ enum class ReviewReason {
 
     /** 어떤 키워드에도 안 걸림 */
     UNCLASSIFIED,
+
+    /** 입금·송금·이체·저축·카드값처럼 애매해서 비서가 짐작만 하고 묻는 것 (사용자가 골라야 적는다) */
+    ASK,
 }
 
 sealed interface Decision {

@@ -76,6 +76,7 @@ fun SettingsScreen(
     onResetLearned: () -> Unit,
     /** 자동 기록 학습 화면 (배운 가게·앱·카드, 잘못 배운 것 지우기) */
     onLearned: () -> Unit = {},
+    onAssistant: () -> Unit = {},
     onExport: () -> Unit,
     reminderOn: Boolean = false,
     onReminder: (Boolean) -> Unit = {},
@@ -471,6 +472,7 @@ fun SettingsScreen(
             Text("가게 이름으로 카테고리를 정해요. 기록에서 카테고리를 고치면 그 가게는 다음부터 고친 대로 분류해요.", fontSize = 13.sp, color = DonColors.InkSoft)
             Text("기억한 가게 ${learnedCount}곳", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             SubButton(onClick = onLearned) { Text("자동 기록 학습 보기") }
+            SubButton(onClick = onAssistant) { Text("비서 (물어볼 알림·기억한 알림·점검)") }
             if (learnedCount > 0) SubButton(onClick = onResetLearned) { Text("기억한 가게 모두 지우기") }
             SubButton(onClick = onCategories, modifier = Modifier.fillMaxWidth()) {
                 Icon(UiIcon.TAG, 18.dp, DonColors.InkSoft)

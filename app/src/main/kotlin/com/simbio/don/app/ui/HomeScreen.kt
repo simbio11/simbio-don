@@ -98,6 +98,10 @@ fun HomeScreen(
     moveQuestions: List<com.simbio.don.app.data.MoveQuestion> = emptyList(),
     onConfirmMove: (com.simbio.don.app.data.MoveQuestion, Long?, Boolean) -> Unit = { _, _, _ -> },
     onDismissMove: (com.simbio.don.app.data.MoveQuestion) -> Unit = {},
+    /** 비서가 묻는 애매한 알림 (답하면 그대로 적는다) */
+    asks: List<com.simbio.don.app.data.ReviewItemEntity> = emptyList(),
+    onAnswerAsk: (com.simbio.don.app.data.ReviewItemEntity, com.simbio.don.app.data.AskGuess, Boolean) -> Unit = { _, _, _ -> },
+    onAssistant: (() -> Unit)? = null,
     onOpenAssets: () -> Unit = {},
     /** 알림으로 적힌 결제 중 확신 없는 것과 자동 기록률 */
     auto: com.simbio.don.app.data.DonRepository.AutoState = com.simbio.don.app.data.DonRepository.AutoState(emptyList(), com.simbio.don.budget.AutoRate(0, 0)),
@@ -144,6 +148,8 @@ fun HomeScreen(
             Banner("결제 알림 자동 기록이 꺼져 있어요", "알림 접근을 허용하면 결제할 때마다 자동으로 기록돼요.", "켜러 가기", onOpenListenerSettings)
         }
         home.salaryNotice?.let { n -> SalaryNoticeCard(n, home.plan.disposable, onSalary, onDismissSalary) }
+        // 월급·이체·송금처럼 애매한 알림: 비서의 짐작을 보고 한 번 눌러 적는다
+        AskCard(asks, home.accounts.map { it.account }, onAnswerAsk, onMore = onAssistant)
         // 알림 잔액이 앱과 다르면 (놓친 결제 알림 등) 바로 맞추기
         gaps.forEach { g ->
             val name = home.accounts.firstOrNull { it.account.id == g.accountId }?.account?.name ?: "통장"

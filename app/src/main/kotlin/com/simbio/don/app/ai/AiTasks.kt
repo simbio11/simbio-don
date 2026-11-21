@@ -202,6 +202,35 @@ object AiTasks {
         return AiRequest(system, "$summary\n\n[질문] ${question.trim()}", maxTokens = 3_000)
     }
 
+    /**
+     * 비서 점검: 폰이 찾은 문제 건수·짐작 종류·기억한 규칙 수만 보고 왜 꼬이는지, 앱에서 무엇을 누르면 되는지 짚는다.
+     * 알림 글·가게·사람·통장 이름은 보내지 않는다 ([com.simbio.don.app.data.AssistantCheck.anonSummary]).
+     */
+    fun assistantRequest(summary: String): AiRequest {
+        val system = """
+            너는 가계부 앱 "돈't" 안의 비서야. 앱은 은행·카드 알림을 읽어 자동으로 적는데, 애매한 알림(입금·송금·내 통장끼리 이체·월급)은 사용자에게 묻고 적어.
+            아래는 폰이 찾은 문제와 기억한 규칙의 개수·금액 요약이야 (이름은 지웠어). 한국어 '~해요'체로 점검해 줘.
+            - headline: 한 문장 총평.
+            - problems: 반복될 것 같은 문제와 그 까닭 0~4개 (예: 한쪽 알림만 오는 이체가 많으면 받는 통장 앱 알림이 꺼져 있을 수 있음).
+            - steps: 앱 안에서 바로 할 일 2~4개. 앱에 있는 것만: "물어볼 알림에 답하기", "기억한 알림 끄기·잊기", "알림 받을 앱 고르기", "잔액 맞추기", "통장에 알림 앱 잇기", "물어보고 적기 켜기".
+            - 요약에 없는 숫자나 기능은 지어내지 마. 투자·대출 권유는 하지 마.
+        """.trimIndent()
+        val list = mapOf("type" to "array", "items" to mapOf("type" to "string"))
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf("headline" to mapOf("type" to "string"), "problems" to list, "steps" to list),
+            "required" to listOf("headline", "problems", "steps"),
+            "additionalProperties" to false,
+        )
+        return AiRequest(system, summary, schema, maxTokens = 4_000)
+    }
+
+    fun parseAssistant(json: String): CoachReport? = runCatching {
+        val o = JSONObject(json)
+        fun list(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } }.orEmpty()
+        CoachReport(o.optString("headline"), "", emptyList(), list("problems"), list("steps")).takeIf { it.headline.isNotBlank() }
+    }.getOrNull()
+
     /** 물어보기 예시 */
     val SAMPLE_QUESTIONS = listOf(
         "이번 주 남은 날 하루에 얼마씩 쓰면 돼요?",

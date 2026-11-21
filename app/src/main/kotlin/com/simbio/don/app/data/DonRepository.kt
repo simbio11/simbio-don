@@ -302,7 +302,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     val recurringIncomes: Flow<List<RecurringIncomeEntity>> = dao.recurringIncomes()
     val fixedExpenses: Flow<List<FixedExpenseEntity>> = dao.fixedExpenses()
-    val reviewItems: Flow<List<ReviewItemEntity>> = dao.reviewItems()
+    /** 확인함 (비서가 묻는 것은 따로 [askItems]) */
+    val reviewItems: Flow<List<ReviewItemEntity>> = dao.reviewItems().map { l -> l.filter { it.reason != ReviewReason.ASK.name } }
     val appRules: Flow<List<AppRuleEntity>> = dao.appRules()
     val seenApps: Flow<List<SeenAppEntity>> = dao.seenApps()
 
@@ -497,7 +498,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             val cycle = c.toPayCycle(s.payDay)
             combine(
                 dao.entriesBetween(cycle.start.toEpochDay(), cycle.end.toEpochDay()),
-                combine(dao.reviewItems(), dao.settledWeeks(c.nominal), previousMonth(s, cs)) { r, w, p -> Triple(r, w, p) },
+                combine(dao.reviewItems(), dao.settledWeeks(c.nominal), previousMonth(s, cs)) { r, w, p -> Triple(r.filter { it.reason != ReviewReason.ASK.name }, w, p) },
                 now,
                 combine(dao.mockPurchases(), dao.house(), dao.plans()) { m, h, p -> Triple(m, h, p) },
                 dao.accounts(),
@@ -1336,6 +1337,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         apps: List<AppRule>? = null,
         /** 내 이름 (예금주, 쉼표로 여러 표기) — 보낸 사람이 나면 내 계좌끼리 옮긴 돈 */
         ownerName: String? = null,
+        /** 애매한 알림은 물어보고 적기 (앱에서 처음 설정하면 켠다) */
+        askFirst: Boolean = false,
     ) = locked {
         saveLookLocked(look)
         val ids = accounts.mapIndexed { i, a ->
@@ -1343,7 +1346,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
         // 모으는 통장은 시작 금액을 첫 점검으로 남긴다 (다음 월급날부터 점검)
         accounts.forEachIndexed { i, a -> if (a.type.grows) dao.insertAssetCheck(AssetCheckEntity(accountId = ids[i], epochDay = today.toEpochDay(), value = a.opening)) }
-        dao.saveSettings(SettingsEntity(payDay = payDay, settlementDay = settlementDay.value, savings = savings, ownerName = ownerName?.trim()?.take(40)?.ifBlank { null }))
+        dao.saveSettings(SettingsEntity(payDay = payDay, settlementDay = settlementDay.value, savings = savings, ownerName = ownerName?.trim()?.take(40)?.ifBlank { null }, askFirst = askFirst))
         // 고정 지출은 보통 통장에서 나간다
         val bankId = accounts.indexOfFirst { it.type == AccountType.BANK }.takeIf { it >= 0 }?.let { ids[it] }
         dao.replaceFixedExpenses(fixed.map { FixedExpenseEntity(name = it.name, amount = it.amount, day = it.day, accountId = bankId) })
@@ -2368,6 +2371,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             } ||
                 inbox.any { it.packageName == parsed.packageName && it.amount == parsed.amount && it.postedAtEpochSecond == at }
             if (seen) return@locked
+            // 애매한 알림은 바로 적지 않고 비서가 짐작해서 묻는다 (설정 "물어보고 적기"), 기억한 알림은 전에 고른 대로
+            if (askOrRememberLocked(n, parsed, result is ParseResult.Unclassified)) {
+                parsed.balanceAfter?.let { checkBalanceLocked(parsed.packageName, it, parsed.postedAt) }
+                return@locked
+            }
             // 카드값·현금 뽑기·페이 충전·적금은 지출·수입이 아니라 내 돈끼리 옮긴 것
             val move = moveKind(parsed)
             if (move != null) {
@@ -2464,7 +2472,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         return null
     }
 
-    private suspend fun insertMove(p: ParsedPayment, kind: com.simbio.don.notify.MoveKind, recent: List<EntryEntity>) {
+    /** 카드값·현금·충전·저축이 어느 자산에서 어느 자산으로 가는지 (기록하지 않고 짐작만) */
+    private suspend fun moveEnds(p: ParsedPayment, kind: com.simbio.don.notify.MoveKind): Pair<Long?, Long?> {
         val accounts = dao.accountsNow().filter { !it.hidden }
         val mine = accounts.firstOrNull { it.packageName == p.packageName }
         val mineType = mine?.let { enumOr(it.type, AccountType.ETC) }
@@ -2474,7 +2483,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         fun named(l: List<AccountEntity>) = l.firstOrNull { it.name.length >= 2 && it.name in text }
         fun pick(l: List<AccountEntity>) = (named(l) ?: l.singleOrNull())?.id
         val spendable = mine?.takeIf { mineType != null && !mineType.grows && mineType != AccountType.CARD }?.id
-        val (from, to) = when (kind) {
+        return when (kind) {
             com.simbio.don.notify.MoveKind.CARD_BILL ->
                 if (mineType == AccountType.CARD) main to mine.id else (spendable ?: main) to pick(typed(AccountType.CARD))
             com.simbio.don.notify.MoveKind.CASH -> (spendable ?: main) to pick(typed(AccountType.CASH))
@@ -2484,6 +2493,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             com.simbio.don.notify.MoveKind.SAVINGS -> (spendable ?: main) to (mine?.takeIf { mineType?.grows == true }?.id ?: pick(typed(AccountType.SAVINGS, AccountType.INVEST)))
             com.simbio.don.notify.MoveKind.SAVINGS_OUT -> (mine?.takeIf { mineType?.grows == true }?.id ?: pick(typed(AccountType.SAVINGS, AccountType.INVEST))) to (spendable ?: main)
         }
+    }
+
+    private suspend fun insertMove(p: ParsedPayment, kind: com.simbio.don.notify.MoveKind, recent: List<EntryEntity>) {
+        val (from, to) = moveEnds(p, kind)
         val toId = to.takeIf { it != from }
         // 같은 돈을 다른 앱(카드 앱·통장 앱)이 또 알렸으면 빈 쪽만 채운다
         val twin = recent.firstOrNull { it.type == EntryType.TRANSFER.name && it.amount == p.amount && it.packageName != p.packageName && it.label == moveLabel(kind) }
@@ -2949,6 +2962,264 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 자산의 지금 앱 잔액 */
     suspend fun balanceNow(accountId: Long): Long? = dao.accountsNow().firstOrNull { it.id == accountId }?.let { balanceOf(it) }
 
+    // ── 물어보고 적기 (비서) ──────────────────────────────────
+
+    /** 묻는 알림인가: 입금·송금·이체·저축·카드값·현금·충전, 어떤 말에도 안 걸린 것. 카드 결제처럼 분명한 건 아니다 */
+    private suspend fun askable(p: ParsedPayment, unclassified: Boolean): Boolean =
+        unclassified || p.action == RuleAction.INCOME || SelfTransfer.isSendOut(p) || moveKind(p) != null
+
+    /**
+     * 기억한 알림이면 전에 고른 대로 적고(또는 버리고), "물어보고 적기"면 비서의 짐작과 함께 확인함에 넣는다. 처리했으면 true.
+     * 확인해서 적은 내 통장끼리 이체의 다른 쪽 알림은 묻지 않고 그 이체에 합친다.
+     */
+    private suspend fun askOrRememberLocked(n: RawNotification, p: ParsedPayment, unclassified: Boolean): Boolean {
+        val s = dao.settingsNow()
+        val pattern = com.simbio.don.notify.NotifPattern.of(n.title, n.text)
+        val rule = ruleFor(dao.notifRulesNow(), p.packageName, pattern, p.amount)
+        val remembered = rule?.let { AskGuess.decode(it.decision) }
+        if (rule != null && remembered != null && rule.auto) {
+            if (remembered.kind == AskKind.IGNORE) return true
+            // 확인한 이체의 다른 쪽이면 그쪽에 합친다 (두 번 적지 않게)
+            if (absorbOwnMoveLocked(p)) return true
+            applyAskLocked(p, remembered.copy(from = remembered.from ?: (if (remembered.kind == AskKind.TRANSFER || remembered.kind == AskKind.SAVINGS) ownAccountOf(p, dao.accountsNow())?.id else null)), paired = false)
+            dao.saveNotifRule(rule.copy(count = rule.count + 1))
+            return true
+        }
+        if (s?.askFirst != true || !askable(p, unclassified)) return false
+        if (absorbOwnMoveLocked(p)) return true
+        val raw = p.rawText.trim()
+        val at = p.postedAt.epochSecond()
+        val pending = dao.reviewItemsNow().filter { it.reason == com.simbio.don.notify.ReviewReason.ASK.name }
+        // 이미 물어본 알림이 또 왔다 (다른 쪽을 합쳐 둔 것 포함)
+        if (raw.isNotEmpty() && pending.any { it.amount == p.amount && it.rawText.contains(raw) }) return true
+        // 같은 돈의 다른 쪽(나간 알림 ↔ 들어온 알림)을 이미 묻고 있으면 한 질문으로 합친다: 내 통장끼리 이체
+        val income = p.action == RuleAction.INCOME
+        val out = !income && SelfTransfer.isSendOut(p)
+        val accounts = dao.accountsNow()
+        val mine = ownAccountOf(p, accounts)
+        if (income || out) {
+            val names = SelfTransfer.names(s.ownerName)
+            val other = pending.filter { q ->
+                q.amount == p.amount && kotlin.math.abs(q.postedAtEpochSecond - at) <= MOVE_PAIR_SECONDS &&
+                    (if (income) q.action != RuleAction.INCOME.name else q.action == RuleAction.INCOME.name) &&
+                    !someoneElse(q.label, names) && !someoneElse(p.label, names) && !differentPeople(q.label, p.label)
+            }.minByOrNull { kotlin.math.abs(it.postedAtEpochSecond - at) }
+            if (other != null) {
+                val otherAccount = ownAccountOf(other.toParsed(), accounts)?.id ?: AskGuess.decode(other.guess)?.let { g -> if (income) g.from else g.to }
+                if (otherAccount == null || otherAccount != mine?.id) {
+                    val from = if (income) otherAccount else mine?.id
+                    val to = if (income) (mine ?: newOwnAccountLocked(p))?.id else otherAccount
+                    dao.updateReview(
+                        other.copy(
+                            guess = AskGuess(AskKind.TRANSFER, from, to, why = "나간 알림과 들어온 알림이 같은 금액이에요").encode(),
+                            rawText = (other.rawText + AskGuess.PAIR_SEP + raw).take(600),
+                        ),
+                    )
+                    return true
+                }
+            }
+        }
+        val guess = remembered?.copy(why = "전에 이렇게 골랐어요") ?: guessLocked(p, mine, accounts)
+        dao.insertReviewItem(
+            ReviewItemEntity(
+                packageName = p.packageName, action = p.action.name, amount = p.amount, label = p.label,
+                postedAtEpochSecond = at, rawText = raw, reason = com.simbio.don.notify.ReviewReason.ASK.name,
+                guess = guess.encode(), pattern = pattern,
+            ),
+        )
+        return true
+    }
+
+    /** 비서의 짐작: 이 알림은 아마 무엇인지 (기록하지 않는다) */
+    private suspend fun guessLocked(p: ParsedPayment, mine: AccountEntity?, accounts: List<AccountEntity>): AskGuess {
+        val text = p.rawText + " " + p.label
+        val shown = accounts.filter { !it.hidden }
+        val grows = shown.filter { enumOr(it.type, AccountType.ETC).grows }
+        val c = dao.latestCycleNow()
+        moveKind(p)?.let { kind ->
+            val (from, to) = moveEnds(p, kind)
+            return when (kind) {
+                com.simbio.don.notify.MoveKind.CARD_BILL -> AskGuess(AskKind.CARD_BILL, from, to, why = "카드값 출금 같아요")
+                com.simbio.don.notify.MoveKind.CASH -> AskGuess(AskKind.CASH, from, to, why = "ATM·현금 출금 같아요")
+                com.simbio.don.notify.MoveKind.CHARGE -> AskGuess(AskKind.CHARGE, from, to, why = "페이·머니 충전 같아요")
+                com.simbio.don.notify.MoveKind.SAVINGS -> AskGuess(AskKind.SAVINGS, from, to, why = "적금·저축 넣기 같아요")
+                com.simbio.don.notify.MoveKind.SAVINGS_OUT -> AskGuess(AskKind.TRANSFER, from, to, why = "적금·예금을 찾은 것 같아요")
+            }
+        }
+        val income = p.action == RuleAction.INCOME
+        val key = moveKey(p.label)
+        val rules = if (key.isBlank()) emptyList() else dao.moveRulesNow().filter { it.key == key }
+        if (income) {
+            rules.filter { it.side == "IN" && it.toAccountId == mine?.id }.map { it.fromAccountId }.distinct().singleOrNull()?.let {
+                return AskGuess(AskKind.TRANSFER, it, mine?.id, why = "전에 '${p.label}'에게서 온 돈은 내 통장끼리 이체였어요")
+            }
+            if (SelfTransfer.looksSelf(p, dao.settingsNow()?.ownerName)) return AskGuess(AskKind.TRANSFER, null, mine?.id, why = "보낸 사람이 나예요")
+            // 나눠 낸 돈을 받은 것
+            val book = Splits.book(dao.entriesBetweenNow(p.postedAt.toLocalDate().minusDays(Splits.WINDOW_DAYS).toEpochDay(), p.postedAt.toLocalDate().toEpochDay()))
+            book.receivables.firstOrNull { r ->
+                val per = r.perPerson ?: r.left
+                kotlin.math.abs(p.amount - per) <= Splits.near(per) || p.amount == r.left
+            }?.let { r -> return AskGuess(AskKind.SETTLE, to = mine?.id, target = r.entry.id, why = "'${r.entry.label}' 나눠 낸 돈과 금액이 맞아요") }
+            val lastSalary = c?.salary ?: 0
+            if (com.simbio.don.budget.Payday.isSalaryDeposit(text, p.amount, lastSalary)) {
+                return AskGuess(AskKind.SALARY, to = mine?.id, category = Category.SALARY.name, why = "월급 같은 입금이에요")
+            }
+            return AskGuess(AskKind.INCOME, to = mine?.id, category = Category.guessIncome(text, p.amount, 0).takeIf { it != Category.SALARY }?.name ?: Category.OTHER_INCOME.name)
+        }
+        // 송금으로 나간 돈
+        rules.filter { it.side == "OUT" && it.fromAccountId == mine?.id }.map { it.toAccountId }.distinct().singleOrNull()?.let {
+            return AskGuess(AskKind.TRANSFER, mine?.id, it, why = "전에 '${p.label}'에게 보낸 돈은 내 통장끼리 이체였어요")
+        }
+        namedOther(p, accounts, mine)?.let { return AskGuess(AskKind.TRANSFER, mine?.id, it.id, why = "알림에 '${it.name}'이 보여요") }
+        // 월급날 나누기: 계획한 저축·고정 지출·생활비와 같은 금액이면
+        if (c != null) {
+            val near = { a: Long -> a > 0 && kotlin.math.abs(a - p.amount) <= maxOf(1_000L, a / 100) }
+            val fixedTotal = c.fixedTotal
+            val living = (c.budgetOverride ?: (c.salary - c.fixedTotal - c.savings)).coerceAtLeast(0)
+            if (near(c.savings)) return AskGuess(AskKind.SAVINGS, mine?.id, grows.singleOrNull()?.id, why = "계획한 저축(${com.simbio.don.budget.Won.format(c.savings)})과 같은 금액이에요")
+            val fixedAccount = shown.firstOrNull { a -> a.id != mine?.id && listOf("고정", "월세", "관리비", "공과금").any { it in a.name } }
+            if (near(fixedTotal)) return AskGuess(AskKind.TRANSFER, mine?.id, fixedAccount?.id, why = "고정 지출 합(${com.simbio.don.budget.Won.format(fixedTotal)})과 같은 금액이에요 — 고정비 통장으로 옮긴 것 같아요")
+            if (near(living)) {
+                val livingAccount = shown.filter { enumOr(it.type, AccountType.ETC) == AccountType.BANK && it.id != mine?.id }.minByOrNull { it.sortOrder }
+                return AskGuess(AskKind.TRANSFER, mine?.id, livingAccount?.id, why = "이번 달 생활비(${com.simbio.don.budget.Won.format(living)})와 같은 금액이에요 — 생활비 통장으로 옮긴 것 같아요")
+            }
+            dao.fixedExpensesNow().firstOrNull { f -> near(f.amount) || (f.name.length >= 2 && f.name in text) }?.let { f ->
+                return AskGuess(AskKind.FIXED, mine?.id, category = f.category, why = "고정 지출 '${f.name}'과 같아요")
+            }
+        }
+        if (SelfTransfer.looksSelf(p, dao.settingsNow()?.ownerName)) return AskGuess(AskKind.TRANSFER, mine?.id, null, why = "받는 사람이 나예요")
+        return AskGuess(AskKind.SPEND, mine?.id, category = CategoryGuesser.guess(p.label, learned()).name, why = "다른 사람에게 보낸 돈 같아요")
+    }
+
+    /**
+     * 사용자가 고른 답([g])대로 적는다. [paired]면 나간·들어온 알림 둘 다 본 이체 (다른 쪽을 기다리지 않는다).
+     */
+    private suspend fun applyAskLocked(p: ParsedPayment, g: AskGuess, paired: Boolean) {
+        val day = p.postedAt.toLocalDate().toEpochDay()
+        val minute = p.postedAt.hour * 60 + p.postedAt.minute
+        fun moveEntry(label: String, from: Long?, to: Long?, state: Int) = EntryEntity(
+            epochDay = day, amount = p.amount, label = label, type = EntryType.TRANSFER.name, source = EntrySource.NOTIFICATION.name,
+            packageName = p.packageName, postedAtEpochSecond = p.postedAt.epochSecond(), category = Category.ETC.name,
+            memo = p.label, accountId = from, toAccountId = to, minuteOfDay = minute, rawText = p.rawText.take(600).ifBlank { null }, moveState = state,
+        )
+        suspend fun lastEntry() = dao.maxEntryId()?.let { dao.entryNow(it) }
+        val accounts = dao.accountsNow()
+        when (g.kind) {
+            AskKind.IGNORE -> Unit
+            AskKind.SPEND -> {
+                insertFromPayment(p, EntryType.SPEND)
+                lastEntry()?.let { e -> dao.updateEntry(e.copy(accountId = g.from ?: e.accountId, acctGuess = g.from == null && e.acctGuess, category = g.category ?: e.category, sentOut = SelfTransfer.isSendOut(p))) }
+            }
+            AskKind.FIXED -> if (!recordFixedFromPayment(p)) insertFixedPlain(p)
+            AskKind.INCOME, AskKind.SALARY -> {
+                insertFromPayment(p, EntryType.INCOME)
+                val cat = if (g.kind == AskKind.SALARY) Category.SALARY.name else g.category
+                lastEntry()?.let { e -> dao.updateEntry(e.copy(accountId = g.to ?: e.accountId, category = cat ?: e.category, acctGuess = g.to == null && e.acctGuess)) }
+                if (g.kind == AskKind.SALARY) {
+                    dao.insertIncome(IncomeEntity(amount = p.amount, postedAtEpochSecond = p.postedAt.epochSecond()))
+                    adjustSalaryLocked(p.amount, p.postedAt.toLocalDate())
+                    rollOverLocked(p.postedAt)
+                }
+            }
+            AskKind.TRANSFER, AskKind.SAVINGS -> {
+                val from = g.from
+                val to = g.to
+                // 다른 쪽 통장 알림이 올 수 있으면 기다렸다가 합친다 (두 번 적지 않게)
+                val waitIn = to != null && accounts.firstOrNull { it.id == to }?.packageName != null && !paired && p.action != RuleAction.INCOME
+                val waitOut = from != null && accounts.firstOrNull { it.id == from }?.packageName != null && !paired && p.action == RuleAction.INCOME
+                val state = when { waitIn -> 1; waitOut -> 4; else -> 3 }
+                val label = if (g.kind == AskKind.SAVINGS || to?.let { id -> accounts.firstOrNull { it.id == id }?.let { a -> enumOr(a.type, AccountType.ETC).grows } } == true) BudgetChange.SAVE_IN else SELF_TRANSFER_LABEL
+                dao.insertEntry(moveEntry(label, from, to, state))
+                if (p.action == RuleAction.INCOME) learnMoveLocked("IN", p.label, from, to, p.nameUnknown) else learnMoveLocked("OUT", p.label, from, to, p.nameUnknown)
+            }
+            AskKind.CARD_BILL -> dao.insertEntry(moveEntry("카드값", g.from, g.to, 3))
+            AskKind.CASH -> dao.insertEntry(moveEntry("현금 뽑기", g.from, g.to, 3))
+            AskKind.CHARGE -> dao.insertEntry(moveEntry("충전", g.from, g.to, 3))
+            AskKind.SETTLE -> {
+                insertFromPayment(p, EntryType.INCOME)
+                val e = lastEntry()
+                val target = g.target?.let { dao.entryNow(it) }
+                if (e != null && target != null) {
+                    dao.updateEntry(e.copy(type = EntryType.TRANSFER.name, toAccountId = g.to ?: e.accountId, accountId = null, settleFor = target.id, sentOut = false, linkState = 0))
+                }
+            }
+            AskKind.REFUND -> insertRefund(p)
+        }
+    }
+
+    /**
+     * 비서의 질문에 답한다: [g]대로 적고 확인함에서 지운다. [remember]면 같은 앱의 같은 모양 알림은 다음부터 묻지 않고 그대로.
+     */
+    suspend fun answerAsk(itemId: Long, g: AskGuess, remember: Boolean) = locked {
+        val item = dao.reviewItemsNow().firstOrNull { it.id == itemId } ?: return@locked
+        val p = item.toParsed()
+        val paired = item.rawText.contains(AskGuess.PAIR_SEP) && AskGuess.decode(item.guess)?.kind == AskKind.TRANSFER && g.kind == AskKind.TRANSFER
+        applyAskLocked(p, g, paired)
+        dao.deleteReview(item)
+        // 정산은 그때 그 기록에만 맞는 답이라 기억하지 않는다
+        if (remember && item.pattern.isNotBlank() && g.kind != AskKind.SETTLE) rememberLocked(item, g.copy(why = "").encode())
+    }
+
+    /** 금액이 비슷한지 (기억한 금액별 답을 쓸 때): 1천 원 또는 1% 안 */
+    private fun ruleNear(a: Long, b: Long) = kotlin.math.abs(a - b) <= maxOf(1_000L, maxOf(a, b) / 100)
+
+    /** 이 알림에 쓸 기억한 답: 금액별 답이 맞으면 그것, 아니면 금액과 상관없는 답 */
+    private fun ruleFor(rules: List<NotifRuleEntity>, pkg: String, pattern: String, amount: Long): NotifRuleEntity? {
+        val same = rules.filter { it.packageName == pkg && it.pattern == pattern }
+        return same.filter { it.byAmount && ruleNear(it.amount, amount) }.minByOrNull { kotlin.math.abs(it.amount - amount) }
+            ?: same.firstOrNull { !it.byAmount }
+    }
+
+    /**
+     * 답을 기억한다. 같은 모양 알림에 전과 다른 답을 했으면 (금액이 달라서) 덮어쓰지 않고 금액별 답 둘로 나눈다 —
+     * 월급날 같은 사람 이름으로 고정비 통장·생활비 통장에 보내는 송금처럼.
+     */
+    private suspend fun rememberLocked(item: ReviewItemEntity, decision: String) {
+        val same = dao.notifRulesNow().filter { it.packageName == item.packageName && it.pattern == item.pattern }
+        val sample = item.rawText.substringBefore(AskGuess.PAIR_SEP).replace('\n', ' ').trim().take(60)
+        val hit = same.filter { it.byAmount && ruleNear(it.amount, item.amount) }.minByOrNull { kotlin.math.abs(it.amount - item.amount) }
+        val any = same.firstOrNull { !it.byAmount }
+        fun fresh(byAmount: Boolean) = NotifRuleEntity(
+            packageName = item.packageName, pattern = item.pattern, decision = decision, count = 1, sample = sample, amount = item.amount, byAmount = byAmount,
+        )
+        when {
+            hit != null -> dao.saveNotifRule(hit.copy(decision = decision, auto = true, count = hit.count + 1, amount = item.amount, sample = sample))
+            // 같은 답이거나 같은 금액에서 마음을 바꿨으면 그 답을 고친다
+            any != null && (any.decision == decision || ruleNear(any.amount, item.amount)) ->
+                dao.saveNotifRule(any.copy(decision = decision, auto = true, count = any.count + 1, amount = item.amount, sample = sample))
+            any != null -> {
+                dao.saveNotifRule(any.copy(byAmount = true))
+                dao.saveNotifRule(fresh(byAmount = true))
+            }
+            same.isNotEmpty() -> dao.saveNotifRule(fresh(byAmount = true))
+            else -> dao.saveNotifRule(fresh(byAmount = false))
+        }
+    }
+
+    /** 확인함의 물어볼 것 (비서) */
+    val askItems: Flow<List<ReviewItemEntity>> = dao.reviewItems().map { l -> l.filter { it.reason == com.simbio.don.notify.ReviewReason.ASK.name } }
+
+    /** 비서의 점검: 폰 안에서 찾은 꼬인 곳 */
+    fun findings(today: LocalDate = LocalDate.now()): Flow<List<Finding>> =
+        combine(dao.allEntries(), askItems, dao.balanceGaps(), accountQuestions, dao.accounts()) { e, a, g, q, acc ->
+            // 내 통장끼리인지 물을 것은 질문 카드와 같은 기준 (최근 40일)
+            val recent = e.filter { it.epochDay >= today.minusDays(40).toEpochDay() && it.epochDay <= today.plusDays(1).toEpochDay() }
+            AssistantCheck.find(e, a, g, q.size, Moves.find(recent, acc).size, today.toEpochDay())
+        }
+
+    /** 기억한 알림 (보기·끄기·잊기) */
+    val notifRules: Flow<List<NotifRuleEntity>> = dao.notifRules()
+
+    suspend fun forgetNotifRule(id: Long) = dao.deleteNotifRule(id)
+
+    suspend fun setNotifRuleAuto(rule: NotifRuleEntity, auto: Boolean) = dao.saveNotifRule(rule.copy(auto = auto))
+
+    /** "물어보고 적기" 켜고 끄기 */
+    suspend fun setAskFirst(on: Boolean) {
+        val s = dao.settingsNow() ?: return
+        dao.saveSettings(s.copy(askFirst = on))
+    }
+
     // ── 내 통장끼리 이체 ───────────────────────────────────────
 
     /** 이 알림이 어느 내 통장 것인지: 알림 속 끝자리 → 그 앱과 이은 통장 (카드는 빼고) */
@@ -3014,7 +3285,11 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      * 4. 내 이름·"내 계좌" 같은 말이면 한쪽만이라도 이체로 (다른 쪽 알림이 오면 1번에서 합친다).
      * 받는 통장이 앱에 없는데 그 앱 알림이 왔으면 새 내 통장으로 등록한다 (알림 잔액이 있으면 그 잔액으로).
      */
-    private suspend fun handleOwnMoveLocked(p: ParsedPayment): Boolean {
+    /**
+     * 사용자가 이미 확인해 적은 내 통장끼리 이체의 다른 쪽 알림이면 그 이체에 합치고 true (0·1번 — 짐작이 아니라 이미 정한 기록을 채우는 것).
+     * 이미 합친 알림이 또 와도 true (버린다).
+     */
+    private suspend fun absorbOwnMoveLocked(p: ParsedPayment): Boolean {
         val income = p.action == RuleAction.INCOME
         val out = !income && SelfTransfer.isSendOut(p)
         if (!income && !out) return false
@@ -3045,6 +3320,21 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             learnMoveLocked(if (income) "IN" else "OUT", p.label, done.accountId, done.toAccountId, p.nameUnknown)
             return true
         }
+
+        return false
+    }
+
+    private suspend fun handleOwnMoveLocked(p: ParsedPayment): Boolean {
+        if (absorbOwnMoveLocked(p)) return true
+        val income = p.action == RuleAction.INCOME
+        val out = !income && SelfTransfer.isSendOut(p)
+        if (!income && !out) return false
+        val accounts = dao.accountsNow()
+        var mine = ownAccountOf(p, accounts)
+        val day = p.postedAt.toLocalDate().toEpochDay()
+        val nearby = dao.entriesBetweenNow(day - MOVE_ABSORB_DAYS, day + 1)
+        val at = p.postedAt.epochSecond()
+        val raw = p.rawText.trim()
 
         val names = SelfTransfer.names(dao.settingsNow()?.ownerName)
         // 2. 반대쪽 알림이 막 적혀 있다 (같은 금액, 30분 안, 서로 다른 통장)
@@ -3462,7 +3752,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     private suspend fun resolveLeftoverReviews(weekEnd: LocalDate) {
         val limit = weekEnd.plusDays(1).atStartOfDay().epochSecond()
-        dao.reviewItemsNow().filter { it.postedAtEpochSecond < limit }.forEach { item ->
+        // 비서가 묻는 것(입금·이체 등)은 사용자가 골라야 적는다 — 결산 때 저절로 지출로 넣지 않는다
+        dao.reviewItemsNow().filter { it.postedAtEpochSecond < limit && it.reason != ReviewReason.ASK.name }.forEach { item ->
             val resolution = when (item.reason) {
                 // 짝이 되는 지출이 이미 반영돼 있다
                 ReviewReason.POSSIBLE_DUPLICATE.name -> ReviewResolution.DISMISS
@@ -3760,6 +4051,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             appEvents = dao.appEventsNow(),
             wishes = dao.wishesNow(),
             moveRules = dao.moveRulesNow(),
+            notifRules = dao.notifRulesNow(),
         ),
         now,
     )
@@ -3774,7 +4066,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.wipeCategoryBudgets(); dao.wipeGoals(); dao.wipeAccounts()
                 dao.wipeCategoryDefs(); dao.wipeSubcategories(); dao.wipeInstallments(); dao.wipeRecurringIncomes(); dao.wipeMileTx()
                 dao.wipeGamePlays(); dao.wipeAssetChecks(); dao.wipePlans(); dao.wipeGoalMoves()
-                dao.wipeFxRates(); dao.wipeBalanceGaps(); dao.wipeAppEvents(); dao.wipeWishes(); dao.wipeMoveRules()
+                dao.wipeFxRates(); dao.wipeBalanceGaps(); dao.wipeAppEvents(); dao.wipeWishes(); dao.wipeMoveRules(); dao.wipeNotifRules()
                 dao.putSettings(d.settings); dao.putFixed(d.fixed); dao.putCycles(d.cycles); dao.putEntries(d.entries)
                 dao.putReviews(d.reviews); dao.putRules(d.rules); dao.putSettled(d.settled); dao.putCategoryRules(d.categoryRules)
                 dao.putMocks(d.mocks); dao.putHouses(d.houses); dao.putCategoryBudgets(d.categoryBudgets); dao.putGoals(d.goals)
@@ -3782,7 +4074,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 dao.putCategoryDefs(d.categoryDefs); dao.putSubcategories(d.subcategories); dao.putInstallments(d.installments)
                 dao.putRecurringIncomes(d.recurringIncomes); dao.putMileTx(d.mileTx)
                 dao.putGamePlays(d.gamePlays); dao.putAssetChecks(d.assetChecks); dao.putPlans(d.plans); dao.putGoalMoves(d.goalMoves)
-                dao.putFxRates(d.fxRates); dao.putAppEvents(d.appEvents); dao.putWishes(d.wishes); dao.putMoveRules(d.moveRules)
+                dao.putFxRates(d.fxRates); dao.putAppEvents(d.appEvents); dao.putWishes(d.wishes); dao.putMoveRules(d.moveRules); dao.putNotifRules(d.notifRules)
             }
             Category.register(dao.categoryDefsNow().map { it.toCategory() })
         }

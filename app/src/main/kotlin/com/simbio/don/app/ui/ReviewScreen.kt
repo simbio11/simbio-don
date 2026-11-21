@@ -67,6 +67,7 @@ private fun ReviewCard(
             ReviewReason.LOOKS_LIKE_FIXED_EXPENSE -> "고정비와 비슷해요"
             ReviewReason.REFUND -> "취소·환불"
             ReviewReason.UNCLASSIFIED -> "어떤 알림인지 모르겠어요"
+            ReviewReason.ASK -> "비서가 물어봐요"
         },
     ) {
         Text("${item.label} · ${won(item.amount)}", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = DonColors.Ink)
@@ -93,7 +94,7 @@ private fun ReviewCard(
                     Button(onClick = { onResolve(item, ReviewResolution.APPLY_REFUND) }) { Text("환불로 반영") }
                     SubButton(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("무시") }
                 }
-                ReviewReason.UNCLASSIFIED -> {
+                ReviewReason.UNCLASSIFIED, ReviewReason.ASK -> {
                     Button(onClick = { onResolve(item, ReviewResolution.APPLY_SPEND) }) { Text("지출로 반영") }
                     SubButton(onClick = { onResolve(item, ReviewResolution.APPLY_REFUND) }) { Text("환불") }
                     SubButton(onClick = { onResolve(item, ReviewResolution.DISMISS) }) { Text("무시") }

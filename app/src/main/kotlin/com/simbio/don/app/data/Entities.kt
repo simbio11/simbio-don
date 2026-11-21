@@ -25,6 +25,11 @@ data class SettingsEntity(
     val ownerName: String? = null,
     /** "그날 쓰는 돈"으로 볼 분류 (쉼표로) — 오늘 몫에서 뺀다. 나머지는 이번 주에서 나눈다 */
     @ColumnInfo(defaultValue = "FOOD,CAFE,DELIVERY,TRANSPORT") val dailyCategories: String = "FOOD,CAFE,DELIVERY,TRANSPORT",
+    /**
+     * 애매한 알림(입금·송금·이체·저축·카드값 등)은 바로 적지 않고 비서가 짐작만 해서 물어본 뒤 적는다.
+     * 카드 결제처럼 분명한 건 그대로 적는다. 새로 설치한 앱·업데이트한 앱은 켜져 있다 (DB 기본값 1).
+     */
+    @ColumnInfo(defaultValue = "1") val askFirst: Boolean = false,
 )
 
 /** 고정 지출. [day]를 정하면 그날 가계부에 자동으로 적는다 (그 전에 결제 알림이 오면 알림으로). */
@@ -204,6 +209,33 @@ data class ReviewItemEntity(
     val reason: String,
     /** 중복 의심일 때 짝이 되는 지출 */
     val relatedEntryId: Long? = null,
+    /** 비서의 짐작 ([AskGuess.encode]) — 물어보는 알림일 때 */
+    @ColumnInfo(defaultValue = "") val guess: String = "",
+    /** 알림 글의 모양 (숫자를 지운 것, [com.simbio.don.notify.NotifPattern]) — 답을 기억할 때 쓴다 */
+    @ColumnInfo(defaultValue = "") val pattern: String = "",
+)
+
+/**
+ * 기억한 알림: 같은 앱의 같은 모양 알림([pattern])은 사용자가 전에 고른 대로 ([decision] = [AskGuess.encode]).
+ * [auto]면 묻지 않고 그대로 적고, 아니면 그 답을 먼저 골라 둔 채 묻는다. IGNORE면 버린다.
+ */
+@Entity(tableName = "notif_rule")
+data class NotifRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val packageName: String,
+    val pattern: String,
+    val decision: String,
+    @ColumnInfo(defaultValue = "1") val auto: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val count: Int = 0,
+    /** 사람이 알아볼 보기 글 (처음 고른 알림의 앞부분 — 이 폰에만) */
+    @ColumnInfo(defaultValue = "") val sample: String = "",
+    /** 마지막으로 고른 알림의 금액 */
+    @ColumnInfo(defaultValue = "0") val amount: Long = 0,
+    /**
+     * 금액별 답: 같은 모양 알림인데 금액에 따라 답이 달랐다 (예: 같은 사람 이름으로 70만 원은 고정비 통장, 200만 원은 생활비 통장).
+     * 그러면 [amount]와 비슷한 금액일 때만 이 답을 쓴다.
+     */
+    @ColumnInfo(defaultValue = "0") val byAmount: Boolean = false,
 )
 
 /** 은행 입금 알림 — 월급 금액 제안에만 쓴다. */

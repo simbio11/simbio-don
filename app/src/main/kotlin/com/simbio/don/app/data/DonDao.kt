@@ -449,6 +449,25 @@ interface DonDao {
     @Query("DELETE FROM balance_gap WHERE accountId = :accountId")
     suspend fun deleteBalanceGap(accountId: Long)
 
+    // ── 기억한 알림 ──
+    @Query("SELECT * FROM notif_rule ORDER BY count DESC, id DESC")
+    suspend fun notifRulesNow(): List<NotifRuleEntity>
+
+    @Query("SELECT * FROM notif_rule ORDER BY count DESC, id DESC")
+    fun notifRules(): Flow<List<NotifRuleEntity>>
+
+    @Upsert
+    suspend fun saveNotifRule(r: NotifRuleEntity): Long
+
+    @Query("DELETE FROM notif_rule WHERE id = :id")
+    suspend fun deleteNotifRule(id: Long)
+
+    @Insert
+    suspend fun insertReviewItem(r: ReviewItemEntity): Long
+
+    @Update
+    suspend fun updateReview(r: ReviewItemEntity)
+
     // ── 내 통장끼리 이체 배운 것 ──
     @Query("SELECT * FROM move_rule ORDER BY count DESC, id DESC")
     suspend fun moveRulesNow(): List<MoveRuleEntity>
@@ -526,6 +545,7 @@ interface DonDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putAppEvents(x: List<AppEventEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putWishes(x: List<WishEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putMoveRules(x: List<MoveRuleEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putNotifRules(x: List<NotifRuleEntity>)
 
     @Query("DELETE FROM settings") suspend fun wipeSettings()
     @Query("DELETE FROM fixed_expense") suspend fun wipeFixed()
@@ -556,4 +576,5 @@ interface DonDao {
     @Query("DELETE FROM app_event") suspend fun wipeAppEvents()
     @Query("DELETE FROM wish") suspend fun wipeWishes()
     @Query("DELETE FROM move_rule") suspend fun wipeMoveRules()
+    @Query("DELETE FROM notif_rule") suspend fun wipeNotifRules()
 }

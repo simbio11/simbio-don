@@ -297,6 +297,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         repo.completeOnboarding(
             setup.salary, setup.payDay, setup.fixed, setup.savings, setup.settlementDay, LocalDate.now(),
             setup.firstCycleBudget, setup.accounts, setup.look, setup.apps, setup.ownerName,
+            askFirst = true,
         )
     }
 
@@ -405,6 +406,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** 배운 내 통장끼리 이체 */
     val moveRules = repo.moveRules.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     fun forgetMoveRule(id: Long) = viewModelScope.launch { repo.forgetMoveRule(id) }
+
+    // ── 비서: 애매한 알림은 묻고 적기, 기억한 알림 ──
+    val askItems = repo.askItems.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun answerAsk(item: com.simbio.don.app.data.ReviewItemEntity, g: com.simbio.don.app.data.AskGuess, remember: Boolean) =
+        viewModelScope.launch { repo.answerAsk(item.id, g, remember) }
+    val notifRules = repo.notifRules.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun forgetNotifRule(id: Long) = viewModelScope.launch { repo.forgetNotifRule(id) }
+    fun setNotifRuleAuto(r: com.simbio.don.app.data.NotifRuleEntity, auto: Boolean) = viewModelScope.launch { repo.setNotifRuleAuto(r, auto) }
+    fun setAskFirst(on: Boolean) = viewModelScope.launch { repo.setAskFirst(on) }
+    val findings = repo.findings(clock.value.toLocalDate()).flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 어느 자산인지 없이 적힌 수입·지출 (자산 잔액에 안 들어감) */
     val unassigned = repo.unassignedEntries.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

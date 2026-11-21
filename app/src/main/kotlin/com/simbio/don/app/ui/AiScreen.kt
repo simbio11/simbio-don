@@ -270,16 +270,16 @@ private fun SpokenRow(label: String, value: String) {
 }
 
 @Composable
-private fun CoachCard(r: CoachReport, usage: String) {
+internal fun CoachCard(r: CoachReport, usage: String, goodTitle: String = "잘하고 있어요", watchTitle: String = "조심할 점", actionTitle: String = "이번 주에 해 볼 것") {
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(DonColors.Surface).padding(16.dp).popIn(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(r.headline, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
         if (r.pace.isNotBlank()) Text(r.pace, fontSize = 13.sp, color = DonColors.InkSoft)
-        CoachList("잘하고 있어요", r.good, DonColors.Good)
-        CoachList("조심할 점", r.watch, DonColors.Warn)
-        CoachList("이번 주에 해 볼 것", r.actions, DonColors.Real)
+        CoachList(goodTitle, r.good, DonColors.Good)
+        CoachList(watchTitle, r.watch, DonColors.Warn)
+        CoachList(actionTitle, r.actions, DonColors.Real)
         Text(usage, fontSize = 11.sp, color = DonColors.InkFaint)
     }
 }
