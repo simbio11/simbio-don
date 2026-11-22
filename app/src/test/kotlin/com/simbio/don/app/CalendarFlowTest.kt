@@ -181,7 +181,7 @@ class CalendarFlowTest {
         rule.onAllNodesWithText("가계부").onLast().performClick()
         waitText("달력")
         rule.onNodeWithText("달력").performClick()
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정"))
+        rule.onAllNodes(hasScrollToNodeAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).onFirst().performScrollToNode(hasText("+ 일정"))
         rule.onNodeWithText("+ 일정").performClick()
         waitText("일정 추가", substring = true)
         rule.onAllNodes(hasSetTextAction() and hasText("제목")).onFirst().performTextReplacement("치과")

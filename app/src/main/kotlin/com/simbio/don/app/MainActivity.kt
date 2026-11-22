@@ -15,6 +15,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
 import com.simbio.don.app.ui.kit.Feedback
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.ui.platform.compositionContext
@@ -23,7 +30,8 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
-import com.simbio.don.app.ui.kit.twoFingerSwipeUp
+import androidx.compose.foundation.layout.fillMaxWidth
+import com.simbio.don.app.ui.kit.twoFingerDrag
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -128,6 +136,9 @@ private enum class Tab(val label: String, val icon: UiIcon, val selectedIcon: Ui
     Assets("자산", UiIcon.BANK, UiIcon.BANK_ON),
     House("내 집", UiIcon.HOUSE, UiIcon.HOUSE_ON),
 }
+
+/** AI 비서 패널이 반쯤 열렸을 때 높이 (화면의 몇 분의 몇) */
+private const val AI_PEEK = 0.56f
 
 /** 탭 위에 덮어 여는 화면 */
 private sealed interface Overlay {
@@ -281,12 +292,15 @@ class MainActivity : ComponentActivity() {
         locked = AppLock.isOn(this)
         setContent {
             DonTheme {
-                Surface(Modifier.fillMaxSize(), color = DonColors.Bg) {
-                    Box(Modifier.safeDrawingPadding()) {
-                        if (locked) LockScreen { locked = false } else App()
+                // 누르는 곳마다 쏙 들어갔다 튀어 돌아오는 효과 + 짧은 진동
+                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.LocalIndication provides com.simbio.don.app.ui.kit.PressIndication) {
+                    Surface(Modifier.fillMaxSize(), color = DonColors.Bg) {
+                        Box(Modifier.safeDrawingPadding()) {
+                            if (locked) LockScreen { locked = false } else App()
+                        }
+                        // 아낀 돈·저축 같은 잘한 일에 톡 터지는 동전 (화면 맨 위)
+                        com.simbio.don.app.ui.kit.BurstLayer()
                     }
-                    // 아낀 돈·저축 같은 잘한 일에 톡 터지는 동전 (화면 맨 위)
-                    com.simbio.don.app.ui.kit.BurstLayer()
                 }
             }
         }
@@ -449,8 +463,8 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = screens.isEmpty && tab != Tab.Home) { tab = Tab.Home }
 
         val names = home.accounts.associate { it.account.id to it.account.name }
-        // 어디서든 두 손가락으로 위로 쓸어 올리면 AI 비서와 대화
-        Box(Modifier.fillMaxSize().twoFingerSwipeUp(enabled = screens.top !is Overlay.Chat) { screens.push(Overlay.Chat) }) {
+        // 어디서든 두 손가락으로 위로 끌면 지금 화면이 살짝 밀려 올라가고 아래에서 AI 비서가 튀어나온다
+        AiSheetHost(screens) {
             ScreenHost(
                 screens,
                 base = {
@@ -461,6 +475,109 @@ class MainActivity : ComponentActivity() {
                 },
             ) { o, close ->
                 Overlay(o, home, close, open = { screens.push(it) }, goHouse = { screens.clear(); tab = Tab.House }, screens = screens)
+            }
+        }
+    }
+
+    /** 홈 AI 카드 등에서 AI 비서 패널을 열어 달라는 요청 (한 번 늘 때마다 연다) */
+    private var aiOpenRequest by mutableStateOf(0)
+
+    /**
+     * AI 비서 패널을 품은 바탕: 0 닫힘 · [AI_PEEK] 반쯤 (화면이 살짝 위로 밀리고 작아진다) · 1 끝까지 (대화 화면).
+     * 두 손가락으로 끄는 만큼 따라 올라오고, 놓으면 스프링으로 톡 자리 잡는다.
+     */
+    @Composable
+    private fun AiSheetHost(screens: ScreenStack<Overlay>, content: @Composable () -> Unit) {
+        val p = remember { androidx.compose.animation.core.Animatable(0f) }
+        val scope = rememberCoroutineScope()
+        val spring = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.74f, stiffness = 380f)
+        fun go(to: Float) { scope.launch { p.animateTo(to, if (com.simbio.don.app.ui.kit.Motion.reduced) androidx.compose.animation.core.snap() else spring) } }
+        fun settle(velocityUp: Float) {
+            val v = p.value
+            go(
+                when {
+                    velocityUp > 1500f -> if (v > AI_PEEK * 0.8f) 1f else AI_PEEK
+                    velocityUp < -1500f -> if (v > AI_PEEK * 1.1f) AI_PEEK else 0f
+                    v < AI_PEEK * 0.45f -> 0f
+                    v < (AI_PEEK + 1f) / 2f -> AI_PEEK
+                    else -> 1f
+                },
+            )
+        }
+        LaunchedEffect(aiOpenRequest) { if (aiOpenRequest > 0) go(AI_PEEK) }
+        androidx.activity.compose.BackHandler(enabled = p.targetValue > 0f) { go(0f) }
+        val view = androidx.compose.ui.platform.LocalView.current
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+            val h = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+            val v = p.value
+            val k = (v / AI_PEEK).coerceIn(0f, 1f)
+            val over = ((v - AI_PEEK) / (1f - AI_PEEK)).coerceIn(0f, 1f)
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            // 지금 화면: 위로 살짝 밀리며 작아지고 모서리가 둥글어진다
+            Box(
+                Modifier.fillMaxSize()
+                    .graphicsLayer {
+                        translationY = -h * (0.16f * k + 0.12f * over)
+                        val sc = 1f - 0.05f * k - 0.03f * over
+                        scaleX = sc
+                        scaleY = sc
+                        alpha = 1f - 0.35f * over
+                        if (k > 0f) {
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape((28 * k).dp)
+                            clip = true
+                        }
+                    }
+                    .twoFingerDrag(
+                        enabled = true,
+                        onStart = { com.simbio.don.app.ui.kit.Feedback.tap(view); scope.launch { p.stop() } },
+                        onDrag = { dy -> scope.launch { p.snapTo((p.value + dy / (h * 0.55f)).coerceIn(0f, 1f)) } },
+                        // 두 손가락은 조금만 끌어 올려도 연다 (반쯤, 많이 올렸으면 끝까지)
+                        onEnd = { vel ->
+                            val v = p.value
+                            go(if (v > (AI_PEEK + 1f) / 2f) 1f else if (v > 0.05f || vel > 400f) AI_PEEK else 0f)
+                        },
+                    ),
+            ) { content() }
+            if (v > 0.001f) {
+                // 바깥(밀려 올라간 화면)을 누르면 닫는다
+                Box(
+                    Modifier.fillMaxSize()
+                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.28f * k))
+                        .pointerInput(Unit) { detectTapGestures { go(0f) } },
+                )
+                val sheetH = with(density) { (h * v).toDp() }
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(sheetH)
+                        .graphicsLayer {
+                            shadowElevation = 24f
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = (28 * (1f - over)).dp, topEnd = (28 * (1f - over)).dp)
+                            clip = true
+                        },
+                ) {
+                    com.simbio.don.app.ui.ChatPanel(
+                        lines = vm.chatLines.collectAsStateWithLifecycle().value,
+                        busy = vm.chatBusy.collectAsStateWithLifecycle().value,
+                        full = p.targetValue >= 1f,
+                        onSend = { vm.chatAsk(it); go(1f) },
+                        onAnswer = { pr, apply -> vm.chatAnswer(pr, apply) },
+                        onClear = { vm.chatClear() },
+                        onSettings = { go(0f); screens.push(Overlay.Settings) },
+                        onClose = { go(0f) },
+                        onFocusInput = { go(1f) },
+                        handle = Modifier.pointerInput(Unit) {
+                            var vel = 0f
+                            detectVerticalDragGestures(
+                                onDragStart = { scope.launch { p.stop() } },
+                                onDragEnd = { settle(vel) },
+                                onDragCancel = { settle(0f) },
+                            ) { change, dy ->
+                                change.consume()
+                                vel = -dy * 60f
+                                scope.launch { p.snapTo((p.value - dy / h).coerceIn(0f, 1f)) }
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -585,7 +702,7 @@ class MainActivity : ComponentActivity() {
                         asks = vm.askItems.collectAsStateWithLifecycle().value,
                         onAnswerAsk = { i, g, keep -> vm.answerAsk(i, g, keep) },
                         onAssistant = { screens.push(Overlay.Assistant) },
-                        onChat = { screens.push(Overlay.Chat) },
+                        onChat = { aiOpenRequest++ },
                         onOpenAssets = { onTab(Tab.Assets) },
                         auto = vm.autoState.collectAsStateWithLifecycle().value,
                         onConfirmCategory = { e, c -> vm.confirmCategory(e.id, c) },
@@ -656,41 +773,7 @@ class MainActivity : ComponentActivity() {
                         onNewAccount = { e -> vm.registerNewAccount(e) { name -> Toast.makeText(this, "'$name'을 내 통장으로 등록했어요", Toast.LENGTH_SHORT).show() } },
                     )
                     // 가계부 달력 = 캘린더 (일정·쓴 돈·계획을 한 달력에서)
-                    Tab.Ledger, Tab.Stats -> if (t == Tab.Ledger && ledgerMode == LedgerMode.CALENDAR) {
-                        val month by vm.calendarMonth.collectAsStateWithLifecycle()
-                        val events by vm.calendarEvents.collectAsStateWithLifecycle()
-                        val entries by vm.calendarEntries.collectAsStateWithLifecycle()
-                        val plans by vm.plans.collectAsStateWithLifecycle()
-                        com.simbio.don.app.ui.CalendarScreen(
-                            month = month,
-                            onMonth = { ym ->
-                                vm.showCalendarMonth(ym)
-                                if (java.time.YearMonth.from(calDate) != ym) onCalDate(if (ym == java.time.YearMonth.from(home.today)) home.today else ym.atDay(1))
-                            },
-                            selected = calDate,
-                            onSelect = { d ->
-                                onCalDate(d)
-                                if (java.time.YearMonth.from(d) != month) vm.showCalendarMonth(java.time.YearMonth.from(d))
-                            },
-                            today = home.today,
-                            events = events,
-                            entries = entries,
-                            plans = plans,
-                            phoneOn = calendar.phoneOn,
-                            onConnect = calendar.onConnect,
-                            showMoney = calMoney,
-                            onShowMoney = { on -> UiPrefs.setCalendarMoney(this@MainActivity, on); calMoney = on },
-                            view = calView,
-                            onView = { calView = it },
-                            onOpenEvent = { screens.push(Overlay.EventDetail(it)) },
-                            onAddEvent = { d -> screens.push(Overlay.EventEdit(null, d)) },
-                            onOpenEntry = { screens.push(Overlay.Edit(it)) },
-                            onAddEntry = { d -> screens.push(Overlay.Edit(null, EntryDraft(d, 0, "", EntryType.SPEND, Category.ETC, "", false))) },
-                            accountNames = names,
-                            onPlans = { screens.push(Overlay.Plans) },
-                            header = { item { Box(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) { com.simbio.don.app.ui.LedgerTabs(ledgerMode, onLedgerMode) } } },
-                        )
-                    } else {
+                    Tab.Ledger, Tab.Stats -> {
                         val view by vm.month.collectAsStateWithLifecycle()
                         val cycles by vm.cycles.collectAsStateWithLifecycle()
                         val summaries by vm.summaries.collectAsStateWithLifecycle()
@@ -702,27 +785,78 @@ class MainActivity : ComponentActivity() {
                         val hasPrev = i in 0 until cycles.lastIndex
                         val hasNext = i > 0
                         if (t == Tab.Ledger) {
-                            LedgerScreen(
-                                view = v,
-                                summaries = summaries,
-                                accountNames = names,
-                                hasPrev = hasPrev,
-                                hasNext = hasNext,
-                                onPrev = { vm.moveMonth(-1); onLedgerDate(null) },
-                                onNext = { vm.moveMonth(1); onLedgerDate(null) },
-                                onPickMonth = { vm.pickMonth(it); onLedgerDate(null) },
-                                selectedDate = ledgerDate,
-                                onSelectDate = { onLedgerDate(it) },
-                                category = ledgerCategory,
-                                onCategory = { onLedgerCategory(it) },
-                                onOpen = { screens.push(Overlay.Edit(it)) },
-                                onSearch = { screens.push(Overlay.Search) },
-                                mode = ledgerMode,
-                                onMode = { onLedgerMode(it) },
-                                plans = home.plans,
-                                onPlans = { screens.push(Overlay.Plans) },
-                                calendar = calendar,
-                            )
+                            // 일일·달력·주별·월별을 옆으로 넘겨 바꾼다 (탭 밑줄이 손가락을 따라간다)
+                            val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = ledgerMode.ordinal) { LedgerMode.entries.size }
+                            LaunchedEffect(pager.settledPage) {
+                                val m = LedgerMode.entries[pager.settledPage]
+                                if (m != ledgerMode) onLedgerMode(m)
+                            }
+                            LaunchedEffect(ledgerMode) { if (pager.currentPage != ledgerMode.ordinal) pager.animateScrollToPage(ledgerMode.ordinal) }
+                            androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+                                Box(Modifier.padding(horizontal = 16.dp)) {
+                                    com.simbio.don.app.ui.LedgerTabs(ledgerMode, onLedgerMode, position = pager.currentPage + pager.currentPageOffsetFraction)
+                                }
+                                androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { it }) { page ->
+                                    val m = LedgerMode.entries[page]
+                                    if (m == LedgerMode.CALENDAR) {
+                                    val month by vm.calendarMonth.collectAsStateWithLifecycle()
+                                    val events by vm.calendarEvents.collectAsStateWithLifecycle()
+                                    val entries by vm.calendarEntries.collectAsStateWithLifecycle()
+                                    val plans by vm.plans.collectAsStateWithLifecycle()
+                                    com.simbio.don.app.ui.CalendarScreen(
+                                        month = month,
+                                        onMonth = { ym ->
+                                            vm.showCalendarMonth(ym)
+                                            if (java.time.YearMonth.from(calDate) != ym) onCalDate(if (ym == java.time.YearMonth.from(home.today)) home.today else ym.atDay(1))
+                                        },
+                                        selected = calDate,
+                                        onSelect = { d ->
+                                            onCalDate(d)
+                                            if (java.time.YearMonth.from(d) != month) vm.showCalendarMonth(java.time.YearMonth.from(d))
+                                        },
+                                        today = home.today,
+                                        events = events,
+                                        entries = entries,
+                                        plans = plans,
+                                        phoneOn = calendar.phoneOn,
+                                        onConnect = calendar.onConnect,
+                                        showMoney = calMoney,
+                                        onShowMoney = { on -> UiPrefs.setCalendarMoney(this@MainActivity, on); calMoney = on },
+                                        view = calView,
+                                        onView = { calView = it },
+                                        onOpenEvent = { screens.push(Overlay.EventDetail(it)) },
+                                        onAddEvent = { d -> screens.push(Overlay.EventEdit(null, d)) },
+                                        onOpenEntry = { screens.push(Overlay.Edit(it)) },
+                                        onAddEntry = { d -> screens.push(Overlay.Edit(null, EntryDraft(d, 0, "", EntryType.SPEND, Category.ETC, "", false))) },
+                                        accountNames = names,
+                                        onPlans = { screens.push(Overlay.Plans) },
+                                    )
+                                    } else {
+                                        LedgerScreen(
+                                            view = v,
+                                            summaries = summaries,
+                                            accountNames = names,
+                                            hasPrev = hasPrev,
+                                            hasNext = hasNext,
+                                            onPrev = { vm.moveMonth(-1); onLedgerDate(null) },
+                                            onNext = { vm.moveMonth(1); onLedgerDate(null) },
+                                            onPickMonth = { vm.pickMonth(it); onLedgerDate(null) },
+                                            selectedDate = ledgerDate,
+                                            onSelectDate = { onLedgerDate(it) },
+                                            category = ledgerCategory,
+                                            onCategory = { onLedgerCategory(it) },
+                                            onOpen = { screens.push(Overlay.Edit(it)) },
+                                            onSearch = { screens.push(Overlay.Search) },
+                                            mode = m,
+                                            showTabs = false,
+                                            onMode = { onLedgerMode(it) },
+                                            plans = home.plans,
+                                            onPlans = { screens.push(Overlay.Plans) },
+                                            calendar = calendar,
+                                        )
+                                    }
+                                }
+                            }
                         } else {
                             StatsScreen(
                                 view = v,
@@ -1274,15 +1408,7 @@ class MainActivity : ComponentActivity() {
                     onBack = close,
                 )
             }
-            Overlay.Chat -> com.simbio.don.app.ui.ChatScreen(
-                lines = vm.chatLines.collectAsStateWithLifecycle().value,
-                busy = vm.chatBusy.collectAsStateWithLifecycle().value,
-                onSend = { vm.chatAsk(it) },
-                onAnswer = { p, apply -> vm.chatAnswer(p, apply) },
-                onClear = { vm.chatClear() },
-                onSettings = { open(Overlay.Settings) },
-                onBack = close,
-            )
+            Overlay.Chat -> LaunchedEffect(Unit) { close(); aiOpenRequest++ }
             Overlay.Assistant -> com.simbio.don.app.ui.AssistantScreen(
                 asks = vm.askItems.collectAsStateWithLifecycle().value,
                 accounts = home.accounts.map { it.account },

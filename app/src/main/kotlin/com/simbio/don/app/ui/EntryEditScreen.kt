@@ -89,7 +89,7 @@ data class EntryDraft(
     val owe: Boolean = false,
     /** 필요(0)·욕구(1), null이면 분류대로 */
     val want: Int? = null,
-    /** 어느 예산에서: null 앱이 판단, 0 오늘 몫, 1 이번 주에 나눠서 */
+    /** 어느 예산에서: null 앱이 판단, 0 오늘 몫, 1 이번 주에 나눠서, 2 한 달 예산에서 (남은 날 모두에 나눠서) */
     val bucket: Int? = null,
     /** 이을 계획 (일정 예산) — 새로 잇거나 바꿀 때 */
     val linkPlanId: Long? = null,
@@ -409,21 +409,23 @@ fun EntryEditScreen(
                 val nearPlans = plans.filter { p ->
                     p.id == linkedPlan?.id || (p.open && kotlin.math.abs(p.epochDay - date.toEpochDay()) <= 7)
                 }.sortedBy { kotlin.math.abs(it.epochDay - date.toEpochDay()) }.take(6)
-                if (type == EntryType.SPEND && (existing != null || nearPlans.isNotEmpty())) {
+                if (type == EntryType.SPEND) {
                     FormCard("어느 예산에서 썼나요") {
                         val autoBig = category.name !in dailyCategories
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                             FilterChip(selected = bucket == null && planPick == null, onClick = { bucket = null }, label = { Text("앱이 판단") })
                             FilterChip(selected = bucket == 0, onClick = { bucket = 0 }, label = { Text("오늘 몫") })
                             FilterChip(selected = bucket == 1, onClick = { bucket = 1 }, label = { Text("이번 주에 나눠서") })
+                            FilterChip(selected = bucket == 2, onClick = { bucket = 2 }, label = { Text("한 달 예산에서") })
                         }
                         Text(
                             when {
                                 planPick != null -> "고른 계획의 예산에서 썼어요. 계획보다 더 썼는지 그 일정에서 보여요."
                                 bucket == 0 -> "오늘 몫에서 빠져요."
                                 bucket == 1 -> "큰 지출로 보고 이번 주 남은 날에 나눠서 빠져요."
-                                autoBig -> "지금은 앱이 판단해요: '${category.label}'은 하루 몫보다 크면 이번 주에 나눠요."
-                                else -> "지금은 앱이 판단해요: '${category.label}'은 그날 쓰는 돈이라 오늘 몫에서 빠져요."
+                                bucket == 2 -> "한 달 생활비에서 빠지고, 이번 주에 몰아서 깎지 않고 이번 달 남은 날 모두에 나눠서 줄어요 (가전·옷·경조사처럼 한 달에 한 번 큰돈)."
+                                autoBig -> "앱이 판단: '${category.label}'은 '그날 쓰는 돈'이 아니라서, 오늘 하루 몫보다 크면 이번 주에 나눠요. 작으면 오늘 몫. 계획과 이은 결제도 이번 주에 나눠요."
+                                else -> "앱이 판단: '${category.label}'은 '그날 쓰는 돈'(설정 › 오늘 몫)이라 금액이 커도 오늘 몫에서 빠져요."
                             },
                             fontSize = 12.sp,
                             color = DonColors.InkMuted,

@@ -29,6 +29,25 @@ internal object Http {
     }
 
     /** 서버가 준 오류 글 (있으면) */
+    fun get(url: String, headers: Map<String, String>): Pair<Int, String> {
+        val c = URL(url).openConnection() as HttpURLConnection
+        try {
+            c.connectTimeout = 20_000
+            c.readTimeout = 30_000
+            headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
+            val code = c.responseCode
+            val text = (if (code in 200..299) c.inputStream else c.errorStream)?.use { it.readBytes().decodeToString() }.orEmpty()
+            return code to text
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /** 글 대화에 못 쓰는 모델 (그림·소리·임베딩 등) */
+    private val NOT_CHAT = listOf("embed", "tts", "image", "audio", "realtime", "transcri", "live", "moderation", "whisper", "dall-e", "search", "banana", "omni", "decision", "aqa", "imagen", "veo", "computer")
+
+    fun chatModel(id: String) = NOT_CHAT.none { id.contains(it, ignoreCase = true) }
+
     fun errorMessage(body: String): String? = runCatching {
         val o = JSONObject(body)
         o.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() } ?: o.optString("message").takeIf { it.isNotBlank() }
@@ -119,6 +138,29 @@ class GeminiBackend(
         }
     }
 
+    /** GET /v1beta/models — generateContent를 받는 글 모델만 */
+    override suspend fun models(): Result<List<AiModelOption>> = withContext(Dispatchers.IO) {
+        try {
+            val (code, text) = Http.get("${baseUrl.trimEnd('/')}/v1beta/models?pageSize=200", headers)
+            if (code !in 200..299) return@withContext Result.failure(IllegalStateException(Http.problem(code, text)))
+            val arr = JSONObject(text).optJSONArray("models") ?: JSONArray()
+            val list = (0 until arr.length()).mapNotNull { i ->
+                val m = arr.optJSONObject(i) ?: return@mapNotNull null
+                val id = m.optString("name").removePrefix("models/")
+                val methods = m.optJSONArray("supportedGenerationMethods")
+                val ok = methods == null || (0 until methods.length()).any { methods.optString(it) == "generateContent" }
+                if (!ok || !id.startsWith("gemini") || !Http.chatModel(id)) null
+                else AiModelOption(id, m.optString("displayName").ifBlank { id }.removePrefix("Gemini "), "")
+            }
+            Result.success(list.sortedWith(compareByDescending<AiModelOption> { versionOf(it.id) }.thenBy { it.id }))
+        } catch (e: IOException) {
+            Result.failure(IllegalStateException("인터넷 연결을 확인해 주세요"))
+        }
+    }
+
+    /** "gemini-4-carbon" → 4.0, "gemini-3.5-flash" → 3.5 (새것부터 보이게) */
+    private fun versionOf(id: String) = Regex("""gemini-(\d+(?:\.\d+)?)""").find(id)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+
     // 생각하는 모델은 생각에도 출력 토큰을 쓴다 — 넉넉히
     private fun config(maxTokens: Long, json: Boolean) = JSONObject().put("maxOutputTokens", maxOf(maxTokens, 8_192L)).apply {
         if (json) put("responseMimeType", "application/json")
@@ -173,6 +215,23 @@ class OpenAiBackend(
 ) : AiBackend {
     private val url get() = "${baseUrl.trimEnd('/')}/chat/completions"
     private val headers get() = mapOf("Authorization" to "Bearer $apiKey")
+
+    /** GET /models — 글 대화 모델만 (호환 서비스는 받은 그대로) */
+    override suspend fun models(): Result<List<AiModelOption>> = withContext(Dispatchers.IO) {
+        try {
+            val (code, text) = Http.get("${baseUrl.trimEnd('/')}/models", headers)
+            if (code !in 200..299) return@withContext Result.failure(IllegalStateException(Http.problem(code, text)))
+            val arr = JSONObject(text).optJSONArray("data") ?: JSONArray()
+            val items = (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i) }
+            val list = items.filter { o ->
+                val id = o.optString("id")
+                id.isNotBlank() && Http.chatModel(id) && (!official || id.startsWith("gpt-") || id.startsWith("o"))
+            }.sortedByDescending { it.optLong("created") }.map { AiModelOption(it.optString("id"), it.optString("id"), "") }
+            Result.success(list)
+        } catch (e: IOException) {
+            Result.failure(IllegalStateException("인터넷 연결을 확인해 주세요"))
+        }
+    }
 
     private fun base(model: String, maxTokens: Long, messages: JSONArray) = JSONObject()
         .put("model", model)

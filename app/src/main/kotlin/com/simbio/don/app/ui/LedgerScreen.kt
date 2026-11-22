@@ -1,5 +1,7 @@
 package com.simbio.don.app.ui
 
+import com.simbio.don.app.ui.kit.riseIn
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -127,7 +129,7 @@ fun LedgerRow(e: EntryEntity, accountNames: Map<Long, String>, onOpen: (EntryEnt
                     e.installmentNo?.let { add("할부 $it") }
                     // 어느 예산에서 썼나 (직접 고른 것·계획과 이은 것)
                     planTag?.let(::add)
-                    if (type == EntryType.SPEND) e.bucket?.let { add(if (it == 1) "이번 주에 나눔" else "오늘 몫") }
+                    if (type == EntryType.SPEND) e.bucket?.let { add(when (it) { 1 -> "이번 주에 나눔"; 2 -> "한 달에 나눔"; else -> "오늘 몫" }) }
                     if (type != EntryType.TRANSFER) e.accountId?.let(accountNames::get)?.let(::add)
                     e.minuteOfDay?.let { add(timeText(it)) }
                     when (e.source) {
@@ -189,15 +191,16 @@ fun LedgerMonthBar(view: MonthView, hasPrev: Boolean, hasNext: Boolean, onPrev: 
 
 /** 보기 고르기 탭 (밑줄) */
 @Composable
-fun LedgerTabs(mode: LedgerMode, onMode: (LedgerMode) -> Unit) {
+fun LedgerTabs(mode: LedgerMode, onMode: (LedgerMode) -> Unit, position: Float? = null) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
         val cell = maxWidth / LedgerMode.entries.size
-        // 밑줄이 고른 탭으로 미끄러져 간다
-        val x by androidx.compose.animation.core.animateDpAsState(
+        // 밑줄이 고른 탭으로 미끄러져 간다 (옆으로 넘길 때는 손가락을 그대로 따라간다)
+        val animated by androidx.compose.animation.core.animateDpAsState(
             cell * mode.ordinal,
             if (com.simbio.don.app.ui.kit.Motion.reduced) androidx.compose.animation.core.snap() else androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 420f),
             label = "tabline",
         )
+        val x = position?.let { cell * it } ?: animated
         Row(Modifier.fillMaxWidth()) {
             LedgerMode.entries.forEach { m ->
                 val on = m == mode
@@ -238,6 +241,8 @@ fun LedgerScreen(
     onPlans: () -> Unit = {},
     /** 폰 캘린더 일정 (켰을 때만) */
     calendar: CalendarHooks = CalendarHooks.Off,
+    /** 보기 고르기 탭을 안에 그릴지 (밖에서 옆으로 넘기는 탭을 그리면 false) */
+    showTabs: Boolean = true,
 ) {
     val monthPlans = plans.filter { it.open && LocalDate.ofEpochDay(it.epochDay) in view.cycle }
     val income = Stats.income(view.entries)
@@ -248,7 +253,7 @@ fun LedgerScreen(
         item {
             MonthSummaryRow(income, expense)
             Spacer(Modifier.height(4.dp))
-            LedgerTabs(mode, onMode)
+            if (showTabs) LedgerTabs(mode, onMode)
             Spacer(Modifier.height(12.dp))
         }
         when (mode) {
@@ -308,11 +313,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dailyItems(
     // 고정 지출은 날짜별 목록·합계에서 빼고 맨 아래 따로 (기록만)
     val fixed = filtered.filter { it.type == EntryType.FIXED.name }
     val groups = filtered.filter { it.type != EntryType.FIXED.name }.groupBy { it.epochDay }.toSortedMap(compareByDescending { it })
-    groups.forEach { (day, list) ->
+    groups.entries.forEachIndexed { gi, (day, list) ->
         item(key = "d$day") {
             val d = LocalDate.ofEpochDay(day)
             val es = list.map { it.toEntryOrNull() }.filterNotNull()
-            Column(Modifier.padding(bottom = 10.dp).fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 10.dp)) {
+            // 날짜 카드가 차례로 살짝 떠오른다 (처음 볼 때만)
+            Column(Modifier.animateItem().riseIn("ledgerday$day", gi.coerceAtMost(6)).padding(bottom = 10.dp).fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 10.dp)) {
                 DayHeader(d, Stats.income(es), Stats.total(es))
                 list.sortedWith(compareByDescending<EntryEntity> { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
                     .forEach { e -> LedgerRow(e, accountNames, onOpen, planOf[e.id]?.let { p -> "예산: ${p.label}" + if ((p.doneAmount ?: 0) > p.amount) " (넘음)" else "" }) }

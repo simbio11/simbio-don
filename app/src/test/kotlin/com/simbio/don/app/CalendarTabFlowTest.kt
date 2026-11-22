@@ -104,7 +104,7 @@ class CalendarTabFlowTest {
         waitText("구글 캘린더 등 폰 캘린더와 이으면", substring = true)
 
         // 사흘짜리 여행 (하루 종일) + 예산
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정"))
+        rule.onAllNodes(hasScrollToNodeAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).onFirst().performScrollToNode(hasText("+ 일정"))
         rule.onNodeWithText("+ 일정").performClick()
         waitText("일정 추가")
         rule.onAllNodes(hasSetTextAction() and hasText("제목")).onFirst().performTextReplacement("제주 여행")
@@ -128,7 +128,7 @@ class CalendarTabFlowTest {
         waitText("예산 30만")
 
         // 시각 있는 일정 + 알림
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정"))
+        rule.onAllNodes(hasScrollToNodeAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).onFirst().performScrollToNode(hasText("+ 일정"))
         rule.onNodeWithText("+ 일정").performClick()
         waitText("일정 추가")
         rule.onAllNodes(hasSetTextAction() and hasText("제목")).onFirst().performTextReplacement("치과")
@@ -140,18 +140,18 @@ class CalendarTabFlowTest {
         shot("k2_month_day")
 
         // 이날 가계부 쓰기
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 가계부 쓰기"))
+        rule.onAllNodes(hasScrollToNodeAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).onFirst().performScrollToNode(hasText("+ 가계부 쓰기"))
         rule.onNodeWithText("+ 가계부 쓰기").performClick()
         waitText("저장")
         rule.onAllNodes(hasSetTextAction() and hasText("금액")).onFirst().performTextReplacement("12000")
         rule.onAllNodes(hasSetTextAction() and hasText("어디에 썼나요", substring = true)).onFirst().performTextReplacement("김밥")
         rule.onNodeWithText("저장").performClick()
         waitText("−12,000원")
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("김밥"))
+        rule.onAllNodes(hasScrollToNodeAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).onFirst().performScrollToNode(hasText("김밥"))
         shot("k3_day_money")
 
         // 일정 보기 → 고치기
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정"))
+        rule.onAllNodes(hasScrollToNodeAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).onFirst().performScrollToNode(hasText("+ 일정"))
         rule.onAllNodesWithText("치과").onLast().performClick()
         waitText("이 일정에 쓸 돈")
         shot("k4_event_detail")
@@ -163,14 +163,14 @@ class CalendarTabFlowTest {
         waitText("치과 정기검진")
 
         // 목록 보기
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("목록"))
+        rule.onAllNodes(hasScrollToNodeAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).onFirst().performScrollToNode(hasText("목록"))
         rule.onNodeWithText("목록").performClick()
         waitText("제주 여행")
         shot("k5_list")
         rule.onNodeWithText("월").performClick()
 
         // 지우기
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("치과 정기검진"))
+        rule.onAllNodes(hasScrollToNodeAction() and androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange)).onFirst().performScrollToNode(hasText("치과 정기검진"))
         rule.onAllNodesWithText("치과 정기검진").onLast().performClick()
         waitText("이 일정에 쓸 돈")
         rule.onNodeWithText("지우기").performClick()

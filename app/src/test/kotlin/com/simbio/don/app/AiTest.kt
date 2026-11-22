@@ -157,9 +157,14 @@ class AiTasksTest {
         assertFalse(Ai.isOn(context))
         Ai.setKey(context, "AIzaSyTestKey000000")
         assertTrue(Ai.isOn(context))
-        assertEquals("gemini-2.5-pro", Ai.model(context))
-        Ai.setModel(context, "gemini-3-pro-preview")
-        assertEquals("Gemini · gemini-3-pro-preview", Ai.label(context))
+        assertEquals("gemini-4-hydrogen", Ai.model(context))
+        Ai.setModel(context, "gemini-4-neon")
+        assertEquals("Gemini · gemini-4-neon", Ai.label(context))
+        // 회사가 끄는 옛 모델을 골라 뒀으면 같은 자리의 새 모델로
+        Ai.setModel(context, "gemini-2.5-pro")
+        assertEquals("gemini-4-carbon", Ai.model(context))
+        Ai.setModel(context, "gpt-5-mini", com.simbio.don.app.ai.AiProvider.OPENAI)
+        assertEquals("gpt-6.2-sol", Ai.model(context, com.simbio.don.app.ai.AiProvider.OPENAI))
         // Claude 키는 그대로
         assertEquals("sk-ant-old-key-123456", Ai.key(context, com.simbio.don.app.ai.AiProvider.CLAUDE))
 

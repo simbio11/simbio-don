@@ -125,6 +125,17 @@ class ClaudeBackend(
         }
     }
 
+    override suspend fun models(): Result<List<AiModelOption>> = withContext(Dispatchers.IO) {
+        val client = client()
+        try {
+            Result.success(client.models().list().data().map { AiModelOption(it.id(), it.displayName().removePrefix("Claude "), "") })
+        } catch (e: Exception) {
+            Result.failure(IllegalStateException(problem(e)))
+        } finally {
+            client.close()
+        }
+    }
+
     private fun problem(e: Exception): String = when (e) {
         is UnauthorizedException -> "API 키가 맞지 않아요. 설정에서 다시 넣어 주세요"
         is PermissionDeniedException -> "이 키로는 쓸 수 없는 모델이에요. 다른 모델을 골라 보세요"

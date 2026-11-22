@@ -56,6 +56,7 @@ import com.simbio.don.notify.KeywordRule
 import com.simbio.don.notify.KeywordRuleCodec
 import com.simbio.don.notify.RuleAction
 import java.time.DayOfWeek
+import kotlinx.coroutines.launch
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -351,6 +352,36 @@ fun SettingsScreen(
                         fontSize = 12.sp,
                         color = DonColors.InkMuted,
                     )
+                }
+            }
+            // 내 키로 회사에서 지금 쓸 수 있는 모델을 받아 온다 (새 모델이 나와도 바로 고를 수 있게)
+            if (aiKey != null) {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                var fetched by remember(aiProvider) { mutableStateOf<List<com.simbio.don.app.ai.AiModelOption>?>(null) }
+                var fetchMsg by remember(aiProvider) { mutableStateOf<String?>(null) }
+                var loading by remember(aiProvider) { mutableStateOf(false) }
+                TextButton(onClick = {
+                    if (!loading) {
+                        loading = true
+                        fetchMsg = null
+                        scope.launch {
+                            com.simbio.don.app.ai.Ai.models(ctx).fold(
+                                { l -> fetched = l; if (l.isEmpty()) fetchMsg = "받아 온 글 모델이 없어요" },
+                                { e -> fetchMsg = e.message },
+                            )
+                            loading = false
+                        }
+                    }
+                }) { Text(if (loading) "불러오는 중…" else "${aiProvider.short}에서 최신 모델 불러오기") }
+                fetchMsg?.let { Text(it, fontSize = 12.sp, color = DonColors.Warn) }
+                fetched?.takeIf { it.isNotEmpty() }?.let { list ->
+                    Text("이 키로 쓸 수 있는 모델 ${list.size}개 · 눌러서 고르기", fontSize = 12.sp, color = DonColors.InkMuted)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        list.take(30).forEach { m ->
+                            FilterChip(selected = aiModel == m.id, onClick = { onAiModel(m.id) }, label = { Text(m.id, fontSize = 12.sp) })
+                        }
+                    }
                 }
             }
             // 새 모델이 나오면 이름을 직접 넣는다

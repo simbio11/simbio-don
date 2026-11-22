@@ -399,8 +399,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     /** 오늘 몫 (이번 주 기록과 아직 안 쓴 계획으로) */
     private fun dayOf(h: HomeState, plans: List<PlanEntity>): com.simbio.don.budget.DayBudget {
         val w = h.currentWeek ?: return com.simbio.don.budget.DayBudget.Empty
-        // 한 달에 나눠서 계획으로 쓴 기록은 주 예산에서 이미 나눠 뺐으니 이번 주 지출로 세지 않는다
-        val spreadIds = plans.filter { it.monthly }.flatMap { it.entryIds }.toSet()
+        // 한 달에 나눠서 계획으로 쓴 기록·"한 달 예산에서" 고른 기록은 주 예산에서 이미 나눠 뺐으니 이번 주 지출로 세지 않는다
+        val spreadIds = plans.filter { it.monthly }.flatMap { it.entryIds }.toSet() + h.entries.filter { monthBucket(it) }.map { it.id }
         val pairs = h.entries.filter { LocalDate.ofEpochDay(it.epochDay) in w.week && it.id !in spreadIds }
             .mapNotNull { e -> runCatching { e to e.toEntry() }.getOrNull() }
         // 계획에서 "썼어요"로 이은 기록 (미리 떼어 둔 돈이라 큰 지출로)
@@ -409,7 +409,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         pairs.filter { it.first.id in linkedIds }.forEach { linked += it.second }
         // 기록에서 직접 고른 예산 (오늘 몫 / 이번 주에 나눠서)
         val chosen = java.util.IdentityHashMap<com.simbio.don.budget.Entry, Boolean>()
-        pairs.forEach { (e, x) -> e.bucket?.let { chosen[x] = it == 1 } }
+        pairs.forEach { (e, x) -> e.bucket?.takeIf { it == 0 || it == 1 }?.let { chosen[x] = it == 1 } }
         return com.simbio.don.budget.DayBudgets.of(
             w, pairs.map { it.second }, h.today, h.dailyCategories,
             plans.filter { it.open && !it.monthly }.map { LocalDate.ofEpochDay(it.epochDay) to it.amount },
@@ -471,10 +471,19 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             if (amount <= 0 || day !in plan.cycle) null
             else com.simbio.don.budget.Spread(LocalDate.ofEpochDay(p.createdEpochDay).coerceAtMost(day), amount)
         }
-        return entries.fold(CycleLedger(plan, spreads = spreads)) { l, e ->
-            runCatching { l.addSafely(e.toEntry().let { x -> if (e.id in linked) x.copy(type = EntryType.TRANSFER) else x }) }.getOrDefault(l)
+        // "한 달 예산에서" 고른 지출: 그날이 든 주부터 남은 날 모두에 나눠 뺀다 (그 주에 몰아서 깎지 않게)
+        val own = entries.filter { monthBucket(it) && LocalDate.ofEpochDay(it.epochDay) in plan.cycle }
+        val all = spreads + own.mapNotNull { e ->
+            runCatching { e.toEntry() }.getOrNull()?.let { x -> com.simbio.don.budget.Spread(x.date, x.amount) }
+        }
+        val moved = linked + own.map { it.id }
+        return entries.fold(CycleLedger(plan, spreads = all)) { l, e ->
+            runCatching { l.addSafely(e.toEntry().let { x -> if (e.id in moved) x.copy(type = EntryType.TRANSFER) else x }) }.getOrDefault(l)
         }
     }
+
+    /** 사용자가 "한 달 예산에서"로 고른 생활비 지출 */
+    private fun monthBucket(e: EntryEntity) = e.bucket == 2 && e.type == EntryType.SPEND.name
 
     /** 지난달에 아직 결산하지 않은 주 (지난달 마지막 주는 새 달이 돼도 결산 화면으로 본다) */
     private data class PrevMonth(val nominal: String, val results: List<WeekResult>, val settled: Set<Int>)

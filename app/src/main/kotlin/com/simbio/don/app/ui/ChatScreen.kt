@@ -14,6 +14,12 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.animation.core.animateFloat
+import com.simbio.don.app.ui.kit.riseIn
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -39,7 +45,6 @@ import androidx.compose.ui.unit.sp
 import com.simbio.don.app.ai.Ai
 import com.simbio.don.app.ai.ChatLine
 import com.simbio.don.app.data.AgentAction
-import com.simbio.don.app.ui.kit.BackBar
 import com.simbio.don.app.ui.kit.Button
 import com.simbio.don.app.ui.kit.FilterChip
 import com.simbio.don.app.ui.kit.SmallButton
@@ -56,18 +61,24 @@ private val SAMPLES = listOf(
 )
 
 /**
- * AI 비서와 대화 (두 손가락으로 위로 쓸어 올리면 열린다).
+ * AI 비서 패널: 두 손가락으로 위로 끌면 지금 화면이 살짝 위로 밀리며 아래에서 튀어나온다 (반쯤).
+ * 물어보거나 글 칸을 누르면 끝까지 올라와 대화 화면이 된다. 위 손잡이를 끌어 내리거나 바깥을 누르면 닫힌다.
  * AI는 하네스 도구로 가계부 기록을 직접 찾아보고, 고칠 것은 제안만 한다 — [적용]을 눌러야 바뀐다.
  */
 @Composable
-fun ChatScreen(
+fun ChatPanel(
     lines: List<ChatLine>,
     busy: Boolean,
+    full: Boolean,
     onSend: (String) -> Unit,
     onAnswer: (ChatLine.Proposal, Boolean) -> Unit,
     onClear: () -> Unit,
     onSettings: () -> Unit,
-    onBack: () -> Unit,
+    onClose: () -> Unit,
+    /** 글 칸을 눌렀다 (끝까지 올린다) */
+    onFocusInput: () -> Unit,
+    /** 손잡이를 끄는 몸짓 (위·아래로 크기 바꾸기) */
+    handle: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val on = remember { Ai.isOn(context) }
@@ -76,9 +87,19 @@ fun ChatScreen(
     val list = rememberLazyListState()
     LaunchedEffect(lines.size, busy) { if (lines.isNotEmpty()) list.animateScrollToItem(lines.size + if (busy) 1 else 0) }
 
-    Column(Modifier.fillMaxSize().background(DonColors.Bg).imePadding()) {
-        BackBar("AI 비서", onBack) {
-            if (lines.isNotEmpty() && !busy) TextButton(onClick = onClear) { Text("새 대화") }
+    Column(Modifier.fillMaxSize().background(DonColors.Bg)) {
+        // 손잡이 + 머리
+        Column(handle.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.width(40.dp).height(5.dp).clip(RoundedCornerShape(3.dp)).background(DonColors.Line))
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("✦ ", fontSize = 18.sp, color = DonColors.Real)
+                Column(Modifier.weight(1f)) {
+                    Text("AI 비서", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
+                    if (on) Text(label, fontSize = 11.sp, color = DonColors.InkMuted, maxLines = 1)
+                }
+                if (lines.isNotEmpty() && !busy) TextButton(onClick = onClear) { Text("새 대화") }
+                TextButton(onClick = onClose) { Text("닫기") }
+            }
         }
         if (!on) {
             Column(Modifier.fillMaxWidth().padding(16.dp).background(DonColors.Surface, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -88,12 +109,14 @@ fun ChatScreen(
             }
             return@Column
         }
-        Text(
-            "$label · 가계부 기록(날짜·금액·이름·분류·통장 이름)을 도구로 찾아봐요. 알림 원문·메모·캘린더는 안 보내요. 고치기는 [적용]을 눌러야 해요.",
-            fontSize = 11.sp,
-            color = DonColors.InkMuted,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-        )
+        AnimatedVisibility(full || lines.isEmpty()) {
+            Text(
+                "가계부 기록(날짜·금액·이름·분류·통장 이름)을 도구로 찾아봐요. 알림 원문·메모·캘린더는 안 보내요. 고치기는 [적용]을 눌러야 해요.",
+                fontSize = 11.sp,
+                color = DonColors.InkMuted,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
+        }
         LazyColumn(
             state = list,
             modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
@@ -101,29 +124,32 @@ fun ChatScreen(
         ) {
             if (lines.isEmpty()) {
                 item {
-                    Column(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("무엇이든 물어보거나 시켜 보세요", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
-                        Text("예를 눌러도 돼요", fontSize = 12.sp, color = DonColors.InkMuted)
-                        SAMPLES.forEach { s -> FilterChip(false, { onSend(s) }, { Text(s, fontSize = 13.sp) }) }
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            SAMPLES.forEachIndexed { i, s -> FilterChip(false, { onSend(s) }, { Text(s, fontSize = 13.sp) }, modifier = Modifier.riseIn("sample$s", i)) }
+                        }
                     }
                 }
             }
-            itemsIndexed(lines) { _, line -> ChatRow(line, onAnswer) }
+            itemsIndexed(lines, key = { i, _ -> i }) { i, line ->
+                Box(Modifier.animateItem().riseIn("chat$i")) { ChatRow(line, onAnswer) }
+            }
             if (busy) {
-                item {
-                    Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(color = DonColors.Real, strokeWidth = 2.dp, modifier = Modifier.padding(end = 10.dp))
-                        Text("가계부를 보는 중…", fontSize = 13.sp, color = DonColors.InkMuted)
+                item(key = "busy") {
+                    Row(Modifier.padding(8.dp).animateItem(), verticalAlignment = Alignment.CenterVertically) {
+                        TypingDots()
+                        Text("  가계부를 보는 중…", fontSize = 13.sp, color = DonColors.InkMuted)
                     }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it.take(500) },
                 placeholder = { Text("물어보기 · 시키기") },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).onFocusChanged { if (it.isFocused) onFocusInput() },
                 maxLines = 4,
             )
             SmallButton(
@@ -136,6 +162,25 @@ fun ChatScreen(
                 modifier = Modifier.padding(start = 8.dp),
                 containerColor = if (text.isNotBlank() && !busy) DonColors.Real else DonColors.InkFaint,
             ) { Text("보내기") }
+        }
+    }
+}
+
+/** 답을 기다리는 동안 통통 뛰는 점 세 개 */
+@Composable
+private fun TypingDots() {
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "dots")
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        repeat(3) { i ->
+            val y by t.animateFloat(
+                0f, -6f,
+                androidx.compose.animation.core.infiniteRepeatable(
+                    androidx.compose.animation.core.tween(380, delayMillis = i * 120, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    androidx.compose.animation.core.RepeatMode.Reverse,
+                ),
+                label = "dot$i",
+            )
+            Box(Modifier.graphicsLayer { translationY = y * density }.width(7.dp).height(7.dp).clip(RoundedCornerShape(4.dp)).background(DonColors.Real))
         }
     }
 }

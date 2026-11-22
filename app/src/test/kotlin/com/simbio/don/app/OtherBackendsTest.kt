@@ -186,4 +186,27 @@ class OtherBackendsTest {
         val bad = OpenAiBackend("k", url, true).send("gpt-5", AiTasks.askRequest("s", "q"))
         assertEquals("API 키가 맞지 않아요. 설정에서 다시 넣어 주세요", (bad as AiReply.Failed).message)
     }
+
+    @Test
+    fun `모델 목록 - Gemini는 generateContent 글 모델만 새것부터, OpenAI는 글 대화 모델만 최근 것부터`() = runBlocking {
+        reply = """{"models":[""" +
+            """{"name":"models/gemini-3.5-flash-lite","displayName":"Gemini 3.5 Flash-Lite","supportedGenerationMethods":["generateContent","countTokens"]},""" +
+            """{"name":"models/gemini-embedding-2","displayName":"Embedding","supportedGenerationMethods":["embedContent"]},""" +
+            """{"name":"models/gemini-4-carbon","displayName":"Gemini 4 Carbon","supportedGenerationMethods":["generateContent"]},""" +
+            """{"name":"models/gemini-3.8-flash-tts","displayName":"TTS","supportedGenerationMethods":["generateContent"]}]}"""
+        val g = GeminiBackend("AIzaTest", url).models().getOrThrow()
+        assertEquals(listOf("gemini-4-carbon", "gemini-3.5-flash-lite"), g.map { it.id })
+        assertEquals("/v1beta/models?pageSize=200", lastPath)
+        assertEquals("AIzaTest", lastHeaders["x-goog-api-key"])
+
+        reply = """{"data":[{"id":"gpt-5","created":100},{"id":"gpt-6.2-astra","created":300},{"id":"gpt-image-2.5-flare","created":400},{"id":"text-embedding-3-small","created":50},{"id":"gpt-6.2-sol","created":250}]}"""
+        val o = OpenAiBackend("sk", url, official = true).models().getOrThrow()
+        assertEquals(listOf("gpt-6.2-astra", "gpt-6.2-sol", "gpt-5"), o.map { it.id })
+        assertEquals("/models", lastPath)
+
+        status = 401
+        reply = """{"error":{"message":"Incorrect API key provided"}}"""
+        assertTrue(OpenAiBackend("sk", url, official = true).models().isFailure)
+    }
 }
+

@@ -13,7 +13,8 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Claude 모델 (그대로 둔 이름). [fallback]: 안전 판단으로 거절되면 서버가 다른 모델로 다시 해 보는지 */
 enum class AiModel(val id: String, val label: String, val note: String, val fallback: Boolean) {
-    OPUS("claude-opus-5-5", "Opus 5.5", "가장 똑똑해요", true),
+    OPUS("claude-opus-5-5", "Opus 5.5", "기본 · 똑똑하고 값도 적당해요", true),
+    FABLE("claude-fable-5-2", "Fable 5.2", "가장 똑똑해요 · Opus의 2배 값", true),
     SONNET("claude-sonnet-5-5", "Sonnet 5.5", "빠르고 더 싸요", true),
     HAIKU("claude-haiku-5-5", "Haiku 5.5", "가장 빠르고 싸요", false),
 }
@@ -41,18 +42,18 @@ enum class AiProvider(
     GEMINI(
         "Gemini (Google)", "Gemini", "AIza…", "aistudio.google.com › Get API key",
         listOf(
-            AiModelOption("gemini-2.5-pro", "2.5 Pro", "가장 똑똑해요"),
-            AiModelOption("gemini-2.5-flash", "2.5 Flash", "빠르고 싸요"),
-            AiModelOption("gemini-2.5-flash-lite", "2.5 Flash-Lite", "가장 빠르고 싸요"),
+            AiModelOption("gemini-4-hydrogen", "4 Hydrogen", "기본 · 균형"),
+            AiModelOption("gemini-4-carbon", "4 Carbon", "가장 똑똑해요"),
+            AiModelOption("gemini-3.5-flash-lite", "3.5 Flash-Lite", "가장 빠르고 싸요"),
         ),
         "https://generativelanguage.googleapis.com",
     ),
     OPENAI(
         "ChatGPT (OpenAI)", "OpenAI", "sk-…", "platform.openai.com › API keys",
         listOf(
-            AiModelOption("gpt-5", "GPT-5", "가장 똑똑해요"),
-            AiModelOption("gpt-5-mini", "GPT-5 mini", "빠르고 싸요"),
-            AiModelOption("gpt-5-nano", "GPT-5 nano", "가장 빠르고 싸요"),
+            AiModelOption("gpt-6.2-sol", "GPT-6.2 Sol", "기본 · 균형"),
+            AiModelOption("gpt-6.2-astra", "GPT-6.2 Astra", "가장 똑똑해요"),
+            AiModelOption("gpt-6-luna", "GPT-6 Luna", "가장 빠르고 싸요"),
         ),
         "https://api.openai.com/v1",
     ),
@@ -81,6 +82,9 @@ fun interface AiBackend {
     suspend fun send(model: String, req: AiRequest): AiReply
 
     suspend fun turn(model: String, req: AgentRequest): AgentReply = AgentReply.Failed("이 AI는 대화를 아직 못 해요")
+
+    /** 이 키로 지금 쓸 수 있는 글 모델 (회사에서 받아 온 목록, 새것부터). 실패하면 오류 글 */
+    suspend fun models(): Result<List<AiModelOption>> = Result.failure(IllegalStateException("목록을 못 불러와요"))
 }
 
 /**
@@ -116,9 +120,19 @@ object Ai {
     /** 보여 줄 때는 끝 네 글자만 */
     fun maskedKey(c: Context, p: AiProvider = provider(c)): String? = key(c, p)?.let { "••••" + it.takeLast(4) }
 
-    /** 고른 모델 이름 (회사마다). 예전 Claude 설정은 "model"에 AiModel 이름으로 있다 */
+    /** 회사가 그만 받는(곧 끄는) 모델 → 같은 자리의 새 모델 */
+    val RETIRED = mapOf(
+        "gemini-2.5-pro" to "gemini-4-carbon",
+        "gemini-2.5-flash" to "gemini-4-hydrogen",
+        "gemini-2.5-flash-lite" to "gemini-3.5-flash-lite",
+        "gpt-5" to "gpt-6.2-sol",
+        "gpt-5-mini" to "gpt-6.2-sol",
+        "gpt-5-nano" to "gpt-6-luna",
+    )
+
+    /** 고른 모델 이름 (회사마다). 예전 Claude 설정은 "model"에 AiModel 이름으로 있다. 끝난 모델은 새 모델로 */
     fun model(c: Context, p: AiProvider = provider(c)): String {
-        prefs(c).getString("model_${p.name}", null)?.takeIf { it.isNotBlank() }?.let { return it }
+        prefs(c).getString("model_${p.name}", null)?.takeIf { it.isNotBlank() }?.let { return RETIRED[it] ?: it }
         if (p == AiProvider.CLAUDE) prefs(c).getString("model", null)?.let { n -> AiModel.entries.firstOrNull { it.name == n }?.let { return it.id } }
         return p.models.firstOrNull()?.id.orEmpty()
     }
@@ -152,6 +166,12 @@ object Ai {
     suspend fun send(c: Context, req: AiRequest): AiReply {
         val b = backend(c) ?: return AiReply.Failed("AI 키가 없어요. 설정 › AI 도우미에서 넣어 주세요")
         return b.send(model(c), req)
+    }
+
+    /** 내 키로 회사에서 모델 목록 받아 오기 */
+    suspend fun models(c: Context): Result<List<AiModelOption>> {
+        val b = backend(c) ?: return Result.failure(IllegalStateException("먼저 API 키를 넣어 주세요"))
+        return b.models()
     }
 
     suspend fun turn(c: Context, req: AgentRequest): AgentReply {
