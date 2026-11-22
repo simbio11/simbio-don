@@ -475,6 +475,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun forgetNotifRule(id: Long) = viewModelScope.launch { repo.forgetNotifRule(id) }
     fun setNotifRuleAuto(r: com.simbio.don.app.data.NotifRuleEntity, auto: Boolean) = viewModelScope.launch { repo.setNotifRuleAuto(r, auto) }
     fun setAskFirst(on: Boolean) = viewModelScope.launch { repo.setAskFirst(on) }
+    fun setMonthlyPlaces(places: List<String>) = viewModelScope.launch { repo.setMonthlyPlaces(places) }
     val findings = repo.findings(clock.value.toLocalDate()).flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 어느 자산인지 없이 적힌 수입·지출 (자산 잔액에 안 들어감) */

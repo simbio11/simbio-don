@@ -109,7 +109,10 @@ fun CalendarScreen(
 ) {
     val es = remember(entries) { entries.mapNotNull { runCatching { it.toEntry() }.getOrNull() } }
     // 고정 지출은 기록만 — 날마다 쓴 돈에 넣지 않는다
-    val spent = remember(es) { Stats.daily(es, livingOnly = true) }
+    // 한 달 예산에서 쓴 큰돈(주유비 등)은 그날을 빨갛게 하지 않는다 (가계부·통계에는 그대로)
+    val spent = remember(entries) {
+        Stats.daily(com.simbio.don.app.data.MonthlySpend.daily(entries).mapNotNull { runCatching { it.toEntry() }.getOrNull() }, livingOnly = true)
+    }
     val income = remember(es) { Stats.dailyIncome(es) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         header?.invoke(this)
@@ -416,14 +419,21 @@ private fun DayMoney(
     onPlans: (() -> Unit)? = null,
 ) {
     val es = list.mapNotNull { runCatching { it.toEntry() }.getOrNull() }
+    // 한 달 예산에서 쓴 것은 그날 쓴 돈과 따로 (빨갛게 세지 않는다)
+    val monthly = list.filter(com.simbio.don.app.data.MonthlySpend::isMonthly).sumOf { it.share ?: it.amount }
+    val dayEs = com.simbio.don.app.data.MonthlySpend.daily(list).mapNotNull { runCatching { it.toEntry() }.getOrNull() }
     Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("가계부", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
             Spacer(Modifier.width(8.dp))
-            val out = Stats.total(es)
+            val out = Stats.total(dayEs)
             val inc = Stats.income(es)
             Text(
-                listOfNotNull(if (out != 0L) "−${won(out)}" else null, if (inc > 0) "+${won(inc)}" else null).joinToString(" · ").ifEmpty { "쓴 돈 없음" },
+                listOfNotNull(
+                    if (out != 0L) "−${won(out)}" else null,
+                    if (inc > 0) "+${won(inc)}" else null,
+                    if (monthly > 0) "한 달 예산 ${won(monthly)}" else null,
+                ).joinToString(" · ").ifEmpty { "쓴 돈 없음" },
                 fontSize = 13.sp,
                 color = if (out > 0) DonColors.Expense else DonColors.InkMuted,
                 modifier = Modifier.weight(1f),

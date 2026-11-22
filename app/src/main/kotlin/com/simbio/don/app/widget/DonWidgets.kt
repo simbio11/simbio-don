@@ -220,7 +220,8 @@ class CalendarWidget : DonWidget() {
             start = home.cycle.start,
             end = home.cycle.end,
             today = home.today,
-            spent = Stats.daily(entries, livingOnly = true),
+            // 한 달 예산에서 쓴 큰돈(주유비 등)은 그날을 빨갛게 하지 않는다
+            spent = Stats.daily(com.simbio.don.app.data.MonthlySpend.daily(home.entries).mapNotNull { runCatching { it.toEntry() }.getOrNull() }, livingOnly = true),
             noSpend = home.insights.noSpend?.days.orEmpty(),
             planned = home.plans.filter { it.open }.groupBy { LocalDate.ofEpochDay(it.epochDay) }.mapValues { (_, l) -> l.sumOf { it.amount } },
             dailyPlan = Widgets.dailyPlan(home),

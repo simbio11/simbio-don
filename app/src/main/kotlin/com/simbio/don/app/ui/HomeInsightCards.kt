@@ -126,7 +126,8 @@ private fun ForecastBar(f: MonthForecast) {
 fun HomeCalendarCard(home: HomeState, onDay: (LocalDate) -> Unit, events: Map<LocalDate, List<com.simbio.don.app.calendar.CalEvent>> = emptyMap()) {
     val start = home.cycle.start
     val end = home.cycle.end
-    val perDay = Stats.daily(home.entries.map { it.toEntry() }, livingOnly = true)
+    // 한 달 예산에서 쓴 큰돈(주유비 등)은 그날을 빨갛게 하지 않는다 (가계부·통계에는 그대로)
+    val perDay = Stats.daily(com.simbio.don.app.data.MonthlySpend.daily(home.entries).map { it.toEntry() }, livingOnly = true)
     val noSpend = home.insights.noSpend
     val plan = home.plan.disposable / home.cycle.days.coerceAtLeast(1)
     // 아직 안 쓴 계획 (회색 점선)

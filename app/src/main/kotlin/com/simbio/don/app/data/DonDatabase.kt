@@ -42,7 +42,7 @@ import com.simbio.don.budget.CategoryGuesser
         MoveRuleEntity::class,
         NotifRuleEntity::class,
     ],
-    version = 24,
+    version = 25,
 )
 abstract class DonDatabase : RoomDatabase() {
     abstract fun dao(): DonDao
@@ -60,7 +60,7 @@ abstract class DonDatabase : RoomDatabase() {
                     Room.inMemoryDatabaseBuilder(context.applicationContext, DonDatabase::class.java)
                 } else {
                     Room.databaseBuilder(context.applicationContext, DonDatabase::class.java, "don.db")
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                 }
                 ).build().also { instance = it }
         }
@@ -70,6 +70,13 @@ abstract class DonDatabase : RoomDatabase() {
             // 메모리 DB는 닫지 않고 놓기만 한다: 앞 테스트의 화면 밖 계산이 닫힌 DB를 읽어 다음 테스트를 깨지 않게
             if (!inMemoryForTests) instance?.close()
             instance = null
+        }
+
+        /** v25: "한 달 예산에서" 쓰는 곳 (주유소 등) */
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE settings ADD COLUMN monthlyPlaces TEXT NOT NULL DEFAULT '$MONTHLY_DEFAULT'")
+            }
         }
 
         /** v24: 애매한 알림은 물어보고 적기, 비서의 짐작, 기억한 알림 */

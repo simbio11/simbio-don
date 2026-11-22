@@ -1030,6 +1030,7 @@ class MainActivity : ComponentActivity() {
                     aiBase = com.simbio.don.app.ai.Ai.baseUrl(this)
                 },
                 onDailyCategories = { vm.setDailyCategories(it) },
+                onMonthlyPlaces = { vm.setMonthlyPlaces(it) },
                 calendarOn = calendarOn,
                 calendars = calendars,
                 shownCalendars = shownCalendars,

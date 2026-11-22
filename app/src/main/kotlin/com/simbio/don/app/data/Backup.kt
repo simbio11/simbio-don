@@ -53,7 +53,7 @@ object Backup {
             o.put("payDay", x.payDay); o.put("settlementDay", x.settlementDay); o.put("savings", x.savings)
             o.putOpt("pendingSettlementDay", x.pendingSettlementDay); o.put("subSeeded", x.subSeeded)
             o.put("milesSeeded", x.milesSeeded); o.putOpt("growEpochDay", x.growEpochDay); o.putOpt("ownerName", x.ownerName)
-            o.put("dailyCategories", x.dailyCategories); o.put("askFirst", x.askFirst)
+            o.put("dailyCategories", x.dailyCategories); o.put("askFirst", x.askFirst); o.put("monthlyPlaces", x.monthlyPlaces)
         })
         put("fixed", arr(d.fixed) { o, x ->
             o.put("id", x.id); o.put("name", x.name); o.put("amount", x.amount); o.putOpt("day", x.day)
@@ -188,7 +188,8 @@ object Backup {
                         pendingSettlementDay = o.intOrNull("pendingSettlementDay"), subSeeded = o.optBoolean("subSeeded", false),
                         milesSeeded = o.optBoolean("milesSeeded", false), growEpochDay = o.longOrNull("growEpochDay"),
                         ownerName = o.strOrNull("ownerName"),
-                        dailyCategories = o.optString("dailyCategories", "FOOD,CAFE,DELIVERY,TRANSPORT"), askFirst = o.optBoolean("askFirst", true))
+                        dailyCategories = o.optString("dailyCategories", "FOOD,CAFE,DELIVERY,TRANSPORT"), askFirst = o.optBoolean("askFirst", true),
+                        monthlyPlaces = o.optString("monthlyPlaces", MONTHLY_DEFAULT))
                 },
                 fixed = list(root, "fixed") { o ->
                     FixedExpenseEntity(o.getLong("id"), o.getString("name"), o.getLong("amount"), o.intOrNull("day"),

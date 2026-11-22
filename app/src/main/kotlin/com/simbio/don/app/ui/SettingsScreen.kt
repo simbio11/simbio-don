@@ -107,6 +107,8 @@ fun SettingsScreen(
     onAiOff: () -> Unit = {},
     /** "그날 쓰는 돈"으로 볼 분류 바꾸기 */
     onDailyCategories: (Set<String>) -> Unit = {},
+    /** "한 달 예산에서" 쓰는 곳 고치기 */
+    onMonthlyPlaces: (List<String>) -> Unit = {},
     /** 폰 캘린더 연동 (켰을 때만 읽고 씀) */
     calendarOn: Boolean = false,
     calendars: List<com.simbio.don.app.calendar.DeviceCalendar> = emptyList(),
@@ -195,6 +197,38 @@ fun SettingsScreen(
                     val on = c.name in daily
                     FilterChip(selected = on, onClick = { onDailyCategories(if (on) daily - c.name else daily + c.name) }, label = { Text(c.label) })
                 }
+            }
+        }
+
+        RealCard("한 달 예산에서 쓰는 곳") {
+            val places = com.simbio.don.app.data.MonthlySpend.places(settings.monthlyPlaces)
+            Text(
+                "주유비처럼 한 달에 한 번 크게 나가는 돈은 이번 달 남은 날에 나눠 빼요. 그날을 빨갛게 하거나 잔디·무지출·'이대로 쓰면'을 흔들지 않고, 가계부와 통계에는 그대로 들어가요. " +
+                    "기록에서 '한 달 예산에서'를 한 번 고르면 그 가게도 여기에 더해져요.",
+                fontSize = 12.sp,
+                color = DonColors.InkMuted,
+            )
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                places.forEach { p -> FilterChip(selected = true, onClick = { onMonthlyPlaces(places - p) }, label = { Text("$p  ✕") }) }
+            }
+            var add by remember { mutableStateOf("") }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = add,
+                    onValueChange = { add = it.take(30) },
+                    label = { Text("가게 이름 더하기 (예: 하이마트)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                com.simbio.don.app.ui.kit.SmallButton(onClick = {
+                    if (add.isNotBlank()) {
+                        onMonthlyPlaces(places + add.trim())
+                        add = ""
+                    }
+                }) { Text("더하기") }
+            }
+            if (places != com.simbio.don.app.data.MonthlySpend.places(com.simbio.don.app.data.MONTHLY_DEFAULT)) {
+                TextButton(onClick = { onMonthlyPlaces(com.simbio.don.app.data.MonthlySpend.places(com.simbio.don.app.data.MONTHLY_DEFAULT)) }) { Text("처음대로 (주유소)") }
             }
         }
 

@@ -25,6 +25,8 @@ data class SettingsEntity(
     val ownerName: String? = null,
     /** "그날 쓰는 돈"으로 볼 분류 (쉼표로) — 오늘 몫에서 뺀다. 나머지는 이번 주에서 나눈다 */
     @ColumnInfo(defaultValue = "FOOD,CAFE,DELIVERY,TRANSPORT") val dailyCategories: String = "FOOD,CAFE,DELIVERY,TRANSPORT",
+    /** "한 달 예산에서" 쓰는 곳 (쉼표로, 이름에 들어 있으면) — 주유소처럼 한 달에 한 번 큰돈. 한 번 고르면 그 가게를 더한다 */
+    @ColumnInfo(defaultValue = MONTHLY_DEFAULT) val monthlyPlaces: String = MONTHLY_DEFAULT,
     /**
      * 애매한 알림(입금·송금·이체·저축·카드값 등)은 바로 적지 않고 비서가 짐작만 해서 물어본 뒤 적는다.
      * 카드 결제처럼 분명한 건 그대로 적는다. 새로 설치한 앱·업데이트한 앱은 켜져 있다 (DB 기본값 1).

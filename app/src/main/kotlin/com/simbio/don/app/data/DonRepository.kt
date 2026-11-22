@@ -426,8 +426,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     private fun insightsOf(h: HomeState, fixed: List<FixedExpenseEntity>, recent: List<EntryEntity>, plans: List<PlanEntity> = emptyList()): HomeInsights {
         val planList = plans.map { it.toPlan() }
-        val entries = h.entries.map { it.toEntry() }
-        val recentEntries = recent.mapNotNull { e -> runCatching { e.toEntry() }.getOrNull() }
+        // "한 달 예산에서" 쓴 큰돈(주유비 등)은 날마다 보는 속도·무지출·평소와 비교에서 뺀다 (한 달 예산에서는 미리 뺀다)
+        val entries = MonthlySpend.daily(h.entries).map { it.toEntry() }
+        val monthlyTotal = h.entries.filter(MonthlySpend::isMonthly).sumOf { it.share ?: it.amount }
+        val recentEntries = MonthlySpend.daily(recent).mapNotNull { e -> runCatching { e.toEntry() }.getOrNull() }
         val upcoming = com.simbio.don.budget.UpcomingPayments.of(
             fixed.map { Triple(it.name, it.amount, it.day) },
             fixed.map { f -> f.lastDueEpochDay?.let { LocalDate.ofEpochDay(it) } },
@@ -444,7 +446,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
         }
         return HomeInsights(
             forecast = com.simbio.don.budget.Forecast.month(
-                entries, h.cycle.start, h.cycle.end, h.plan.disposable, h.today,
+                entries, h.cycle.start, h.cycle.end, (h.plan.disposable - monthlyTotal).coerceAtLeast(0), h.today,
                 planList.filter { it.open }.map { it.date to it.amount },
             ),
             plans = com.simbio.don.budget.Plans.summary(planList, h.cycle.start, h.cycle.end),
@@ -1886,7 +1888,10 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
 
     /** 이 기록을 어느 예산에서 쓴 것으로 볼지 (null 앱이 판단, 0 오늘 몫, 1 이번 주에 나눠서) */
     suspend fun setEntryBucket(entryId: Long, bucket: Int?) = locked {
-        dao.entryNow(entryId)?.let { dao.updateEntry(it.copy(bucket = bucket)) }
+        dao.entryNow(entryId)?.let {
+            dao.updateEntry(it.copy(bucket = bucket))
+            learnMonthly(it, bucket)
+        }
     }
 
     suspend fun registerNewAccount(entryId: Long): Long? {
@@ -2009,7 +2014,57 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             adjustSalaryLocked(amount, date)
             rollOverLocked(now ?: LocalDateTime.now())
         }
+        if (type == EntryType.SPEND) autoMonthly(id)
         id
+    }
+
+    // ── 한 달 예산에서 쓰는 곳 (주유소 등) ─────────────────────
+
+    /** "한 달 예산에서" 쓰는 곳 목록 */
+    val monthlyPlaces: Flow<List<String>> = dao.settings().map { MonthlySpend.places(it?.monthlyPlaces ?: MONTHLY_DEFAULT) }
+
+    private suspend fun placesNow(): List<String> = MonthlySpend.places(dao.settingsNow()?.monthlyPlaces ?: MONTHLY_DEFAULT)
+
+    /** 기억한 곳에서 쓴 지출이고 아직 예산을 안 골랐으면 "한 달 예산에서"로 */
+    private suspend fun autoMonthly(id: Long) {
+        val e = dao.entryNow(id) ?: return
+        if (e.type == EntryType.SPEND.name && e.bucket == null && MonthlySpend.matches(e.label, placesNow())) dao.updateEntry(e.copy(bucket = 2))
+    }
+
+    /** 최근 기록 중 기억한 곳에서 쓴 것 (예산을 안 고른 것)을 "한 달 예산에서"로 */
+    private suspend fun applyMonthlyPlaces(today: LocalDate) {
+        val places = placesNow()
+        if (places.isEmpty()) return
+        dao.entriesBetweenNow(today.minusDays(60).toEpochDay(), today.plusDays(1).toEpochDay())
+            .filter { it.type == EntryType.SPEND.name && it.bucket == null && MonthlySpend.matches(it.label, places) }
+            .forEach { dao.updateEntry(it.copy(bucket = 2)) }
+    }
+
+    /**
+     * 사용자가 기록의 예산을 골랐다: "한 달 예산에서"면 그 가게를 기억하고 (같은 가게 최근 기록도),
+     * "오늘 몫"·"이번 주"면 그 가게를 잊는다.
+     */
+    private suspend fun learnMonthly(e: EntryEntity, bucket: Int?, today: LocalDate = LocalDate.now()) {
+        if (e.type != EntryType.SPEND.name || e.label.isBlank() || e.nameUnknown) return
+        val s = dao.settingsNow() ?: return
+        val places = MonthlySpend.places(s.monthlyPlaces)
+        when (bucket) {
+            2 -> if (!MonthlySpend.matches(e.label, places)) {
+                dao.saveSettings(s.copy(monthlyPlaces = MonthlySpend.join(places + e.label.trim().take(30))))
+                applyMonthlyPlaces(today)
+            }
+            0, 1 -> {
+                val keep = places.filterNot { e.label.contains(it, ignoreCase = true) }
+                if (keep.size != places.size) dao.saveSettings(s.copy(monthlyPlaces = MonthlySpend.join(keep)))
+            }
+        }
+    }
+
+    /** 설정에서 "한 달 예산에서" 쓰는 곳 고치기 (더하면 최근 기록에도) */
+    suspend fun setMonthlyPlaces(places: List<String>, today: LocalDate = LocalDate.now()) = locked {
+        val s = dao.settingsNow() ?: return@locked
+        dao.saveSettings(s.copy(monthlyPlaces = MonthlySpend.join(places)))
+        applyMonthlyPlaces(today)
     }
 
     // ── 돈 나갈 계획 ───────────────────────────────────────────
@@ -2202,7 +2257,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun grass(today: LocalDate, weeks: Int, dailyPlan: Long): com.simbio.don.budget.Grass {
         val since = dao.cyclesNow().lastOrNull()?.let { LocalDate.ofEpochDay(it.startEpochDay) }
         val from = today.minusWeeks(weeks.toLong() + 1)
-        val entries = dao.entriesBetweenNow(from.toEpochDay(), today.toEpochDay()).map { it.toEntry() }
+        val entries = MonthlySpend.daily(dao.entriesBetweenNow(from.toEpochDay(), today.toEpochDay())).map { it.toEntry() }
         return com.simbio.don.budget.Grasses.of(entries, today, weeks, dailyPlan, since)
     }
 
@@ -2214,6 +2269,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
     suspend fun updateEntry(updated: EntryEntity, previous: EntryEntity, applyToSameLabel: Boolean): Int {
         val renamed = updated.label.isNotBlank() && updated.label != previous.label
         dao.updateEntry(if (renamed) updated.copy(nameUnknown = false) else updated)
+        if (updated.bucket != previous.bucket) locked { learnMonthly(updated, updated.bucket) }
         // 금액을 고치면 내 몫·이은 계획도 맞춘다
         if (updated.amount != previous.amount || updated.share != previous.share) locked { syncAmountLocked(dao.entryNow(updated.id) ?: updated, recomputeShare = false) }
         // 나눠 내기를 끄면 받은 정산은 다시 수입으로
@@ -2669,6 +2725,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun tidyUp(today: LocalDate = LocalDate.now()) = locked {
         migrateAlignEntriesLocked()
+        // 주유소처럼 한 달 예산에서 쓰는 곳 (아직 예산을 안 고른 최근 기록)
+        applyMonthlyPlaces(today)
         // 예전에 지출+수입이나 반쪽 두 개로 남은 내 통장끼리 이체를 한 건으로
         fixOwnMovesLocked(today)
         val recent = dao.entriesBetweenNow(today.minusDays(60).toEpochDay(), today.plusDays(1).toEpochDay())
@@ -3548,7 +3606,7 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
             )
             return category
         }
-        dao.insertEntry(
+        val newId = dao.insertEntry(
             EntryEntity(
                 epochDay = p.postedAt.toLocalDate().toEpochDay(),
                 amount = p.amount,
@@ -3568,6 +3626,8 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
                 acctGuess = routed.guess,
             ),
         )
+        // 주유소처럼 "한 달 예산에서" 쓰는 곳이면 그렇게 (날마다 보는 것에서 빠진다)
+        if (type == EntryType.SPEND) autoMonthly(newId)
         return category
     }
 

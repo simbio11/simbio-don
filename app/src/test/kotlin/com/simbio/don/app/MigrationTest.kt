@@ -283,4 +283,14 @@ class MigrationTest {
         db.execSQL("INSERT INTO notif_rule (packageName, pattern, decision) VALUES ('a', 'p', 'IGNORE')")
         db.query("SELECT auto, count FROM notif_rule").use { c -> c.moveToNext(); assertEquals(1, c.getInt(0)); assertEquals(0, c.getInt(1)) }
     }
+
+    @Test
+    fun v24에서_v25로_한_달_예산에서_쓰는_곳이_주유소로_시작한다() {
+        helper.createDatabase("m24.db", 24).use { db ->
+            db.execSQL("INSERT INTO settings (id, payDay, settlementDay, savings, subSeeded, milesSeeded) VALUES (0, 25, 1, 0, 1, 1)")
+        }
+        val db = helper.runMigrationsAndValidate("m24.db", 25, true, DonDatabase.MIGRATION_24_25)
+        db.query("SELECT monthlyPlaces FROM settings").use { c -> c.moveToNext(); assertEquals(com.simbio.don.app.data.MONTHLY_DEFAULT, c.getString(0)) }
+    }
 }
+
