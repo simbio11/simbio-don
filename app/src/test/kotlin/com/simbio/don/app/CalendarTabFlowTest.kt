@@ -96,12 +96,16 @@ class CalendarTabFlowTest {
     @Test
     fun 캘린더_탭에서_일정을_만들고_예산과_가계부를_같이_본다() {
         waitText("이대로 쓰면")
-        rule.onNodeWithText("캘린더").performClick()
+        // 캘린더 탭은 가계부 탭의 "달력"으로 들어왔다
+        rule.onAllNodesWithText("가계부").onLast().performClick()
+        waitText("달력")
+        rule.onNodeWithText("달력").performClick()
         waitText("${today.year}년 ${today.monthValue}월")
         waitText("구글 캘린더 등 폰 캘린더와 이으면", substring = true)
 
         // 사흘짜리 여행 (하루 종일) + 예산
-        rule.onNodeWithContentDescription("일정 추가").performClick()
+        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정"))
+        rule.onNodeWithText("+ 일정").performClick()
         waitText("일정 추가")
         rule.onAllNodes(hasSetTextAction() and hasText("제목")).onFirst().performTextReplacement("제주 여행")
         rule.onAllNodes(isToggleable()).onFirst().performClick()
@@ -124,7 +128,8 @@ class CalendarTabFlowTest {
         waitText("예산 30만")
 
         // 시각 있는 일정 + 알림
-        rule.onNodeWithContentDescription("일정 추가").performClick()
+        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정"))
+        rule.onNodeWithText("+ 일정").performClick()
         waitText("일정 추가")
         rule.onAllNodes(hasSetTextAction() and hasText("제목")).onFirst().performTextReplacement("치과")
         rule.onNodeWithText("30분 전").performScrollTo().performClick()

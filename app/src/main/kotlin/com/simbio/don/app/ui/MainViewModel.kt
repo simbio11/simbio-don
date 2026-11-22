@@ -407,6 +407,66 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val moveRules = repo.moveRules.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     fun forgetMoveRule(id: Long) = viewModelScope.launch { repo.forgetMoveRule(id) }
 
+    // ── AI 대화 (두 손가락으로 위로 밀면) ──
+    private val harness = com.simbio.don.app.data.LedgerHarness(repo)
+    private val agent = com.simbio.don.app.ai.AgentChat(harness, { req -> com.simbio.don.app.ai.Ai.turn(getApplication(), req) })
+    val chatLines = MutableStateFlow<List<com.simbio.don.app.ai.ChatLine>>(emptyList())
+    val chatBusy = MutableStateFlow(false)
+
+    fun chatAsk(text: String) {
+        if (text.isBlank() || chatBusy.value) return
+        chatBusy.value = true
+        chatLines.value = chatLines.value + com.simbio.don.app.ai.ChatLine.You(text.trim())
+        viewModelScope.launch {
+            try {
+                agent.ask(text) { line -> chatLines.value = chatLines.value + line }
+            } finally {
+                chatBusy.value = false
+            }
+        }
+    }
+
+    fun chatClear() {
+        if (chatBusy.value) return
+        agent.clear()
+        chatLines.value = emptyList()
+    }
+
+    /** 제안에 답하기: [apply]면 가계부에 넣고, 아니면 버린다 */
+    fun chatAnswer(p: com.simbio.don.app.ai.ChatLine.Proposal, apply: Boolean) = viewModelScope.launch {
+        if (p.state != 0) return@launch
+        val a = p.action
+        val ok = if (!apply) true else runCatching { applyAction(a) }.getOrElse { false }
+        chatLines.value = chatLines.value.map { if (it is com.simbio.don.app.ai.ChatLine.Proposal && it.action.id == a.id) it.copy(state = if (apply && ok) 1 else 2) else it }
+        if (apply && !ok) chatLines.value = chatLines.value + com.simbio.don.app.ai.ChatLine.Problem("그 기록을 찾지 못해 적용하지 못했어요")
+        agent.note(if (apply && ok) "사용자가 제안 '${a.summary}'을 적용했어요" else "사용자가 제안 '${a.summary}'을 적용하지 않았어요")
+    }
+
+    private suspend fun applyAction(a: com.simbio.don.app.data.AgentAction): Boolean {
+        when (a.kind) {
+            com.simbio.don.app.data.AgentAction.Kind.ADD -> {
+                val type = a.type ?: com.simbio.don.budget.EntryType.SPEND
+                val cat = a.category ?: if (type == com.simbio.don.budget.EntryType.INCOME) com.simbio.don.budget.Category.OTHER_INCOME else com.simbio.don.budget.Category.ETC
+                save(EntryDraft(a.date ?: clock.value.toLocalDate(), a.amount ?: return false, a.label.orEmpty(), type, cat, "", false, accountId = a.accountId), null).join()
+            }
+            com.simbio.don.app.data.AgentAction.Kind.EDIT -> {
+                val e = repo.entryNow(a.entryId ?: return false) ?: return false
+                val draft = EntryDraft(
+                    a.date ?: java.time.LocalDate.ofEpochDay(e.epochDay), a.amount ?: e.amount, a.label ?: e.label,
+                    a.type ?: runCatching { com.simbio.don.budget.EntryType.valueOf(e.type) }.getOrDefault(com.simbio.don.budget.EntryType.SPEND), a.category ?: com.simbio.don.budget.Category.of(e.category),
+                    e.memo, false, e.accountId, e.toAccountId, e.minuteOfDay, e.sub,
+                    share = e.share, people = e.people, owe = e.owe, want = e.want, bucket = e.bucket,
+                )
+                save(draft, e).join()
+            }
+            com.simbio.don.app.data.AgentAction.Kind.DELETE -> {
+                val e = repo.entryNow(a.entryId ?: return false) ?: return false
+                repo.deleteEntry(e)
+            }
+        }
+        return true
+    }
+
     // ── 비서: 애매한 알림은 묻고 적기, 기억한 알림 ──
     val askItems = repo.askItems.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     fun answerAsk(item: com.simbio.don.app.data.ReviewItemEntity, g: com.simbio.don.app.data.AskGuess, remember: Boolean) =

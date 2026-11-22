@@ -102,6 +102,8 @@ fun HomeScreen(
     asks: List<com.simbio.don.app.data.ReviewItemEntity> = emptyList(),
     onAnswerAsk: (com.simbio.don.app.data.ReviewItemEntity, com.simbio.don.app.data.AskGuess, Boolean) -> Unit = { _, _, _ -> },
     onAssistant: (() -> Unit)? = null,
+    /** AI 비서와 대화 */
+    onChat: (() -> Unit)? = null,
     onOpenAssets: () -> Unit = {},
     /** 알림으로 적힌 결제 중 확신 없는 것과 자동 기록률 */
     auto: com.simbio.don.app.data.DonRepository.AutoState = com.simbio.don.app.data.DonRepository.AutoState(emptyList(), com.simbio.don.budget.AutoRate(0, 0)),
@@ -220,7 +222,7 @@ fun HomeScreen(
                 // 새 달 첫 두 주만
                 HomeCard.REPORT -> if (report != null && home.today.toEpochDay() - home.cycle.start.toEpochDay() < 14) ReportCard(report)
                 HomeCard.CANBUY -> Box(Modifier.riseIn("home.CANBUY", i)) { CanBuyHomeCard(onCanBuy, wishes, home.today, onWishes) }
-                HomeCard.AI -> if (aiOn) AiHomeCard(onAi)
+                HomeCard.AI -> if (aiOn) AiHomeCard(onAi, onChat)
                 HomeCard.TILES -> {
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatTile("이번 달 지출", won(home.monthLiving), "고정 지출은 기록만 (${won((home.monthSpent - home.monthLiving).coerceAtLeast(0))})", Modifier.weight(1f))

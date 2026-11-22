@@ -177,29 +177,25 @@ class CalendarFlowTest {
         assertEquals(0L, home.day.spentDaily)
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
 
-        // 가계부 달력에서도 일정 넣기: 치과 · 점심 12시 · 3만 원 (폰 캘린더로)
+        // 가계부 달력(= 캘린더)에서도 일정 넣기: 치과 · 3만 원 (폰 캘린더로)
         rule.onAllNodesWithText("가계부").onLast().performClick()
         waitText("달력")
         rule.onNodeWithText("달력").performClick()
-        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정 추가"))
-        rule.onNodeWithText("+ 일정 추가").performClick()
+        rule.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("+ 일정"))
+        rule.onNodeWithText("+ 일정").performClick()
         waitText("일정 추가", substring = true)
-        rule.onAllNodes(hasSetTextAction() and hasText("일정 (예: 친구 생일 모임)")).onFirst().performTextReplacement("치과")
-        rule.onAllNodes(hasSetTextAction() and hasText("쓸 돈 (선택)")).onFirst().performTextReplacement("30000")
-        rule.waitForIdle()
-        rule.onNodeWithText("점심 12시").performClick()
+        rule.onAllNodes(hasSetTextAction() and hasText("제목")).onFirst().performTextReplacement("치과")
+        rule.onAllNodes(hasSetTextAction() and hasText("예산")).onFirst().performScrollTo().performTextReplacement("30000")
         rule.waitForIdle()
         shot("c4_add_event")
-        rule.onNodeWithText("캘린더에 넣기").performScrollTo().performClick()
+        rule.onNodeWithText("저장").performClick()
         rule.waitUntil(5_000) { fake.list.any { it.title == "치과" } }
         val added = fake.list.single { it.title == "치과" }
-        assertEquals(12 * 60, added.minuteOfDay)
         assertEquals(1L, added.calendarId)
         assertEquals(today, added.date)
         rule.waitUntil(5_000) { bg { repo.plans.first() }.any { it.eventId == added.eventId } }
         assertEquals(Category.HEALTH.name, bg { repo.plans.first() }.single { it.eventId == added.eventId }.category)
         waitText("치과")
-        waitText("12:00", substring = true)
         shot("c5_after_add")
     }
 }

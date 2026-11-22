@@ -23,6 +23,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
+import com.simbio.don.app.ui.kit.twoFingerSwipeUp
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -123,7 +124,6 @@ import java.time.LocalDate
 private enum class Tab(val label: String, val icon: UiIcon, val selectedIcon: UiIcon) {
     Home("홈", UiIcon.HOME, UiIcon.HOME_ON),
     Ledger("가계부", UiIcon.LIST, UiIcon.LIST_ON),
-    Calendar("캘린더", UiIcon.CALENDAR, UiIcon.CALENDAR),
     Stats("통계", UiIcon.PIE, UiIcon.PIE_ON),
     Assets("자산", UiIcon.BANK, UiIcon.BANK_ON),
     House("내 집", UiIcon.HOUSE, UiIcon.HOUSE_ON),
@@ -158,6 +158,9 @@ private sealed interface Overlay {
 
     /** 비서: 물어볼 알림·찾은 문제·기억한 알림·AI 점검 */
     data object Assistant : Overlay
+
+    /** AI 비서와 대화 (두 손가락으로 위로) */
+    data object Chat : Overlay
 
     /** 캘린더 일정 보기 · 만들기/고치기 */
     data class EventDetail(val event: com.simbio.don.app.calendar.CalEvent) : Overlay
@@ -423,7 +426,8 @@ class MainActivity : ComponentActivity() {
                     screens.clear()
                     calDate = LocalDate.now()
                     vm.showCalendarMonth(java.time.YearMonth.now())
-                    tab = Tab.Calendar
+                    ledgerMode = LedgerMode.CALENDAR
+                    tab = Tab.Ledger
                 }
                 ACTION_ASSETS -> {
                     screens.clear()
@@ -445,16 +449,19 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = screens.isEmpty && tab != Tab.Home) { tab = Tab.Home }
 
         val names = home.accounts.associate { it.account.id to it.account.name }
-        ScreenHost(
-            screens,
-            base = {
-                MainTabs(
-                    home, tab, { tab = it }, screens, snackbar, names, ledgerDate, { ledgerDate = it }, ledgerCategory, { ledgerCategory = it }, ledgerMode,
-                    { ledgerMode = it }, weather, calDate, { calDate = it },
-                )
-            },
-        ) { o, close ->
-            Overlay(o, home, close, open = { screens.push(it) }, goHouse = { screens.clear(); tab = Tab.House }, screens = screens)
+        // 어디서든 두 손가락으로 위로 쓸어 올리면 AI 비서와 대화
+        Box(Modifier.fillMaxSize().twoFingerSwipeUp(enabled = screens.top !is Overlay.Chat) { screens.push(Overlay.Chat) }) {
+            ScreenHost(
+                screens,
+                base = {
+                    MainTabs(
+                        home, tab, { tab = it }, screens, snackbar, names, ledgerDate, { ledgerDate = it }, ledgerCategory, { ledgerCategory = it }, ledgerMode,
+                        { ledgerMode = it }, weather, calDate, { calDate = it },
+                    )
+                },
+            ) { o, close ->
+                Overlay(o, home, close, open = { screens.push(it) }, goHouse = { screens.clear(); tab = Tab.House }, screens = screens)
+            }
         }
     }
 
@@ -505,13 +512,11 @@ class MainActivity : ComponentActivity() {
                 }
             },
             floatingActionButton = {
-                if (tab == Tab.Calendar) {
-                    AddFab(onClick = { screens.push(Overlay.EventEdit(null, calDate)) }, contentDescription = "일정 추가")
-                }
                 if (tab == Tab.Home || tab == Tab.Ledger) {
                     AddFab(
                         onClick = {
-                            val d = ledgerDate.takeIf { tab == Tab.Ledger && ledgerMode == LedgerMode.CALENDAR }
+                            // 달력에서는 고른 날로 쓴다 (일정은 그날 카드의 "일정 추가")
+                            val d = calDate.takeIf { tab == Tab.Ledger && ledgerMode == LedgerMode.CALENDAR }
                             screens.push(Overlay.Edit(null, d?.let { EntryDraft(it, 0, "", EntryType.SPEND, Category.ETC, "", false) }))
                         },
                         contentDescription = "가계부 쓰기",
@@ -580,6 +585,7 @@ class MainActivity : ComponentActivity() {
                         asks = vm.askItems.collectAsStateWithLifecycle().value,
                         onAnswerAsk = { i, g, keep -> vm.answerAsk(i, g, keep) },
                         onAssistant = { screens.push(Overlay.Assistant) },
+                        onChat = { screens.push(Overlay.Chat) },
                         onOpenAssets = { onTab(Tab.Assets) },
                         auto = vm.autoState.collectAsStateWithLifecycle().value,
                         onConfirmCategory = { e, c -> vm.confirmCategory(e.id, c) },
@@ -604,8 +610,8 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
                         },
                         onRejectHint = { h -> vm.rejectPlanMatch(h.plan.id, h.entry.id) },
-                        onCalendarDay = { d -> vm.resetMonth(); onLedgerDate(d); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
-                        onEventDay = { d -> onCalDate(d); vm.showCalendarMonth(java.time.YearMonth.from(d)); onTab(Tab.Calendar) },
+                        onCalendarDay = { d -> onCalDate(d); vm.showCalendarMonth(java.time.YearMonth.from(d)); onLedgerCategory(null); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
+                        onEventDay = { d -> onCalDate(d); vm.showCalendarMonth(java.time.YearMonth.from(d)); onLedgerMode(LedgerMode.CALENDAR); onTab(Tab.Ledger) },
                         onAddFixed = { s ->
                             vm.addFixedExpense(s.label, s.amount, s.day)
                             Toast.makeText(this, "${s.label}을 고정비로 넣었어요. 다음 달부터 미리 빼 둘게요", Toast.LENGTH_SHORT).show()
@@ -649,7 +655,8 @@ class MainActivity : ComponentActivity() {
                         onChooseAccount = { e, id, remember -> vm.chooseAccount(e.id, id, remember) },
                         onNewAccount = { e -> vm.registerNewAccount(e) { name -> Toast.makeText(this, "'$name'을 내 통장으로 등록했어요", Toast.LENGTH_SHORT).show() } },
                     )
-                    Tab.Calendar -> {
+                    // 가계부 달력 = 캘린더 (일정·쓴 돈·계획을 한 달력에서)
+                    Tab.Ledger, Tab.Stats -> if (t == Tab.Ledger && ledgerMode == LedgerMode.CALENDAR) {
                         val month by vm.calendarMonth.collectAsStateWithLifecycle()
                         val events by vm.calendarEvents.collectAsStateWithLifecycle()
                         val entries by vm.calendarEntries.collectAsStateWithLifecycle()
@@ -680,9 +687,10 @@ class MainActivity : ComponentActivity() {
                             onOpenEntry = { screens.push(Overlay.Edit(it)) },
                             onAddEntry = { d -> screens.push(Overlay.Edit(null, EntryDraft(d, 0, "", EntryType.SPEND, Category.ETC, "", false))) },
                             accountNames = names,
+                            onPlans = { screens.push(Overlay.Plans) },
+                            header = { item { Box(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) { com.simbio.don.app.ui.LedgerTabs(ledgerMode, onLedgerMode) } } },
                         )
-                    }
-                    Tab.Ledger, Tab.Stats -> {
+                    } else {
                         val view by vm.month.collectAsStateWithLifecycle()
                         val cycles by vm.cycles.collectAsStateWithLifecycle()
                         val summaries by vm.summaries.collectAsStateWithLifecycle()
@@ -769,8 +777,10 @@ class MainActivity : ComponentActivity() {
         var haptics by remember { mutableStateOf(UiPrefs.haptics(this)) }
         var widgetTheme by remember { mutableStateOf(UiPrefs.widgetTheme(this)) }
         var widgetOpacity by remember { mutableStateOf(UiPrefs.widgetOpacity(this)) }
+        var aiProvider by remember { mutableStateOf(com.simbio.don.app.ai.Ai.provider(this)) }
         var aiKey by remember { mutableStateOf(com.simbio.don.app.ai.Ai.maskedKey(this)) }
         var aiModel by remember { mutableStateOf(com.simbio.don.app.ai.Ai.model(this)) }
+        var aiBase by remember { mutableStateOf(com.simbio.don.app.ai.Ai.baseUrl(this)) }
         var reminderOn by remember { mutableStateOf(DailyReminder.isOn(this)) }
         var weatherCity by remember { mutableStateOf(WeatherService.city(this)?.name) }
         // 앱 잠금은 위에 연 화면(암호 정하기)에서 바뀌므로 이 화면으로 돌아올 때 다시 읽는다
@@ -864,7 +874,15 @@ class MainActivity : ComponentActivity() {
                     Widgets.refresh(this)
                 },
                 aiKey = aiKey,
+                aiProvider = aiProvider,
                 aiModel = aiModel,
+                aiBase = aiBase,
+                onAiProvider = { p ->
+                    com.simbio.don.app.ai.Ai.setProvider(this, p)
+                    aiProvider = p
+                    aiKey = com.simbio.don.app.ai.Ai.maskedKey(this)
+                    aiModel = com.simbio.don.app.ai.Ai.model(this)
+                },
                 onAiKey = { k ->
                     com.simbio.don.app.ai.Ai.setKey(this, k)
                     aiKey = com.simbio.don.app.ai.Ai.maskedKey(this)
@@ -872,6 +890,10 @@ class MainActivity : ComponentActivity() {
                 onAiModel = { m ->
                     com.simbio.don.app.ai.Ai.setModel(this, m)
                     aiModel = m
+                },
+                onAiBase = { u ->
+                    com.simbio.don.app.ai.Ai.setBaseUrl(this, u)
+                    aiBase = com.simbio.don.app.ai.Ai.baseUrl(this)
                 },
                 onDailyCategories = { vm.setDailyCategories(it) },
                 calendarOn = calendarOn,
@@ -1252,6 +1274,15 @@ class MainActivity : ComponentActivity() {
                     onBack = close,
                 )
             }
+            Overlay.Chat -> com.simbio.don.app.ui.ChatScreen(
+                lines = vm.chatLines.collectAsStateWithLifecycle().value,
+                busy = vm.chatBusy.collectAsStateWithLifecycle().value,
+                onSend = { vm.chatAsk(it) },
+                onAnswer = { p, apply -> vm.chatAnswer(p, apply) },
+                onClear = { vm.chatClear() },
+                onSettings = { open(Overlay.Settings) },
+                onBack = close,
+            )
             Overlay.Assistant -> com.simbio.don.app.ui.AssistantScreen(
                 asks = vm.askItems.collectAsStateWithLifecycle().value,
                 accounts = home.accounts.map { it.account },

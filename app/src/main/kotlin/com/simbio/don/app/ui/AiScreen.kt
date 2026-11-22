@@ -94,7 +94,7 @@ fun AiScreen(
     var question by remember { mutableStateOf("") }
     var showSent by remember { mutableStateOf(false) }
     val on = remember { Ai.isOn(context) }
-    val model = remember { Ai.model(context) }
+    val model = remember { Ai.label(context) }
     val categories = remember { Category.spending + Category.incomes }
     val summary = remember(home, splits) { AiTasks.summary(home, splits) }
 
@@ -131,7 +131,7 @@ fun AiScreen(
                 FormCard {
                     Text("AI 도우미가 꺼져 있어요", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
                     Text(
-                        "설정 › AI 도우미에 내 Anthropic API 키를 넣으면 켜져요. 키는 이 폰에만 암호화해 두고, 요금은 키 주인에게 나와요.",
+                        "설정 › AI 도우미에서 Claude·Gemini·ChatGPT 등 내 API 키를 넣으면 켜져요. 키는 이 폰에만 암호화해 두고, 요금은 키 주인에게 나와요.",
                         fontSize = 13.sp,
                         color = DonColors.InkSoft,
                     )
@@ -198,7 +198,7 @@ fun AiScreen(
                     )
                     Text("+ 앱이 붙이는 안내문 (어떻게 답할지)", fontSize = 11.sp, color = DonColors.InkFaint)
                 }
-                Text("${model.label}로 보내요 · 설정에서 바꿀 수 있어요", fontSize = 11.sp, color = DonColors.InkFaint)
+                Text("${model}로 보내요 · 설정에서 바꿀 수 있어요", fontSize = 11.sp, color = DonColors.InkFaint)
             }
 
             Button(
@@ -293,9 +293,13 @@ private fun CoachList(title: String, items: List<String>, color: Color) {
 
 /** 홈 카드: AI를 켰을 때만 */
 @Composable
-fun AiHomeCard(onOpen: (AiMode) -> Unit) {
+fun AiHomeCard(onOpen: (AiMode) -> Unit, onChat: (() -> Unit)? = null) {
     SectionCard("AI 도우미") {
         Text("말로 적거나, 이번 달을 점검받거나, 돈 고민을 물어보세요. 누를 때만 보내요.", fontSize = 12.sp, color = DonColors.InkMuted)
+        if (onChat != null) {
+            com.simbio.don.app.ui.kit.Button(onClick = onChat, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("AI 비서와 대화") }
+            Text("어느 화면에서든 두 손가락으로 위로 쓸어 올려도 열려요.", fontSize = 11.sp, color = DonColors.InkFaint, modifier = Modifier.padding(top = 4.dp))
+        }
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             AiMode.entries.forEach { m ->
                 SubButton(onClick = { onOpen(m) }, modifier = Modifier.weight(1f)) { Text(m.label, fontSize = 13.sp) }

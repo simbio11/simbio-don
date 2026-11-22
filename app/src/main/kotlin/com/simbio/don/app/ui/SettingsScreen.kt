@@ -96,9 +96,13 @@ fun SettingsScreen(
     onWidgetOpacity: (Int) -> Unit = {},
     /** AI 도우미: 켰으면 가린 키 (끝 네 글자) */
     aiKey: String? = null,
-    aiModel: com.simbio.don.app.ai.AiModel = com.simbio.don.app.ai.AiModel.OPUS,
+    aiProvider: com.simbio.don.app.ai.AiProvider = com.simbio.don.app.ai.AiProvider.CLAUDE,
+    aiModel: String = com.simbio.don.app.ai.AiModel.OPUS.id,
+    aiBase: String = "",
+    onAiProvider: (com.simbio.don.app.ai.AiProvider) -> Unit = {},
     onAiKey: (String) -> Unit = {},
-    onAiModel: (com.simbio.don.app.ai.AiModel) -> Unit = {},
+    onAiModel: (String) -> Unit = {},
+    onAiBase: (String) -> Unit = {},
     onAiOff: () -> Unit = {},
     /** "그날 쓰는 돈"으로 볼 분류 바꾸기 */
     onDailyCategories: (Set<String>) -> Unit = {},
@@ -291,38 +295,75 @@ fun SettingsScreen(
 
         RealCard("AI 도우미 (선택)") {
             Text(
-                "말로 적기 · 이번 달 점검 · 물어보기를 Claude가 도와요. 내 Anthropic API 키로 쓰고, 요금은 키 주인에게 나와요.",
+                "말로 적기 · 이번 달 점검 · 비서 점검 · AI 대화(두 손가락으로 화면을 위로 쓸어 올리기)를 도와요. 고른 회사의 내 API 키로 쓰고, 요금은 키 주인에게 나와요.",
                 fontSize = 12.sp,
                 color = DonColors.InkMuted,
             )
             Text(
-                "누를 때만, 보여 드린 내용만 보내요. 이번 달 점검·물어보기는 합계 숫자만, 말로 적기는 직접 친 문장만 — 알림 글·가게 이름·메모·계좌 이름은 보내지 않아요. 키는 이 폰에만 암호화해 두고 백업에 넣지 않아요.",
+                "누를 때만 보내요. 점검은 합계 숫자만, AI 대화는 가계부 기록(날짜·금액·이름·분류·통장 이름)을 도구로 찾아봐요 — 알림 원문·메모·캘린더는 어디에도 보내지 않아요. 키는 이 폰에만 암호화해 두고 백업에 넣지 않아요.",
                 fontSize = 12.sp,
                 color = DonColors.InkSoft,
             )
+            Text("어느 AI", fontSize = 14.sp, color = DonColors.Ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                com.simbio.don.app.ai.AiProvider.entries.forEach { p ->
+                    FilterChip(selected = aiProvider == p, onClick = { onAiProvider(p) }, label = { Text(p.short) })
+                }
+            }
+            Text(aiProvider.label, fontSize = 12.sp, color = DonColors.InkMuted)
+            if (aiProvider == com.simbio.don.app.ai.AiProvider.COMPATIBLE) {
+                var base by remember(aiBase) { mutableStateOf(aiBase) }
+                OutlinedTextField(
+                    value = base,
+                    onValueChange = { base = it.trim().take(200) },
+                    label = { Text("주소 (예: https://openrouter.ai/api/v1)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (base != aiBase) TextButton(onClick = { onAiBase(base) }) { Text("주소 저장") }
+                Text("…/chat/completions 를 받는 곳이면 돼요: OpenRouter, Groq, DeepSeek, Mistral, Together, 내 컴퓨터의 Ollama(http://…:11434/v1) 등.", fontSize = 11.sp, color = DonColors.InkMuted)
+            }
             if (aiKey == null) {
-                var key by remember { mutableStateOf("") }
+                var key by remember(aiProvider) { mutableStateOf("") }
                 OutlinedTextField(
                     value = key,
-                    onValueChange = { key = it.trim().take(200) },
-                    label = { Text("API 키 (sk-ant-…)") },
+                    onValueChange = { key = it.trim().take(300) },
+                    label = { Text("API 키 (${aiProvider.keyHint})") },
                     singleLine = true,
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("키는 console.anthropic.com › API Keys에서 만들어요.", fontSize = 12.sp, color = DonColors.InkMuted)
-                com.simbio.don.app.ui.kit.Button(onClick = { onAiKey(key) }, enabled = key.length >= 20, modifier = Modifier.fillMaxWidth()) { Text("AI 도우미 켜기") }
+                Text("키는 ${aiProvider.keyWhere}에서 만들어요.", fontSize = 12.sp, color = DonColors.InkMuted)
+                com.simbio.don.app.ui.kit.Button(onClick = { onAiKey(key) }, enabled = key.length >= 8, modifier = Modifier.fillMaxWidth()) { Text("${aiProvider.short} 켜기") }
             } else {
                 Text("켜짐 · 키 $aiKey", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DonColors.Good)
-                Text("모델", fontSize = 14.sp, color = DonColors.Ink)
+            }
+            Text("모델", fontSize = 14.sp, color = DonColors.Ink)
+            if (aiProvider.models.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    com.simbio.don.app.ai.AiModel.entries.forEach { m ->
-                        FilterChip(selected = aiModel == m, onClick = { onAiModel(m) }, label = { Text(m.label) })
+                    aiProvider.models.forEach { m ->
+                        FilterChip(selected = aiModel == m.id, onClick = { onAiModel(m.id) }, label = { Text(m.label) })
                     }
                 }
-                Text(aiModel.note + if (aiModel.fallback) " · 거절되면 서버가 다른 모델로 다시 해 봐요" else "", fontSize = 12.sp, color = DonColors.InkMuted)
-                TextButton(onClick = onAiOff, color = DonColors.Warn) { Text("키 지우고 끄기") }
+                aiProvider.models.firstOrNull { it.id == aiModel }?.let { m ->
+                    Text(
+                        m.note + if (aiProvider == com.simbio.don.app.ai.AiProvider.CLAUDE && com.simbio.don.app.ai.AiModel.entries.firstOrNull { it.id == m.id }?.fallback == true) " · 거절되면 서버가 다른 모델로 다시 해 봐요" else "",
+                        fontSize = 12.sp,
+                        color = DonColors.InkMuted,
+                    )
+                }
             }
+            // 새 모델이 나오면 이름을 직접 넣는다
+            var custom by remember(aiProvider, aiModel) { mutableStateOf(if (aiProvider.models.any { it.id == aiModel }) "" else aiModel) }
+            OutlinedTextField(
+                value = custom,
+                onValueChange = { custom = it.trim().take(100) },
+                label = { Text(if (aiProvider.models.isEmpty()) "모델 이름 (예: deepseek-chat)" else "다른 모델 이름 직접 넣기") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (custom.isNotBlank() && custom != aiModel) TextButton(onClick = { onAiModel(custom) }) { Text("이 모델 쓰기") }
+            if (aiKey != null) TextButton(onClick = onAiOff, color = DonColors.Warn) { Text("${aiProvider.short} 키 지우기") }
         }
 
         RealCard("알림·위젯") {

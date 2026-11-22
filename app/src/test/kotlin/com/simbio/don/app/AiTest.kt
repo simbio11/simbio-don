@@ -8,6 +8,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -133,13 +135,42 @@ class AiTasksTest {
         assertTrue(Ai.isOn(context))
         assertEquals("sk-ant-api03-abcdefghijklmnop1234", Ai.key(context))
         assertEquals("••••1234", Ai.maskedKey(context))
-        assertEquals(AiModel.OPUS, Ai.model(context))
-        Ai.setModel(context, AiModel.HAIKU)
-        assertEquals(AiModel.HAIKU, Ai.model(context))
+        assertEquals(AiModel.OPUS.id, Ai.model(context))
+        Ai.setModel(context, AiModel.HAIKU.id)
+        assertEquals(AiModel.HAIKU.id, Ai.model(context))
         Ai.clear(context)
         assertFalse(Ai.isOn(context))
         val reply = runBlocking { Ai.send(context, AiRequest("s", "u")) }
         assertTrue(reply is AiReply.Failed)
+    }
+
+    @Test
+    fun `AI 회사마다 키·모델을 따로 두고, 예전 Claude 설정은 그대로 읽는다`() {
+        // 0.35까지: Claude 키는 "key", 모델은 "model"에 AiModel 이름
+        context.getSharedPreferences("ai", android.content.Context.MODE_PRIVATE).edit().putString("key", "p:sk-ant-old-key-123456").putString("model", "SONNET").commit()
+        assertEquals(com.simbio.don.app.ai.AiProvider.CLAUDE, Ai.provider(context))
+        assertEquals("sk-ant-old-key-123456", Ai.key(context))
+        assertEquals(AiModel.SONNET.id, Ai.model(context))
+        assertEquals("Claude · Sonnet 5.5", Ai.label(context))
+
+        Ai.setProvider(context, com.simbio.don.app.ai.AiProvider.GEMINI)
+        assertFalse(Ai.isOn(context))
+        Ai.setKey(context, "AIzaSyTestKey000000")
+        assertTrue(Ai.isOn(context))
+        assertEquals("gemini-2.5-pro", Ai.model(context))
+        Ai.setModel(context, "gemini-3-pro-preview")
+        assertEquals("Gemini · gemini-3-pro-preview", Ai.label(context))
+        // Claude 키는 그대로
+        assertEquals("sk-ant-old-key-123456", Ai.key(context, com.simbio.don.app.ai.AiProvider.CLAUDE))
+
+        // 호환: 주소와 모델이 있어야 켜진다
+        Ai.setProvider(context, com.simbio.don.app.ai.AiProvider.COMPATIBLE)
+        Ai.setKey(context, "sk-or-v1-test")
+        assertFalse(Ai.isOn(context))
+        Ai.setBaseUrl(context, "https://openrouter.ai/api/v1/")
+        Ai.setModel(context, "deepseek/deepseek-chat")
+        assertTrue(Ai.isOn(context))
+        assertEquals("https://openrouter.ai/api/v1", Ai.baseUrl(context))
     }
 }
 
@@ -245,5 +276,108 @@ class AiFlowTest {
         assertTrue(coach.user.contains("식비"))
         assertNotNull(coach.schema)
         shot("a3_coach")
+    }
+}
+
+/** 화면: 두 손가락으로 위로 쓸어 올리면 AI 대화 → 시키기 → 제안 [적용] (가짜 AI로) */
+@OptIn(ExperimentalTestApi::class)
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [34], qualifiers = "ko-rKR-w400dp-h880dp-xhdpi")
+class ChatFlowTest {
+    private val appContext: android.content.Context get() = ApplicationProvider.getApplicationContext()
+    val rule = createAndroidComposeRule<MainActivity>()
+    private val seen = mutableListOf<com.simbio.don.app.ai.AgentRequest>()
+
+    @get:Rule
+    val chain: RuleChain = RuleChain.outerRule(object : ExternalResource() {
+        override fun before() {
+            DonDatabase.inMemoryForTests = true
+            DonRepository.resetForTests()
+            val start = LocalDate.now().minusDays(3)
+            runBlocking {
+                DonRepository.get(appContext).completeOnboarding(3_300_000, start.dayOfMonth, listOf(FixedExpense("월세", 700_000)), 500_000, DayOfWeek.MONDAY, start, null)
+            }
+            Ai.setProvider(appContext, com.simbio.don.app.ai.AiProvider.GEMINI)
+            Ai.setKey(appContext, "AIzaTestKey0000")
+            Ai.backendForTests = object : AiBackend {
+                override suspend fun send(model: String, req: AiRequest): AiReply = AiReply.Failed("안 씀")
+                override suspend fun turn(model: String, req: com.simbio.don.app.ai.AgentRequest): com.simbio.don.app.ai.AgentReply {
+                    seen += req
+                    return if (req.turns.last() is com.simbio.don.app.ai.Turn.User) {
+                        com.simbio.don.app.ai.AgentReply.Ok(
+                            com.simbio.don.app.ai.Turn.Model(
+                                "",
+                                listOf(com.simbio.don.app.ai.ToolCall("c1", "propose_add", org.json.JSONObject("""{"date":"${LocalDate.now()}","amount":4500,"label":"김밥","type":"SPEND","category":"FOOD"}"""))),
+                            ),
+                        )
+                    } else {
+                        com.simbio.don.app.ai.AgentReply.Ok(com.simbio.don.app.ai.Turn.Model("오늘 김밥 4,500원을 적을 수 있게 제안했어요. [적용]을 눌러 주세요."))
+                    }
+                }
+            }
+        }
+
+        override fun after() {
+            Ai.backendForTests = null
+            Ai.clear(appContext)
+            Ai.setProvider(appContext, com.simbio.don.app.ai.AiProvider.CLAUDE)
+            DonRepository.resetForTests()
+        }
+    }).around(rule)
+
+    private fun waitText(text: String, substring: Boolean = false) = rule.waitUntilAtLeastOneExists(hasText(text, substring = substring), 5_000)
+
+    private fun <T> db(block: suspend com.simbio.don.app.data.DonDao.() -> T): T {
+        val dao = DonDatabase.get(appContext).dao()
+        var r: Result<T>? = null
+        val t = Thread { r = runCatching { runBlocking { dao.block() } } }
+        t.start()
+        rule.waitUntil(10_000) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            !t.isAlive
+        }
+        return r!!.getOrThrow()
+    }
+
+    private fun shot(name: String) {
+        val dir = System.getProperty("screenshotDir") ?: return
+        val view = rule.activity.window.decorView.rootView
+        val bmp = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bmp))
+        File(dir).apply { mkdirs() }.resolve("$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test
+    fun 두_손가락으로_올려_대화하고_제안을_적용한다() {
+        waitText("이대로 쓰면")
+        rule.onRoot().performTouchInput {
+            down(0, androidx.compose.ui.geometry.Offset(width * 0.4f, height * 0.75f))
+            down(1, androidx.compose.ui.geometry.Offset(width * 0.6f, height * 0.75f))
+            repeat(12) {
+                updatePointerBy(0, androidx.compose.ui.geometry.Offset(0f, -30f))
+                updatePointerBy(1, androidx.compose.ui.geometry.Offset(0f, -30f))
+                move()
+            }
+            up(0)
+            up(1)
+        }
+        waitText("무엇이든 물어보거나 시켜 보세요")
+        waitText("Gemini", substring = true)
+        shot("c1_chat_empty")
+        rule.onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("오늘 점심 김밥 4500원 적어 줘")
+        rule.onNodeWithText("보내기").performClick()
+        waitText("오늘 김밥 4,500원을 적을 수 있게 제안했어요", substring = true)
+        // 제안만 — 아직 안 적었다
+        assertTrue(db { allEntriesNow() }.none { it.label == "김밥" })
+        assertEquals("오늘 점심 김밥 4500원 적어 줘", (seen.first().turns.first() as com.simbio.don.app.ai.Turn.User).text)
+        shot("c2_chat_proposal")
+        rule.onNodeWithText("적용").performClick()
+        waitText("✓ 적용했어요")
+        rule.waitUntil(5_000) { db { allEntriesNow() }.any { it.label == "김밥" } }
+        val e = db { allEntriesNow() }.single { it.label == "김밥" }
+        assertEquals(4_500L, e.amount)
+        assertEquals(Category.FOOD.name, e.category)
+        shot("c3_chat_applied")
     }
 }

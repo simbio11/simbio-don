@@ -1863,6 +1863,13 @@ class DonRepository(private val dao: DonDao, private val db: DonDatabase? = null
      */
     suspend fun accountsNow(): List<AccountEntity> = dao.accountsNow()
 
+    /** AI 대화 하네스가 읽는 것 (폰 안에서 골라 필요한 칸만 보낸다) */
+    suspend fun allEntriesNow(): List<EntryEntity> = dao.allEntriesNow()
+
+    suspend fun entryNow(id: Long): EntryEntity? = dao.entryNow(id)
+
+    suspend fun askItemsNow(): List<ReviewItemEntity> = dao.reviewItemsNow().filter { it.reason == ReviewReason.ASK.name }
+
     /** 배운 내 통장끼리 이체 (보기·잊기) */
     val moveRules: Flow<List<MoveRuleEntity>> = dao.moveRules()
 

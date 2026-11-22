@@ -102,12 +102,17 @@ fun CalendarScreen(
     onOpenEntry: (EntryEntity) -> Unit,
     onAddEntry: (LocalDate) -> Unit,
     accountNames: Map<Long, String> = emptyMap(),
+    /** 위에 붙일 것 (가계부 안에서 열 때 보기 고르기 탭) */
+    header: (androidx.compose.foundation.lazy.LazyListScope.() -> Unit)? = null,
+    /** 돈 나갈 계획 화면 (일정에 잇지 않은 계획을 누르면) */
+    onPlans: (() -> Unit)? = null,
 ) {
     val es = remember(entries) { entries.mapNotNull { runCatching { it.toEntry() }.getOrNull() } }
     // 고정 지출은 기록만 — 날마다 쓴 돈에 넣지 않는다
     val spent = remember(es) { Stats.daily(es, livingOnly = true) }
     val income = remember(es) { Stats.dailyIncome(es) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+        header?.invoke(this)
         item {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 RoundIconButton(UiIcon.CHEVRON_LEFT, "지난달", true) { onMonth(month.minusMonths(1)) }
@@ -158,7 +163,10 @@ fun CalendarScreen(
                     Spacer(Modifier.height(10.dp))
                 }
                 if (showMoney) item(key = "money$selected") {
-                    DayMoney(selected, entries.filter { it.epochDay == selected.toEpochDay() }, accountNames, onOpenEntry, onAddEntry)
+                    // 일정에 잇지 않은 돈 나갈 계획도 그날 가계부에 (실제 기록과 따로)
+                    val linked = events[selected].orEmpty().mapNotNull { planOf(it, plans)?.id }.toSet()
+                    val dayPlans = plans.filter { it.open && it.epochDay == selected.toEpochDay() && it.id !in linked }
+                    DayMoney(selected, entries.filter { it.epochDay == selected.toEpochDay() }, accountNames, onOpenEntry, onAddEntry, dayPlans, today, onPlans)
                 }
             }
             CalView.LIST -> {
@@ -403,6 +411,9 @@ private fun DayMoney(
     accountNames: Map<Long, String>,
     onOpenEntry: (EntryEntity) -> Unit,
     onAddEntry: (LocalDate) -> Unit,
+    dayPlans: List<PlanEntity> = emptyList(),
+    today: LocalDate = LocalDate.now(),
+    onPlans: (() -> Unit)? = null,
 ) {
     val es = list.mapNotNull { runCatching { it.toEntry() }.getOrNull() }
     Column(Modifier.fillMaxWidth().card().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -421,6 +432,7 @@ private fun DayMoney(
         }
         list.sortedWith(compareByDescending<EntryEntity> { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
             .forEach { e -> LedgerRow(e, accountNames, onOpenEntry) }
+        dayPlans.forEach { PlanRow(it, today, onPlans) }
     }
 }
 

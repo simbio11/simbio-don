@@ -11,11 +11,52 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** 고를 수 있는 모델. [fallback]: 안전 판단으로 거절되면 서버가 다른 모델로 다시 해 보는지 */
+/** Claude 모델 (그대로 둔 이름). [fallback]: 안전 판단으로 거절되면 서버가 다른 모델로 다시 해 보는지 */
 enum class AiModel(val id: String, val label: String, val note: String, val fallback: Boolean) {
     OPUS("claude-opus-5-5", "Opus 5.5", "가장 똑똑해요", true),
     SONNET("claude-sonnet-5-5", "Sonnet 5.5", "빠르고 더 싸요", true),
     HAIKU("claude-haiku-5-5", "Haiku 5.5", "가장 빠르고 싸요", false),
+}
+
+/** 고를 수 있는 모델 하나 (회사마다) */
+data class AiModelOption(val id: String, val label: String, val note: String)
+
+/**
+ * AI 회사. 사용자가 자기 키를 넣은 곳으로만 보낸다.
+ * [COMPATIBLE]은 OpenAI와 같은 모양(/chat/completions)으로 받는 곳 — OpenRouter·Groq·DeepSeek·Mistral·내 컴퓨터의 Ollama 등. 주소와 모델 이름을 직접 넣는다.
+ */
+enum class AiProvider(
+    val label: String,
+    val short: String,
+    val keyHint: String,
+    val keyWhere: String,
+    val models: List<AiModelOption>,
+    /** 기본 주소 (호환은 사용자가 넣는다) */
+    val baseUrl: String,
+) {
+    CLAUDE(
+        "Claude (Anthropic)", "Claude", "sk-ant-…", "console.anthropic.com › API Keys",
+        AiModel.entries.map { AiModelOption(it.id, it.label, it.note) }, "https://api.anthropic.com",
+    ),
+    GEMINI(
+        "Gemini (Google)", "Gemini", "AIza…", "aistudio.google.com › Get API key",
+        listOf(
+            AiModelOption("gemini-2.5-pro", "2.5 Pro", "가장 똑똑해요"),
+            AiModelOption("gemini-2.5-flash", "2.5 Flash", "빠르고 싸요"),
+            AiModelOption("gemini-2.5-flash-lite", "2.5 Flash-Lite", "가장 빠르고 싸요"),
+        ),
+        "https://generativelanguage.googleapis.com",
+    ),
+    OPENAI(
+        "ChatGPT (OpenAI)", "OpenAI", "sk-…", "platform.openai.com › API keys",
+        listOf(
+            AiModelOption("gpt-5", "GPT-5", "가장 똑똑해요"),
+            AiModelOption("gpt-5-mini", "GPT-5 mini", "빠르고 싸요"),
+            AiModelOption("gpt-5-nano", "GPT-5 nano", "가장 빠르고 싸요"),
+        ),
+        "https://api.openai.com/v1",
+    ),
+    COMPATIBLE("OpenAI 호환 (OpenRouter·Groq·DeepSeek 등)", "호환", "API 키", "쓰는 서비스의 API 키 화면", emptyList(), ""),
 }
 
 /** 보낼 요청 하나 — 보내기 전에 [system]·[user]를 그대로 보여 준다 */
@@ -35,14 +76,16 @@ sealed interface AiReply {
     data class Failed(val message: String) : AiReply
 }
 
-/** 요청을 실제로 보내는 곳 (테스트는 가짜로 바꾼다) */
+/** 요청을 실제로 보내는 곳 (테스트는 가짜로 바꾼다). [turn]은 도구를 쓰는 대화 한 걸음 */
 fun interface AiBackend {
-    suspend fun send(model: AiModel, req: AiRequest): AiReply
+    suspend fun send(model: String, req: AiRequest): AiReply
+
+    suspend fun turn(model: String, req: AgentRequest): AgentReply = AgentReply.Failed("이 AI는 대화를 아직 못 해요")
 }
 
 /**
- * AI 도우미 설정 (이 폰에만). 켜려면 사용자가 자기 Anthropic API 키를 넣는다.
- * 키는 폰의 키 저장소로 암호화해 두고 백업에도 넣지 않는다.
+ * AI 도우미 설정 (이 폰에만). 켜려면 사용자가 고른 회사의 자기 API 키를 넣는다.
+ * 키는 회사마다 폰의 키 저장소로 암호화해 두고 백업에도 넣지 않는다.
  */
 object Ai {
     private const val PREFS = "ai"
@@ -51,25 +94,69 @@ object Ai {
     @VisibleForTesting
     @Volatile var backendForTests: AiBackend? = null
 
-    fun isOn(c: Context): Boolean = key(c) != null
+    fun provider(c: Context): AiProvider =
+        prefs(c).getString("provider", null)?.let { n -> AiProvider.entries.firstOrNull { it.name == n } } ?: AiProvider.CLAUDE
 
-    fun key(c: Context): String? = prefs(c).getString("key", null)?.let(KeyVault::open)?.takeIf { it.isNotBlank() }
+    fun setProvider(c: Context, p: AiProvider) = prefs(c).edit().putString("provider", p.name).apply()
 
-    fun setKey(c: Context, key: String) = prefs(c).edit().putString("key", KeyVault.seal(key.trim())).apply()
+    /** 예전(Claude만 있던 때) 키 이름은 "key" */
+    private fun keyName(p: AiProvider) = if (p == AiProvider.CLAUDE) "key" else "key_${p.name}"
 
-    fun clear(c: Context) = prefs(c).edit().remove("key").apply()
+    fun isOn(c: Context): Boolean {
+        val p = provider(c)
+        return key(c, p) != null && model(c, p).isNotBlank() && (p != AiProvider.COMPATIBLE || baseUrl(c).isNotBlank())
+    }
+
+    fun key(c: Context, p: AiProvider = provider(c)): String? = prefs(c).getString(keyName(p), null)?.let(KeyVault::open)?.takeIf { it.isNotBlank() }
+
+    fun setKey(c: Context, key: String, p: AiProvider = provider(c)) = prefs(c).edit().putString(keyName(p), KeyVault.seal(key.trim())).apply()
+
+    fun clear(c: Context, p: AiProvider = provider(c)) = prefs(c).edit().remove(keyName(p)).apply()
 
     /** 보여 줄 때는 끝 네 글자만 */
-    fun maskedKey(c: Context): String? = key(c)?.let { "••••" + it.takeLast(4) }
+    fun maskedKey(c: Context, p: AiProvider = provider(c)): String? = key(c, p)?.let { "••••" + it.takeLast(4) }
 
-    fun model(c: Context): AiModel =
-        prefs(c).getString("model", null)?.let { n -> AiModel.entries.firstOrNull { it.name == n } } ?: AiModel.OPUS
+    /** 고른 모델 이름 (회사마다). 예전 Claude 설정은 "model"에 AiModel 이름으로 있다 */
+    fun model(c: Context, p: AiProvider = provider(c)): String {
+        prefs(c).getString("model_${p.name}", null)?.takeIf { it.isNotBlank() }?.let { return it }
+        if (p == AiProvider.CLAUDE) prefs(c).getString("model", null)?.let { n -> AiModel.entries.firstOrNull { it.name == n }?.let { return it.id } }
+        return p.models.firstOrNull()?.id.orEmpty()
+    }
 
-    fun setModel(c: Context, m: AiModel) = prefs(c).edit().putString("model", m.name).apply()
+    fun setModel(c: Context, id: String, p: AiProvider = provider(c)) = prefs(c).edit().putString("model_${p.name}", id.trim()).apply()
+
+    /** 호환 서비스 주소 (예: https://openrouter.ai/api/v1) */
+    fun baseUrl(c: Context): String = prefs(c).getString("base", null).orEmpty()
+
+    fun setBaseUrl(c: Context, url: String) = prefs(c).edit().putString("base", url.trim().trimEnd('/')).apply()
+
+    /** "Claude · Opus 5.5" */
+    fun label(c: Context): String {
+        val p = provider(c)
+        val m = model(c, p)
+        return "${p.short} · " + (p.models.firstOrNull { it.id == m }?.label ?: m)
+    }
+
+    private fun backend(c: Context): AiBackend? {
+        backendForTests?.let { return it }
+        val p = provider(c)
+        val key = key(c, p) ?: return null
+        return when (p) {
+            AiProvider.CLAUDE -> ClaudeBackend(key)
+            AiProvider.GEMINI -> GeminiBackend(key)
+            AiProvider.OPENAI -> OpenAiBackend(key, p.baseUrl, official = true)
+            AiProvider.COMPATIBLE -> baseUrl(c).takeIf { it.isNotBlank() }?.let { OpenAiBackend(key, it, official = false) }
+        }
+    }
 
     suspend fun send(c: Context, req: AiRequest): AiReply {
-        val key = key(c) ?: return AiReply.Failed("AI 키가 없어요. 설정 › AI 도우미에서 넣어 주세요")
-        return (backendForTests ?: ClaudeBackend(key)).send(model(c), req)
+        val b = backend(c) ?: return AiReply.Failed("AI 키가 없어요. 설정 › AI 도우미에서 넣어 주세요")
+        return b.send(model(c), req)
+    }
+
+    suspend fun turn(c: Context, req: AgentRequest): AgentReply {
+        val b = backend(c) ?: return AgentReply.Failed("AI 키가 없어요. 설정 › AI 도우미에서 넣어 주세요")
+        return b.turn(model(c), req)
     }
 }
 

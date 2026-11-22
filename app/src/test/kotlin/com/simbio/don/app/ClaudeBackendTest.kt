@@ -88,7 +88,7 @@ class ClaudeBackendTest {
     fun `말로 적기 요청은 JSON 모양·짧게 생각·다른 모델로 다시 하기를 담아 보낸다`() = runBlocking {
         reply = message("end_turn", """{"date":"2026-10-24","amount":80000}""")
         val req = AiTasks.spokenRequest("어제 고깃집 8만원", LocalDate.of(2026, 10, 25), Category.spending + Category.incomes)
-        val r = ClaudeBackend("sk-ant-test", url).send(AiModel.OPUS, req)
+        val r = ClaudeBackend("sk-ant-test", url).send(AiModel.OPUS.id, req)
         assertTrue(r.toString(), r is AiReply.Ok)
         r as AiReply.Ok
         assertEquals("""{"date":"2026-10-24","amount":80000}""", r.text)
@@ -114,7 +114,7 @@ class ClaudeBackendTest {
     @Test
     fun `Haiku는 다른 모델로 다시 하기 없이, 글 답은 그대로`() = runBlocking {
         reply = message("end_turn", "하루 2만원씩 쓰면 돼요.")
-        val r = ClaudeBackend("sk-ant-test", url).send(AiModel.HAIKU, AiTasks.askRequest("[이번 달] ...", "얼마 써도 돼요?"))
+        val r = ClaudeBackend("sk-ant-test", url).send(AiModel.HAIKU.id, AiTasks.askRequest("[이번 달] ...", "얼마 써도 돼요?"))
         assertEquals("하루 2만원씩 쓰면 돼요.", (r as AiReply.Ok).text)
         val body = JSONObject(lastBody)
         assertEquals("claude-haiku-5-5", body.getString("model"))
@@ -126,16 +126,60 @@ class ClaudeBackendTest {
     @Test
     fun `거절·잘림·키 오류를 알린다`() = runBlocking {
         reply = message("refusal", "", ""","stop_details":{"type":"refusal","category":"cyber","explanation":"답할 수 없어요"}""")
-        val refused = ClaudeBackend("sk-ant-test", url).send(AiModel.OPUS, AiTasks.askRequest("s", "q"))
+        val refused = ClaudeBackend("sk-ant-test", url).send(AiModel.OPUS.id, AiTasks.askRequest("s", "q"))
         assertTrue(refused.toString(), refused is AiReply.Refused)
 
         reply = message("max_tokens", """{"headline":"잘""")
-        val cut = ClaudeBackend("sk-ant-test", url).send(AiModel.OPUS, AiTasks.coachRequest("s"))
+        val cut = ClaudeBackend("sk-ant-test", url).send(AiModel.OPUS.id, AiTasks.coachRequest("s"))
         assertTrue(cut.toString(), cut is AiReply.Failed)
 
         status = 401
         reply = """{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"""
-        val bad = ClaudeBackend("sk-ant-wrong", url).send(AiModel.OPUS, AiTasks.askRequest("s", "q"))
+        val bad = ClaudeBackend("sk-ant-wrong", url).send(AiModel.OPUS.id, AiTasks.askRequest("s", "q"))
         assertEquals("API 키가 맞지 않아요. 설정에서 다시 넣어 주세요", (bad as AiReply.Failed).message)
+    }
+
+    @Test
+    fun `대화 한 걸음 - 도구를 보내고, 도구 부름을 읽고, 받은 답과 결과를 그대로 돌려 보낸다`() = runBlocking {
+        reply = """{"id":"msg_2","type":"message","role":"assistant","model":"claude-opus-5-5","content":[""" +
+            """{"type":"text","text":"찾아볼게요"},{"type":"tool_use","id":"toolu_1","name":"search_entries","input":{"text":"김밥","limit":5}}],""" +
+            """"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":20}}"""
+        val tools = listOf(com.simbio.don.app.ai.ToolSpec("search_entries", "찾기", mapOf("text" to mapOf("type" to "string")), listOf("text")))
+        val b = ClaudeBackend("sk-ant-test", url)
+        val first = com.simbio.don.app.ai.Turn.User("김밥 얼마 썼어?")
+        val r1 = b.turn(AiModel.OPUS.id, com.simbio.don.app.ai.AgentRequest("sys", listOf(first), tools))
+        assertTrue(r1.toString(), r1 is com.simbio.don.app.ai.AgentReply.Ok)
+        val m1 = (r1 as com.simbio.don.app.ai.AgentReply.Ok).model
+        assertEquals("찾아볼게요", m1.text)
+        val call = m1.calls.single()
+        assertEquals("toolu_1", call.id)
+        assertEquals("김밥", call.args.getString("text"))
+        assertEquals(5, call.args.getInt("limit"))
+        val body1 = JSONObject(lastBody)
+        val tool = body1.getJSONArray("tools").getJSONObject(0)
+        assertEquals("search_entries", tool.getString("name"))
+        assertEquals("string", tool.getJSONObject("input_schema").getJSONObject("properties").getJSONObject("text").getString("type"))
+        assertEquals("default", body1.getString("fallbacks"))
+
+        reply = message("end_turn", "김밥에 9,000원 썼어요.")
+        val r2 = b.turn(
+            AiModel.OPUS.id,
+            com.simbio.don.app.ai.AgentRequest(
+                "sys",
+                listOf(first, m1, com.simbio.don.app.ai.Turn.Results(listOf(com.simbio.don.app.ai.ToolOutcome("toolu_1", "search_entries", """{"count":2}""")))),
+                tools,
+            ),
+        )
+        assertEquals("김밥에 9,000원 썼어요.", (r2 as com.simbio.don.app.ai.AgentReply.Ok).model.text)
+        val msgs = JSONObject(lastBody).getJSONArray("messages")
+        assertEquals(3, msgs.length())
+        val assistant = msgs.getJSONObject(1)
+        assertEquals("assistant", assistant.getString("role"))
+        val blocks = assistant.getJSONArray("content")
+        assertEquals("tool_use", blocks.getJSONObject(1).getString("type"))
+        assertEquals("toolu_1", blocks.getJSONObject(1).getString("id"))
+        val result = msgs.getJSONObject(2).getJSONArray("content").getJSONObject(0)
+        assertEquals("tool_result", result.getString("type"))
+        assertEquals("toolu_1", result.getString("tool_use_id"))
     }
 }
