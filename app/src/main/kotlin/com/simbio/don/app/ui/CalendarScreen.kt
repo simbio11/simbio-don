@@ -311,15 +311,14 @@ private fun DayCell(
                 },
             )
         }
+        // 쓴 돈·들어온 돈은 날짜 바로 밑에 (칸 맨 아래에 두면 아랫줄 날짜에 붙어 그날 것처럼 보인다)
+        if (inside) {
+            income?.takeIf { it > 0 }?.let { Text("+" + compactWon(it), fontSize = 9.sp, lineHeight = 11.sp, color = DonColors.Income, maxLines = 1, fontWeight = FontWeight.SemiBold) }
+            spent?.takeIf { it != 0L }?.let { Text("−" + compactWon(it), fontSize = 9.sp, lineHeight = 11.sp, color = DonColors.Expense, maxLines = 1, fontWeight = FontWeight.SemiBold) }
+        }
         Spacer(Modifier.height(2.dp))
         events.take(3).forEach { e -> EventBar(e, faded = !inside) }
         if (events.size > 3) Text("+${events.size - 3}", fontSize = 8.sp, lineHeight = 10.sp, color = DonColors.InkMuted)
-        Spacer(Modifier.weight(1f))
-        if (inside) {
-            income?.takeIf { it > 0 }?.let { Text("+" + compactWon(it), fontSize = 8.sp, lineHeight = 10.sp, color = DonColors.Income, maxLines = 1) }
-            spent?.takeIf { it != 0L }?.let { Text("−" + compactWon(it), fontSize = 8.sp, lineHeight = 10.sp, color = DonColors.Expense, maxLines = 1) }
-        }
-        Spacer(Modifier.height(2.dp))
     }
 }
 
@@ -438,7 +437,7 @@ private fun DayMoney(
                 color = if (out > 0) DonColors.Expense else DonColors.InkMuted,
                 modifier = Modifier.weight(1f),
             )
-            SmallButton(onClick = { onAddEntry(d) }, containerColor = DonColors.SurfaceAlt, contentColor = DonColors.Real) { Text("+ 가계부 쓰기") }
+            SmallButton(onClick = { onAddEntry(d) }, containerColor = DonColors.SurfaceAlt, contentColor = DonColors.RealDeep) { Text("+ 가계부 쓰기") }
         }
         list.sortedWith(compareByDescending<EntryEntity> { it.minuteOfDay ?: -1 }.thenByDescending { it.id })
             .forEach { e -> LedgerRow(e, accountNames, onOpenEntry) }

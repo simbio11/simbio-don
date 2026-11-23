@@ -155,15 +155,15 @@ fun DayHeader(d: LocalDate, income: Long, expense: Long) {
         Text(d.dayOfMonth.toString(), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = DonColors.Ink)
         Spacer(Modifier.width(8.dp))
         val dow = d.dayOfWeek
-        Box(
-            Modifier.clip(RoundedCornerShape(6.dp)).background(
-                when (dow) {
-                    DayOfWeek.SUNDAY -> DonColors.Expense
-                    DayOfWeek.SATURDAY -> DonColors.Income
-                    else -> DonColors.InkMuted
-                },
-            ).padding(horizontal = 6.dp, vertical = 2.dp),
-        ) { Text(dayName(dow), fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold) }
+        // 요일 딱지: 일요일 빨강·토요일 파랑 바탕에 흰 글자, 평일은 회색 바탕에 진한 글자 (두 모드 모두 잘 읽히게)
+        val (chipBg, chipFg) = when (dow) {
+            DayOfWeek.SUNDAY -> DonColors.WarnFill to Color.White
+            DayOfWeek.SATURDAY -> DonColors.RealFill to Color.White
+            else -> DonColors.SurfaceAlt to DonColors.InkSoft
+        }
+        Box(Modifier.clip(RoundedCornerShape(6.dp)).background(chipBg).padding(horizontal = 6.dp, vertical = 2.dp)) {
+            Text(dayName(dow), fontSize = 11.sp, color = chipFg, fontWeight = FontWeight.Bold)
+        }
         Spacer(Modifier.width(6.dp))
         Text("${d.year}.${"%02d".format(d.monthValue)}", fontSize = 12.sp, color = DonColors.InkMuted)
         Spacer(Modifier.weight(1f))

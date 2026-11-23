@@ -410,7 +410,7 @@ fun GoalsScreen(
                         val on = n == icon
                         Box(
                             Modifier.size(44.dp).clip(CircleShape)
-                                .background(if (on) DonColors.Real else DonColors.SurfaceAlt)
+                                .background(if (on) DonColors.RealFill else DonColors.SurfaceAlt)
                                 .clickable(role = Role.RadioButton) { icon = n },
                             contentAlignment = Alignment.Center,
                         ) { Icon(goalIcon(n), 22.dp, if (on) Color.White else DonColors.InkSoft) }

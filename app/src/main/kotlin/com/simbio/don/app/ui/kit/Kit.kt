@@ -171,6 +171,7 @@ private fun BaseButton(
             }
             .clip(shape)
             .background(if (!enabled) DonColors.Line else if (pressed) androidx.compose.ui.graphics.lerp(fill, Color.Black, 0.08f) else fill)
+            .let { if (!enabled) it.graphicsLayer { alpha = 0.85f } else it }
             .clickable(interaction, androidx.compose.material3.ripple(color = content), enabled = enabled, role = Role.Button) {
                 Feedback.tap(view)
                 bounce.play()
@@ -180,7 +181,8 @@ private fun BaseButton(
         contentAlignment = Alignment.Center,
     ) {
         ProvideTextStyle(
-            TextStyle(color = if (enabled) content else DonColors.InkFaint, fontWeight = FontWeight.Bold, fontSize = fontSize.sp),
+            // 꺼진 버튼도 글자는 읽혀야 한다 (회색 바탕에 진한 회색 글자)
+            TextStyle(color = if (enabled) content else DonColors.InkSoft, fontWeight = FontWeight.Bold, fontSize = fontSize.sp),
         ) {
             Row(
                 Modifier.padding(horizontal = horizontal, vertical = 10.dp),
@@ -198,10 +200,10 @@ fun Button(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    containerColor: Color = DonColors.Real,
+    containerColor: Color = DonColors.RealFill,
     contentColor: Color = Color.White,
     content: @Composable RowScope.() -> Unit,
-) = BaseButton(onClick, modifier, enabled, containerColor, contentColor, 52.dp, 20.dp, 16, RoundedCornerShape(14.dp), content)
+) = BaseButton(onClick, modifier, enabled, if (contentColor == Color.White) DonColors.fillFor(containerColor) else containerColor, contentColor, 52.dp, 20.dp, 16, RoundedCornerShape(14.dp), content)
 
 /** 보조 버튼 (회색 바탕) */
 @Composable
@@ -219,10 +221,12 @@ fun SubButton(
 fun SmallButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    containerColor: Color = DonColors.Real,
+    containerColor: Color = DonColors.RealFill,
     contentColor: Color = Color.White,
+    /** false면 회색으로 (눌러도 아무 일 없다) */
+    enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit,
-) = BaseButton(onClick, modifier, true, containerColor, contentColor, 36.dp, 12.dp, 13, RoundedCornerShape(10.dp), content)
+) = BaseButton(onClick, modifier, enabled, if (contentColor == Color.White) DonColors.fillFor(containerColor) else containerColor, contentColor, 36.dp, 12.dp, 13, RoundedCornerShape(10.dp), content)
 
 /** 글자만 있는 버튼 (돌아가기, 더보기) */
 @Composable
@@ -341,7 +345,7 @@ fun AddFab(onClick: () -> Unit, contentDescription: String, modifier: Modifier =
         onClick = onClick,
         modifier = modifier.semantics { this.contentDescription = contentDescription },
         shape = CircleShape,
-        containerColor = DonColors.Real,
+        containerColor = DonColors.RealFill,
         contentColor = Color.White,
         elevation = FloatingActionButtonDefaults.elevation(6.dp, 8.dp),
     ) { Icon(UiIcon.ADD, 28.dp, Color.White) }

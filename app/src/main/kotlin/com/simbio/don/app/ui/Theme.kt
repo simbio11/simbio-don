@@ -58,19 +58,25 @@ class DonPalette(
     val fire: Color,
     val fireSurface: Color,
     val track: Color,
+    /** 흰 글자를 올리는 버튼 바탕 (글자가 잘 읽히게 4.5:1 넘게 진하게) */
+    val realFill: Color = real,
+    val gameFill: Color = game,
+    val goodFill: Color = good,
+    val warnFill: Color = warn,
 ) {
     companion object {
         val Light = DonPalette(
             dark = false,
             bg = Color(0xFFF2F4F6), surface = Color(0xFFFFFFFF), surfaceAlt = Color(0xFFF2F4F6),
-            ink = Color(0xFF191F28), inkSoft = Color(0xFF4E5968), inkMuted = Color(0xFF8B95A1), inkFaint = Color(0xFFB0B8C1),
+            ink = Color(0xFF191F28), inkSoft = Color(0xFF4E5968), inkMuted = Color(0xFF6B7684), inkFaint = Color(0xFFB0B8C1),
             line = Color(0xFFE5E8EB), onInk = Color(0xFFFFFFFF),
             real = Color(0xFF346AFF), realDeep = Color(0xFF1F4FD8), realSurface = Color(0xFFEDF2FF),
             game = Color(0xFF7B61FF), gameDeep = Color(0xFF5A3FE0), gameSurface = Color(0xFFF4F1FF),
             highlight = Color(0xFFFFB800),
             income = Color(0xFF346AFF), expense = Color(0xFFE5484D), transfer = Color(0xFF8B95A1),
-            warn = Color(0xFFF04452), warnSurface = Color(0xFFFFF0F1), good = Color(0xFF14A06A), goodSurface = Color(0xFFE8F7F0),
+            warn = Color(0xFFD93340), warnSurface = Color(0xFFFFF0F1), good = Color(0xFF0B7A50), goodSurface = Color(0xFFE8F7F0),
             fire = Color(0xFFE8590C), fireSurface = Color(0xFFFFF1E6), track = Color(0xFFF0F2F4),
+            realFill = Color(0xFF346AFF), gameFill = Color(0xFF6A4EF0), goodFill = Color(0xFF0F7F55), warnFill = Color(0xFFD42F3C),
         )
 
         /** 어두운 화면: 바탕은 거의 검정, 카드는 한 단계 밝게. 글자는 흰색 대신 살짝 회색으로 눈부심을 줄인다 */
@@ -85,6 +91,8 @@ class DonPalette(
             income = Color(0xFF5B8DFF), expense = Color(0xFFFF6369), transfer = Color(0xFF8B95A1),
             warn = Color(0xFFFF5C68), warnSurface = Color(0xFF3A1D22), good = Color(0xFF2DBE84), goodSurface = Color(0xFF14302A),
             fire = Color(0xFFFF8A4C), fireSurface = Color(0xFF3A2516), track = Color(0xFF2A2D33),
+            // 어두운 화면의 파랑·보라·초록·빨강은 글자용으로 밝아서, 흰 글자를 올리는 버튼은 한 단계 진하게
+            realFill = Color(0xFF2F66F0), gameFill = Color(0xFF6A4EF0), goodFill = Color(0xFF0F7F55), warnFill = Color(0xFFD42F3C),
         )
     }
 }
@@ -149,6 +157,21 @@ object DonColors {
 
     /** 막대 바탕·눈금 */
     val Track: Color get() = palette.track
+
+    /** 흰 글자 버튼 바탕 (두 모드 모두 글자가 잘 읽히게) */
+    val RealFill: Color get() = palette.realFill
+    val GameFill: Color get() = palette.gameFill
+    val GoodFill: Color get() = palette.goodFill
+    val WarnFill: Color get() = palette.warnFill
+
+    /** 글자색으로 쓰던 강조색 → 흰 글자를 올릴 버튼 바탕 */
+    fun fillFor(c: Color): Color = when (c) {
+        palette.real, palette.income -> palette.realFill
+        palette.game -> palette.gameFill
+        palette.good -> palette.goodFill
+        palette.warn, palette.expense -> palette.warnFill
+        else -> c
+    }
 
     /** 스낵바 (두 모드 모두 짙은 바탕) */
     val Toast: Color get() = if (palette.dark) Color(0xFF3A3F47) else Color(0xFF191F28)

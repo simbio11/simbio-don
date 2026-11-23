@@ -160,7 +160,7 @@ fun ChatPanel(
                     }
                 },
                 modifier = Modifier.padding(start = 8.dp),
-                containerColor = if (text.isNotBlank() && !busy) DonColors.Real else DonColors.InkFaint,
+                enabled = text.isNotBlank() && !busy,
             ) { Text("보내기") }
         }
     }
@@ -193,7 +193,7 @@ private fun ChatRow(line: ChatLine, onAnswer: (ChatLine.Proposal, Boolean) -> Un
                 line.text,
                 fontSize = 14.sp,
                 color = androidx.compose.ui.graphics.Color.White,
-                modifier = Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp)).background(DonColors.Real).padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp)).background(DonColors.RealFill).padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
         is ChatLine.Bot -> Column(

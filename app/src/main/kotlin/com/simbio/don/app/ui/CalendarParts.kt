@@ -164,7 +164,7 @@ fun DayEventsCard(
 @Composable
 private fun EventBudget(p: PlanEntity?, date: LocalDate, today: LocalDate, onSpent: (PlanEntity) -> Unit, onUnlink: (PlanEntity) -> Unit, onPick: () -> Unit = {}, onEdit: () -> Unit) {
     when {
-        p == null -> SmallButton(onClick = onEdit, containerColor = DonColors.SurfaceAlt, contentColor = DonColors.Real) { Text("예산 정하기") }
+        p == null -> SmallButton(onClick = onEdit, containerColor = DonColors.SurfaceAlt, contentColor = DonColors.RealDeep) { Text("예산 정하기") }
         p.canceled -> Text("안 썼어요", fontSize = 12.sp, color = DonColors.Good)
         p.done -> {
             val actual = p.doneAmount ?: 0

@@ -199,7 +199,7 @@ private fun CartButton(count: Int, onClick: () -> Unit) {
     ) {
         Icon(UiIcon.STORE, 24.dp, DonColors.Ink)
         if (count > 0) {
-            Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(18.dp).clip(CircleShape).background(DonColors.Warn), contentAlignment = Alignment.Center) {
+            Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(18.dp).clip(CircleShape).background(DonColors.WarnFill), contentAlignment = Alignment.Center) {
                 Text("$count", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color.White)
             }
         }

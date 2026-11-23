@@ -140,7 +140,7 @@ fun PlanHintCard(h: PlanHint, onConfirm: (people: Int?) -> Unit, onReject: () ->
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            SmallButton(onClick = { if (n != null) onConfirm(n) }, modifier = Modifier.weight(1.4f), containerColor = if (n == null) DonColors.InkMuted else DonColors.Real) {
+            SmallButton(onClick = { if (n != null) onConfirm(n) }, modifier = Modifier.weight(1.4f), containerColor = if (n == null) DonColors.SurfaceAlt else DonColors.RealFill, contentColor = if (n == null) DonColors.InkSoft else androidx.compose.ui.graphics.Color.White) {
                 Text(if (n == null) "몇 명인지 골라 주세요" else if (n > 1) "${n}명이서 낸 계획이에요" else "혼자 낸 계획이에요")
             }
             SubButton(onClick = onReject, modifier = Modifier.weight(1f), containerColor = DonColors.SurfaceAlt) { Text("계획 아니에요") }
@@ -199,8 +199,8 @@ fun IncomeQuestionCard(
                     if (receivables.isNotEmpty()) {
                         SmallButton(onClick = { settling = !settling }) { Text("정산 받은 돈") }
                     }
-                    SmallButton(onClick = { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.SELF, null) }, containerColor = DonColors.Ink) { Text("내 돈 옮김") }
-                    SmallButton(onClick = { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.HELD, null) }, containerColor = DonColors.Ink) { Text("친구가 맡긴 돈") }
+                    SmallButton(onClick = { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.SELF, null) }, containerColor = DonColors.Ink, contentColor = DonColors.OnInk) { Text("내 돈 옮김") }
+                    SmallButton(onClick = { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.HELD, null) }, containerColor = DonColors.Ink, contentColor = DonColors.OnInk) { Text("친구가 맡긴 돈") }
                     SubButton(onClick = { onExplain(e, com.simbio.don.app.data.DonRepository.IncomeKind.INCOME, null) }, containerColor = DonColors.Surface) { Text("수입 맞아요") }
                 }
                 if (person && ownerName.isNullOrBlank()) {
