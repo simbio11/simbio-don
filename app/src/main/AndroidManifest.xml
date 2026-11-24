@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 창밖 날씨(Open-Meteo, 고른 도시 좌표만)·켤 때만 쇼핑 검색어·AI·해외 결제 공개 환율(통화 이름만). 가계부 기록·알림 내용은 보내지 않는다 -->
+    <!-- 창밖 날씨(Open-Meteo, 고른 도시 좌표만)·켤 때만 쇼핑 검색어·AI·해외 결제 공개 환율(통화 이름만).
+         가계부 숫자는 켤 때만 '내 PC'(생활관리 서버, Tailscale)로만 — 알림 글·메모는 어디로도 보내지 않는다 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- 매일 밤 지출 알림 (설정에서 켤 때만 묻는다) -->
@@ -32,6 +33,7 @@
 
     <application
         android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"

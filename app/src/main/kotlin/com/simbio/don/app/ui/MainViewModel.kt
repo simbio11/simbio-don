@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -71,6 +72,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { repo.tidyUp(now.toLocalDate()) }
         }
         refreshWeather()
+        pcSchedule()
         // 해외 결제가 있으면 오늘 환율 (켜 둔 때만)
         viewModelScope.launch { runCatching { com.simbio.don.app.fx.FxRates.refreshIfNeeded(getApplication()) } }
     }
@@ -210,7 +212,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (draft.owe != existing.owe) repo.autoMatch()
         }
+        pcSchedule()
     }
+
+    // ── PC로 보내기 (생활관리 데스크탑, 켤 때만) — 앱을 열 때마다·기록할 때 (pc/PcAuto, 자동은 2분에 한 번까지) ──
+    private fun pcSchedule(force: Boolean = false, wait: Long = 3_000) =
+        com.simbio.don.app.pc.PcAuto.trigger(getApplication(), force, wait)
+
+    /** 앱 화면으로 돌아올 때마다 (MainActivity.onResume) */
+    fun pcOnResume() = pcSchedule(wait = 1_500)
+
+    /** 설정의 '지금 보내기' */
+    fun pcSendNow() = pcSchedule(force = true, wait = 0)
 
     suspend fun lastMonthReport() = withContext(Dispatchers.Default) { repo.lastMonthReport() }
 

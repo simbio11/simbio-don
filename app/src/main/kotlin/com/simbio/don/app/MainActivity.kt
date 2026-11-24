@@ -322,6 +322,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
         vm.refreshClock()
+        vm.pcOnResume()  // 앱을 열기만 해도 PC로 (켜 둔 때만)
         // 폰 캘린더에서 일정을 고치고 돌아왔을 수 있다
         vm.refreshCalendar()
     }
@@ -948,6 +949,7 @@ class MainActivity : ComponentActivity() {
         }
         settings?.let {
             SettingsScreen(
+                onPcSend = { vm.pcSendNow() },
                 settings = it,
                 fixed = fixed,
                 rules = rules,

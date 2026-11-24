@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 0.38: 'PC로 보내기'가 집 와이파이 주소(192.168.x 등 — 집마다 다름)로도 가야 해서 평문 HTTP를 열어 둔다.
+     대신 앱 코드(PcSync.allowedHost)가 평문은 Tailscale(100.64~127.x)·*.ts.net·사설 주소(192.168·10·172.16~31)·루프백으로만 보낸다.
+     날씨·환율·쇼핑 검색·AI는 코드에 https 주소로 고정돼 있어 그대로 HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
